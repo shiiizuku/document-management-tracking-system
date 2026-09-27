@@ -26,16 +26,16 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/aistor/minio:latest
     command: server /data --console-address :9001
     environment:
       MINIO_ROOT_USER: dts-local
-      MINIO_ROOT_PASSWORD: change-this-local-secret
+      MINIO_ROOT_PASSWORD: dts-local1
     ports: ['9000:9000', '9001:9001']
     volumes: ['minio_data:/data']
     healthcheck:
-      test: ['CMD', 'mc', 'ready', 'local']
-      interval: 5s
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:9000/minio/health/live || exit 1']
+      interval: 10s
       timeout: 5s
       retries: 20
 
