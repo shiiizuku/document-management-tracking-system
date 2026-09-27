@@ -18,6 +18,30 @@ A greenfield DTS implementation based on `docs/Document-management-tracking-syst
 
 ## Quick start
 
+There are two ways to run it. **Option A works today** and needs no infrastructure; Option B is
+the target once the persistence adapters are wired in (see `docs/IMPLEMENTATION_STATUS.md`).
+
+### Option A — Run in your browser, no infrastructure (default)
+
+The executable API currently uses an in-process, in-memory adapter, so the whole app runs without
+Docker, PostgreSQL, or a `.env` file. State lives in memory and resets on restart.
+
+```bash
+npm install                     # first time only
+npm run build -w @dts/contracts # build the shared Zod contracts (creates dist/)
+npm run dev                     # starts the API (:4000) and web (:3000) together
+```
+
+Then open:
+
+- Web app — `http://localhost:3000`
+- API base — `http://localhost:4000/api/v1`
+- OpenAPI UI — `http://localhost:4000/api/docs`
+
+Sign in with any development account below.
+
+### Option B — Full stack with infrastructure (target state)
+
 Requirements: Node.js 22+, npm 11+, Docker Desktop.
 
 ```bash
@@ -30,9 +54,9 @@ npm run db:seed
 npm run dev
 ```
 
-Open the web app at `http://localhost:3000`, API at `http://localhost:4000/api/v1`, and OpenAPI at `http://localhost:4000/api/docs`.
+Same URLs as Option A.
 
-Development accounts:
+### Development accounts
 
 | Role          | Email               | Password        |
 | ------------- | ------------------- | --------------- |
