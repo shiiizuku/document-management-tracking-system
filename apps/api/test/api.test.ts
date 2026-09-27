@@ -1,0 +1,107 @@
+import 'reflect-metadata';
+import cookieParser from 'cookie-parser';
+import { Test } from '@nestjs/testing';
+import { type INestApplication, ValidationPipe } from '@nestjs/common';
+import request from 'supertest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AppModule } from '../src/app.module.js';
+
+const sessionCookie = (response: {
+  headers: Record<string, string | string[] | undefined>;
+}): string[] => {
+  const cookie = response.headers['set-cookie'];
+  if (cookie === undefined) throw new Error('Login did not set a session cookie');
+  return Array.isArray(cookie) ? cookie : [cookie];
+};
+
+describe('REST /api/v1 public seam', () => {
+  let app: INestApplication;
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.use(cookieParser());
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('logs in, creates an incoming document, and executes the allowed accept action', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'records@dts.local', password: 'Records@1234!' })
+      .expect(201);
+
+    const cookie = sessionCookie(login);
+
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/documents')
+      .set('Cookie', cookie)
+      .send({
+        title: 'Incoming request',
+        type: 'MEMORANDUM',
+        description: 'Please review.',
+        priority: 'HIGH',
+        direction: 'INCOMING',
+        sender: 'Citizen One',
+        company: 'Public',
+        referenceNumber: 'EXT-2026-1',
+        divisionId: 'division-records',
+        sectionId: 'section-intake',
+      })
+      .expect(201);
+
+    expect(created.body.data).toMatchObject({ status: 'PENDING', version: 1 });
+
+    const allowed = await request(app.getHttpServer())
+      .get(`/api/v1/documents/${created.body.data.id}/allowed-actions`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(allowed.body.data).toContain('ACCEPT');
+
+    const accepted = await request(app.getHttpServer())
+      .post(`/api/v1/documents/${created.body.data.id}/actions/ACCEPT`)
+      .set('Cookie', cookie)
+      .send({ expectedVersion: 1 })
+      .expect(201);
+    expect(accepted.body.data).toMatchObject({ status: 'IN_PROCESS', version: 2 });
+  });
+
+  it('never returns inaccessible cross-division documents in search totals', async () => {
+    const recordsLogin = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'records@dts.local', password: 'Records@1234!' })
+      .expect(201);
+    const recordsCookie = sessionCookie(recordsLogin);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/documents')
+      .set('Cookie', recordsCookie)
+      .send({
+        title: 'Cross division secret',
+        type: 'MEMORANDUM',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: 'division-other',
+        sectionId: 'section-other',
+      })
+      .expect(201);
+
+    const staffLogin = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'staff@dts.local', password: 'Staff@12345!' })
+      .expect(201);
+    const staffCookie = sessionCookie(staffLogin);
+
+    const search = await request(app.getHttpServer())
+      .get('/api/v1/documents?search=Cross%20division%20secret')
+      .set('Cookie', staffCookie)
+      .expect(200);
+    expect(search.body.data.total).toBe(0);
+  });
+});
