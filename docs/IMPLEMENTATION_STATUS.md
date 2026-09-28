@@ -69,15 +69,15 @@ has UI). Everything after this reuses the module + repository shape you establis
 
 **Backend**
 
-- [ ] (2h) Add a global `ConfigModule` (`@nestjs/config`) that validates `DATABASE_URL`, JWT
+- [x] (2h) Add a global `ConfigModule` (`@nestjs/config`) that validates `DATABASE_URL`, JWT
       secret, and cookie settings at boot. _Done-when:_ a missing `DATABASE_URL` fails fast with a
       clear error instead of a late crash.
-- [ ] (2h) Create a `DatabaseModule` that provides the Drizzle instance from
+- [x] (2h) Create a `DatabaseModule` that provides the Drizzle instance from
       `apps/api/src/database/client.ts` (`createDatabase`) as an injectable token; import it into
       `app.module.ts`. _Done-when:_ the `db` token injects and the app still boots.
-- [ ] (2h) Write a `UsersRepository` (find-by-email, find-by-id) over the `users` table.
+- [x] (2h) Write a `UsersRepository` (find-by-email, find-by-id) over the `users` table.
       _Done-when:_ it returns typed rows from Postgres in a unit test.
-- [ ] (2h) Rewire `auth` (`authenticate`, `getUser`) and `AuthGuard`'s user lookup to
+- [x] (2h) Rewire `auth` (`authenticate`, `getUser`) and `AuthGuard`'s user lookup to
       `UsersRepository` instead of the `#users` Map; keep bcrypt + JWT. _Done-when:_ login and
       `GET /auth/me` work against a seeded Postgres.
 

@@ -73,7 +73,7 @@ services:
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: dts-local
-      MINIO_SECRET_KEY: change-this-local-secret
+      MINIO_SECRET_KEY: dts-local1
       MINIO_BUCKET: dts-files
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
@@ -102,7 +102,7 @@ services:
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: dts-local
-      MINIO_SECRET_KEY: change-this-local-secret
+      MINIO_SECRET_KEY: dts-local1
       MINIO_BUCKET: dts-files
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310

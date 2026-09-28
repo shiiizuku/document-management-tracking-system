@@ -1,28 +1,28 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
-import { DtsApplicationService } from '../modules/application/dts-application.service.js';
+import { AuthService } from '../modules/auth/auth.service.js';
 import type { RequestUser } from './request-user.js';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
-    private readonly application: DtsApplicationService,
+    private readonly auth: AuthService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request & { user?: RequestUser }>();
     const token = request.cookies?.dts_session as string | undefined;
     if (!token) throw new UnauthorizedException('Authentication required');
+    let payload: { sub: string };
     try {
-      const payload = this.jwt.verify<{ sub: string }>(token);
-      const user = this.application.getUser(payload.sub);
-      if (!user.active) throw new UnauthorizedException('Account is inactive');
-      request.user = user;
-      return true;
+      payload = this.jwt.verify<{ sub: string }>(token);
     } catch {
       throw new UnauthorizedException('Session is invalid or expired');
     }
+    const user = await this.auth.getUser(payload.sub);
+    request.user = user;
+    return true;
   }
 }

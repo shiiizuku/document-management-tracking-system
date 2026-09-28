@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { fileTypeFromBuffer } from 'file-type';
 import type { CreateDocumentInput } from '@dts/contracts';
 import { AuthorizationPolicy, type Role } from '../authorization/authorization.policy.js';
+import { capabilitiesByRole } from '../authorization/role-capabilities.js';
 import {
   DocumentSearchService,
   type DocumentSearchQuery,
@@ -70,64 +71,6 @@ export interface AuditRecord {
   correlationId: string;
   summary: Record<string, unknown>;
 }
-
-const capabilitiesByRole: Record<Role, readonly string[]> = {
-  ADMINISTRATOR: [
-    'DOCUMENT_CREATE',
-    'DOCUMENT_EDIT',
-    'DOCUMENT_ACCEPT',
-    'DOCUMENT_REQUEST_REVISION',
-    'DOCUMENT_RESUBMIT',
-    'DOCUMENT_SUBMIT_FOR_SIGNATURE',
-    'DOCUMENT_SIGN',
-    'DOCUMENT_PREPARE_RELEASE',
-    'DOCUMENT_RELEASE',
-    'DOCUMENT_ARCHIVE',
-    'DOCUMENT_RESTORE',
-    'DOCUMENT_ASSIGN',
-    'REPORT_VIEW',
-    'AUDIT_VIEW',
-    'FILE_SCAN_RECORD',
-  ],
-  RECORDS_STAFF: [
-    'DOCUMENT_CREATE',
-    'DOCUMENT_EDIT',
-    'DOCUMENT_ACCEPT',
-    'DOCUMENT_REQUEST_REVISION',
-    'DOCUMENT_RESUBMIT',
-    'DOCUMENT_SUBMIT_FOR_SIGNATURE',
-    'DOCUMENT_SIGN',
-    'DOCUMENT_PREPARE_RELEASE',
-    'DOCUMENT_RELEASE',
-    'DOCUMENT_ARCHIVE',
-    'DOCUMENT_ASSIGN',
-    'REPORT_VIEW',
-    'FILE_SCAN_RECORD',
-  ],
-  DIVISION_HEAD: [
-    'DOCUMENT_CREATE',
-    'DOCUMENT_EDIT',
-    'DOCUMENT_ACCEPT',
-    'DOCUMENT_REQUEST_REVISION',
-    'DOCUMENT_RESUBMIT',
-    'DOCUMENT_SUBMIT_FOR_SIGNATURE',
-    'DOCUMENT_SIGN',
-    'DOCUMENT_PREPARE_RELEASE',
-    'DOCUMENT_RELEASE',
-    'DOCUMENT_ARCHIVE',
-    'DOCUMENT_ASSIGN',
-    'REPORT_VIEW',
-  ],
-  STAFF_MEMBER: [
-    'DOCUMENT_CREATE',
-    'DOCUMENT_EDIT',
-    'DOCUMENT_ACCEPT',
-    'DOCUMENT_REQUEST_REVISION',
-    'DOCUMENT_RESUBMIT',
-    'DOCUMENT_SUBMIT_FOR_SIGNATURE',
-  ],
-  VIEWER: [],
-};
 
 // Upload policy (Decisions 107/117): only formats that can be safely stored and later
 // previewed inline, each with a well-known magic-byte signature so the real content type

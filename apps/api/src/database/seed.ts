@@ -1,6 +1,9 @@
 import { hash } from 'bcryptjs';
+import { config } from 'dotenv';
 import { createDatabase } from './client.js';
 import { divisions, sections, users } from './schema.js';
+
+config({ path: new URL('../../../../.env', import.meta.url) });
 
 const { db, pool } = createDatabase();
 try {
@@ -18,12 +21,18 @@ try {
   const [intakeSection] = await db
     .insert(sections)
     .values({ divisionId: recordsDivision.id, code: 'INTAKE', name: 'Intake' })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: [sections.divisionId, sections.name],
+      set: { code: 'INTAKE', active: true, updatedAt: new Date() },
+    })
     .returning();
   const [pilotSection] = await db
     .insert(sections)
     .values({ divisionId: pilotDivision.id, code: 'GENERAL', name: 'General Section' })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: [sections.divisionId, sections.name],
+      set: { code: 'GENERAL', active: true, updatedAt: new Date() },
+    })
     .returning();
   const passwordHash = await hash(process.env.SEED_ADMIN_PASSWORD ?? 'Admin@1234!', 12);
   await db
