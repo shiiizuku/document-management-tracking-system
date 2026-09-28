@@ -47,24 +47,31 @@ modules/<name>/
 
 ## Phase 0 — Foundations (Wk 1–3)
 
+> A phase receives a ⭐ only after every task, required test, and completion criterion is verified.
+
 **Goal:** a repo where a new machine runs the whole stack, CI is green, and schema/ops conventions exist before any feature.
 
 **Tasks (in order)**
-1. Init monorepo, TS configs, lint/format, commit hooks.
-2. `docker-compose.yml`: postgres, redis, minio, scanner, api, worker, web; health checks; named volumes.
-3. Env validation module (fail fast on missing/invalid config).
-4. Drizzle setup: migration runner, `id` (uuid) / `created_at` / `updated_at` / `version` base helpers.
-5. Core tables: `audit_event`, `outbox_event`.
-6. Common infra: correlation-ID middleware, structured logger, global exception filter (safe envelope), `/health` + `/ready`.
-7. CI: lint → typecheck → unit → integration (Postgres service) → build.
-8. Docs: ADRs (modular monolith, session transport, ID strategy), deployment decision record, policy register.
+- [ ] Init monorepo, TS configs, lint/format, commit hooks. *(Partial: commit hooks are missing.)*
+- [ ] `docker-compose.yml`: postgres, redis, minio, scanner, api, worker, web; health checks; named volumes. *(Partial: worker/web health checks and a persistent worker are missing.)*
+- [x] Env validation module (fail fast on missing/invalid config).
+- [ ] Drizzle setup: migration runner, `id` (uuid) / `created_at` / `updated_at` / `version` base helpers. *(Partial: reusable ID/version helpers and automatic `updated_at` behavior are missing.)*
+- [x] Core tables: `audit_event`, `outbox_event`.
+- [ ] Common infra: correlation-ID middleware, structured logger, global exception filter (safe envelope), `/health` + `/ready`. *(Partial: correlation middleware and structured logging are missing; readiness is shallow and exposed at `/health/ready`.)*
+- [ ] CI: lint → typecheck → unit → integration (Postgres service) → build. *(Partial: no PostgreSQL integration stage; current CI is failing.)*
+- [ ] Docs: ADRs (modular monolith, session transport, ID strategy), deployment decision record, policy register. *(Partial: required standalone decision records are missing.)*
 
 **Tests**
-- Health endpoint smoke; migration up on empty DB; env validation failure test.
+- [ ] Health endpoint smoke test.
+- [ ] Migration up on an empty database test.
+- [x] Environment validation failure test.
 
 **PR slices:** `chore/repo-scaffold` · `chore/compose-stack` · `feat/db-conventions` · `feat/observability-baseline` · `chore/ci-pipeline`
 
-**Done when:** clean machine → `docker compose up` → healthy stack; CI green; no infra blocker from IT.
+**Done when:**
+- [ ] Clean machine → `docker compose up` → healthy stack.
+- [ ] CI green.
+- [ ] No infrastructure blocker from IT.
 
 ---
 
