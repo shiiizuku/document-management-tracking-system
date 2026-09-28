@@ -4,9 +4,11 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
+import { StructuredLogger } from './common/structured-logger.js';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(new StructuredLogger({ service: 'dts-api' }));
   app.setGlobalPrefix('api/v1');
   app.use(cookieParser());
   app.use(helmet());

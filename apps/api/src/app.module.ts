@@ -1,9 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { APP_FILTER } from '@nestjs/core';
 import { fileURLToPath } from 'node:url';
 import { AuthGuard } from './common/auth.guard.js';
+import { CorrelationIdMiddleware } from './common/correlation-id.middleware.js';
 import { HttpErrorFilter } from './common/http-error.filter.js';
 import { AdminController } from './modules/admin/admin.controller.js';
 import { DtsApplicationService } from './modules/application/dts-application.service.js';
@@ -55,4 +56,8 @@ import { UsersRepository } from './modules/users/users.repository.js';
     { provide: APP_FILTER, useClass: HttpErrorFilter },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}

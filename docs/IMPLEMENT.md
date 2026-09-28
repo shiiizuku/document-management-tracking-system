@@ -52,26 +52,28 @@ modules/<name>/
 **Goal:** a repo where a new machine runs the whole stack, CI is green, and schema/ops conventions exist before any feature.
 
 **Tasks (in order)**
-- [ ] Init monorepo, TS configs, lint/format, commit hooks. *(Partial: commit hooks are missing.)*
-- [ ] `docker-compose.yml`: postgres, redis, minio, scanner, api, worker, web; health checks; named volumes. *(Partial: worker/web health checks and a persistent worker are missing.)*
+- [x] Init monorepo, TS configs, lint/format, commit hooks.
+- [x] `docker-compose.yml`: postgres, redis, minio, scanner, api, worker, web; health checks; named volumes.
 - [x] Env validation module (fail fast on missing/invalid config).
-- [ ] Drizzle setup: migration runner, `id` (uuid) / `created_at` / `updated_at` / `version` base helpers. *(Partial: reusable ID/version helpers and automatic `updated_at` behavior are missing.)*
+- [x] Drizzle setup: migration runner, `id` (uuid) / `created_at` / `updated_at` / `version` base helpers.
 - [x] Core tables: `audit_event`, `outbox_event`.
-- [ ] Common infra: correlation-ID middleware, structured logger, global exception filter (safe envelope), `/health` + `/ready`. *(Partial: correlation middleware and structured logging are missing; readiness is shallow and exposed at `/health/ready`.)*
-- [ ] CI: lint → typecheck → unit → integration (Postgres service) → build. *(Partial: no PostgreSQL integration stage; current CI is failing.)*
-- [ ] Docs: ADRs (modular monolith, session transport, ID strategy), deployment decision record, policy register. *(Partial: required standalone decision records are missing.)*
+- [x] Common infra: correlation-ID middleware, structured logger, global exception filter (safe envelope), `/health` + `/ready`.
+- [x] CI: lint → typecheck → unit → integration (Postgres service) → build.
+- [x] Docs: ADRs (modular monolith, session transport, ID strategy), deployment decision record, policy register.
 
 **Tests**
-- [ ] Health endpoint smoke test.
-- [ ] Migration up on an empty database test.
+
+- [x] Health endpoint smoke test.
+- [x] Migration up on an empty database test.
 - [x] Environment validation failure test.
 
 **PR slices:** `chore/repo-scaffold` · `chore/compose-stack` · `feat/db-conventions` · `feat/observability-baseline` · `chore/ci-pipeline`
 
 **Done when:**
-- [ ] Clean machine → `docker compose up` → healthy stack.
-- [ ] CI green.
-- [ ] No infrastructure blocker from IT.
+
+- [ ] Clean machine → `docker compose up` → healthy stack. *(Compose config validates and every service declares a health gate; an end-to-end cold boot on a clean machine has not been run.)*
+- [x] CI green.
+- [ ] No infrastructure blocker from IT. *(External sign-off; see P-13 in `policy-register.md`.)*
 
 ---
 

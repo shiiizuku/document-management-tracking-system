@@ -7,7 +7,7 @@ import {
   type ExceptionFilter,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { randomUUID } from 'node:crypto';
+import { CORRELATION_ID_HEADER, normalizeCorrelationId } from './correlation-id.middleware.js';
 
 @Catch()
 export class HttpErrorFilter implements ExceptionFilter {
@@ -17,7 +17,10 @@ export class HttpErrorFilter implements ExceptionFilter {
     const context = host.switchToHttp();
     const response = context.getResponse<Response>();
     const request = context.getRequest<Request>();
-    const correlationId = request.header('x-correlation-id') ?? randomUUID();
+    // The middleware already assigned (and sanitized) the ID; the fallback only matters
+    // for errors thrown before it ran, so the envelope always carries a traceable value.
+    const correlationId =
+      request.correlationId ?? normalizeCorrelationId(request.headers[CORRELATION_ID_HEADER]);
     const status =
       exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const payload = exception instanceof HttpException ? exception.getResponse() : null;
@@ -41,6 +44,7 @@ export class HttpErrorFilter implements ExceptionFilter {
               : exception instanceof Error
                 ? exception.message
                 : 'Request failed';
+    response.setHeader(CORRELATION_ID_HEADER, correlationId);
     response.status(status).json({
       error: {
         code:

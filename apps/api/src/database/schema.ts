@@ -13,6 +13,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+import { identityColumns, timestampColumns, versionColumn } from './schema-helpers.js';
 
 export const roleEnum = pgEnum('role', [
   'ADMINISTRATOR',
@@ -48,36 +49,31 @@ export const releaseMethodEnum = pgEnum('release_method', [
 ]);
 export const auditOutcomeEnum = pgEnum('audit_outcome', ['SUCCESS', 'FAILURE']);
 
-const timestamps = {
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-};
-
 export const divisions = pgTable('divisions', {
-  id: uuid('id').primaryKey().defaultRandom(),
+  ...identityColumns(),
   code: varchar('code', { length: 20 }).notNull().unique(),
   name: varchar('name', { length: 160 }).notNull().unique(),
   active: boolean('active').notNull().default(true),
-  ...timestamps,
+  ...timestampColumns(),
 });
 
 export const sections = pgTable(
   'sections',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    ...identityColumns(),
     divisionId: uuid('division_id')
       .notNull()
       .references(() => divisions.id),
     code: varchar('code', { length: 20 }).notNull(),
     name: varchar('name', { length: 160 }).notNull(),
     active: boolean('active').notNull().default(true),
-    ...timestamps,
+    ...timestampColumns(),
   },
   (table) => [uniqueIndex('sections_division_name_uq').on(table.divisionId, table.name)],
 );
 
 export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
+  ...identityColumns(),
   email: varchar('email', { length: 320 }).notNull().unique(),
   displayName: varchar('display_name', { length: 200 }).notNull(),
   passwordHash: varchar('password_hash', { length: 100 }).notNull(),
@@ -88,11 +84,11 @@ export const users = pgTable('users', {
   active: boolean('active').notNull().default(true),
   profilePhotoObjectKey: text('profile_photo_object_key'),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
-  ...timestamps,
+  ...timestampColumns(),
 });
 
 export const accountRequests = pgTable('account_requests', {
-  id: uuid('id').primaryKey().defaultRandom(),
+  ...identityColumns(),
   email: varchar('email', { length: 320 }).notNull(),
   displayName: varchar('display_name', { length: 200 }).notNull(),
   passwordHash: varchar('password_hash', { length: 100 }).notNull(),
@@ -100,7 +96,7 @@ export const accountRequests = pgTable('account_requests', {
   reviewedById: uuid('reviewed_by_id').references(() => users.id),
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   rejectionReason: text('rejection_reason'),
-  ...timestamps,
+  ...timestampColumns(),
 });
 
 export const referenceCounters = pgTable(
@@ -118,7 +114,7 @@ export const referenceCounters = pgTable(
 export const documents = pgTable(
   'documents',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    ...identityColumns(),
     trackingNumber: varchar('tracking_number', { length: 40 }).notNull().unique(),
     referenceNumber: varchar('reference_number', { length: 120 }),
     title: varchar('title', { length: 240 }).notNull(),
@@ -138,12 +134,12 @@ export const documents = pgTable(
       .references(() => users.id),
     confidential: boolean('confidential').notNull().default(false),
     dueAt: timestamp('due_at', { withTimezone: true }),
-    version: integer('version').notNull().default(1),
+    version: versionColumn(),
     currentFileVersionId: uuid('current_file_version_id'),
     signedFileVersionId: uuid('signed_file_version_id'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletionReason: text('deletion_reason'),
-    ...timestamps,
+    ...timestampColumns(),
   },
   (table) => [
     uniqueIndex('documents_reference_number_uq')
@@ -155,7 +151,7 @@ export const documents = pgTable(
 );
 
 export const documentMetadataRevisions = pgTable('document_metadata_revisions', {
-  id: uuid('id').primaryKey().defaultRandom(),
+  ...identityColumns(),
   documentId: uuid('document_id')
     .notNull()
     .references(() => documents.id),
@@ -170,7 +166,7 @@ export const documentMetadataRevisions = pgTable('document_metadata_revisions', 
 export const documentAssignments = pgTable(
   'document_assignments',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    ...identityColumns(),
     documentId: uuid('document_id')
       .notNull()
       .references(() => documents.id),
@@ -181,7 +177,7 @@ export const documentAssignments = pgTable(
     assignedById: uuid('assigned_by_id')
       .notNull()
       .references(() => users.id),
-    ...timestamps,
+    ...timestampColumns(),
   },
   (table) => [index('assignments_user_active_idx').on(table.userId, table.active)],
 );
@@ -204,7 +200,7 @@ export const documentShares = pgTable(
 );
 
 export const documentRoutes = pgTable('document_routes', {
-  id: uuid('id').primaryKey().defaultRandom(),
+  ...identityColumns(),
   documentId: uuid('document_id')
     .notNull()
     .references(() => documents.id),
@@ -224,7 +220,7 @@ export const documentRoutes = pgTable('document_routes', {
 export const workflowEvents = pgTable(
   'workflow_events',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    ...identityColumns(),
     documentId: uuid('document_id')
       .notNull()
       .references(() => documents.id),
@@ -244,7 +240,7 @@ export const workflowEvents = pgTable(
 );
 
 export const fileRecords = pgTable('file_records', {
-  id: uuid('id').primaryKey().defaultRandom(),
+  ...identityColumns(),
   documentId: uuid('document_id')
     .notNull()
     .references(() => documents.id),
@@ -258,7 +254,7 @@ export const fileRecords = pgTable('file_records', {
 export const fileVersions = pgTable(
   'file_versions',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    ...identityColumns(),
     fileRecordId: uuid('file_record_id')
       .notNull()
       .references(() => fileRecords.id),
@@ -281,7 +277,7 @@ export const fileVersions = pgTable(
 );
 
 export const signatureEvents = pgTable('signature_events', {
-  id: uuid('id').primaryKey().defaultRandom(),
+  ...identityColumns(),
   documentId: uuid('document_id')
     .notNull()
     .references(() => documents.id),
@@ -295,7 +291,7 @@ export const signatureEvents = pgTable('signature_events', {
 });
 
 export const releaseEvents = pgTable('release_events', {
-  id: uuid('id').primaryKey().defaultRandom(),
+  ...identityColumns(),
   documentId: uuid('document_id')
     .notNull()
     .unique()
@@ -310,7 +306,7 @@ export const releaseEvents = pgTable('release_events', {
 export const notifications = pgTable(
   'notifications',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    ...identityColumns(),
     recipientUserId: uuid('recipient_user_id')
       .notNull()
       .references(() => users.id),
@@ -334,7 +330,7 @@ export const notifications = pgTable(
 export const auditEvents = pgTable(
   'audit_events',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    ...identityColumns(),
     actorId: uuid('actor_id').references(() => users.id),
     action: varchar('action', { length: 100 }).notNull(),
     targetType: varchar('target_type', { length: 80 }).notNull(),
@@ -353,7 +349,7 @@ export const auditEvents = pgTable(
 export const outboxEvents = pgTable(
   'outbox_events',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    ...identityColumns(),
     aggregateType: varchar('aggregate_type', { length: 80 }).notNull(),
     aggregateId: uuid('aggregate_id').notNull(),
     eventType: varchar('event_type', { length: 100 }).notNull(),

@@ -3,13 +3,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: dts
-      POSTGRES_USER: dts
-      POSTGRES_PASSWORD: dts
-    ports: ['5432:5432']
+      POSTGRES_DB: ${POSTGRES_DB:-dts}
+      POSTGRES_USER: ${POSTGRES_USER:-dts}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dts}
+    ports: ['${POSTGRES_HOST_PORT:-5432}:5432']
     volumes: ['postgres_data:/var/lib/postgresql/data']
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U dts -d dts']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-dts} -d ${POSTGRES_DB:-dts}']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -17,7 +17,7 @@ services:
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
-    ports: ['6379:6379']
+    ports: ['${REDIS_HOST_PORT:-6379}:6379']
     volumes: ['redis_data:/data']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
@@ -29,9 +29,9 @@ services:
     image: quay.io/minio/aistor/minio:latest
     command: server /data --console-address :9001
     environment:
-      MINIO_ROOT_USER: dts-local
-      MINIO_ROOT_PASSWORD: dts-local1
-    ports: ['9000:9000', '9001:9001']
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-dts-local}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-dts-local1}
+    ports: ['${MINIO_HOST_PORT:-9000}:9000', '${MINIO_CONSOLE_HOST_PORT:-9001}:9001']
     volumes: ['minio_data:/data']
     healthcheck:
       test: ['CMD-SHELL', 'curl -fsS http://localhost:9000/minio/health/live || exit 1']
@@ -41,7 +41,7 @@ services:
 
   clamav:
     image: clamav/clamav:stable
-    ports: ['3310:3310']
+    ports: ['${CLAMAV_HOST_PORT:-3310}:3310']
     volumes: ['clamav_data:/var/lib/clamav']
     healthcheck:
       test: ['CMD', '/usr/local/bin/clamdcheck.sh']
@@ -56,7 +56,7 @@ services:
       dockerfile: apps/api/Dockerfile
     command: npm run db:migrate -w @dts/api
     environment:
-      DATABASE_URL: postgresql://dts:dts@postgres:5432/dts
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
     depends_on:
       postgres: { condition: service_healthy }
     restart: 'no'
@@ -68,17 +68,18 @@ services:
     environment:
       NODE_ENV: development
       PORT: 4000
-      WEB_ORIGIN: http://localhost:3000
-      DATABASE_URL: postgresql://dts:dts@postgres:5432/dts
+      WEB_ORIGIN: http://localhost:${WEB_HOST_PORT:-3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: dts-local
-      MINIO_SECRET_KEY: dts-local1
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-dts-local}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-dts-local1}
       MINIO_BUCKET: dts-files
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
-      SESSION_SECRET: local-development-session-secret-change-before-pilot
-    ports: ['4000:4000']
+      SESSION_SECRET: ${SESSION_SECRET:-local-development-session-secret-change-before-pilot}
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-26214400}
+    ports: ['${API_HOST_PORT:-4000}:4000']
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -86,10 +87,11 @@ services:
       clamav: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:4000/api/v1/health']
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:4000/api/v1/health/ready']
       interval: 10s
       timeout: 5s
       retries: 12
+      start_period: 20s
 
   worker:
     build:
@@ -98,28 +100,43 @@ services:
     command: node apps/api/dist/worker.js
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://dts:dts@postgres:5432/dts
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: dts-local
-      MINIO_SECRET_KEY: dts-local1
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-dts-local}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-dts-local1}
       MINIO_BUCKET: dts-files
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
+      SESSION_SECRET: ${SESSION_SECRET:-local-development-session-secret-change-before-pilot}
+      WORKER_HEALTH_PORT: 4001
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-26214400}
     depends_on:
       api: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:4001/ready']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+        NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4000}/api/v1
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
-    ports: ['3000:3000']
+      NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4000}/api/v1
+    ports: ['${WEB_HOST_PORT:-3000}:3000']
     depends_on:
       api: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
 volumes:
   postgres_data:
