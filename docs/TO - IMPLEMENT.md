@@ -13,7 +13,7 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 | 0 — Foundations                    | ✅ done            | n/a           | Cold-boot + IT sign-off are external gates (see `policy-register.md`) |
 | 1 — Identity & Organization        | ✅ done            | ⏳ deferred   | Merged in PR #39; frontend intentionally deferred                      |
 | 2 — Document registry              | ✅ done            | ⏳ deferred   | This branch; aggregate is Postgres-backed, `DtsApplicationService` retired |
-| 3 — Workflow & routing             | ◑ partial          | ⏳ deferred   | Transitions + assignment persisted in Phase 2; routing/sharing pending |
+| 3 — Workflow & routing             | ◑ mostly done      | ⏳ deferred   | Transitions, assignment, routing/forwarding, sharing, work queue all persisted; parallel-route completion semantics + `signature_events` (needs Phase 4 `file_versions`) deferred |
 | 4 — Files & scanning               | ⬜ not started     | ⬜ not started | Bytes still in an in-memory `AttachmentStore`; no MinIO/ClamAV yet     |
 | 5 — Outbox, notifications, dashboard | ◑ partial        | ⬜ not started | `OutboxWriter` writes in-transaction; no relay/worker; notifs in memory |
 | 6 — Reports, routing slip, audit UI | ◑ partial         | ⬜ not started | Report/audit/slip read Postgres; own report tables + UI pending        |
@@ -184,6 +184,16 @@ PATCH /documents/{id}/metadata      (If-Match / version)
 
 **Goal:** full predefined workflow enforced by the server, with assignments and multi-division routing.
 
+> **Status (2026-09-29): backend mostly done.** The workflow FSM (transition table + guards),
+> `allowed-actions`, and the persisted transitions/assignment landed with Phase 2 (brought forward
+> for coherence). This branch adds **routing/forwarding** (`POST /documents/:id/routes` — moves the
+> document's owning division/section and records the hop in `document_routes`, under optimistic
+> concurrency), **sharing** (`POST /documents/:id/shares` — grants one user read access via
+> `document_shares`), and the **work queue** (`GET /documents/assigned`). Deferred: **parallel routes +
+> completion semantics** (an open policy question — "per agreement" below), and **`signature_events`**
+> rows, which FK to `file_versions` and therefore wait for Phase 4 (SIGN already records the signed
+> version on the document row via `signedFileVersionId`). Frontend deferred.
+
 **Schema**
 - `document_assignment`, `document_route`, `document_share`, `signature_event`, `release_event (method)`, remarks (on `workflow_event`).
 
@@ -196,13 +206,13 @@ POST /documents/{id}/routes               # + assignment/share endpoints
 ```
 
 **Backend tasks**
-1. **Transition table as data:** `{ from, action, to, allowedRoles, guards[] }`. One `WorkflowService.apply()` is the only writer of `workflow_status`.
-2. Guards as small pure functions (`requiresRemark`, `requiresCleanAttachment`, `requiresSignature`, `actorInScope`).
-3. `allowed-actions` = filter the table by actor + state + assignment.
-4. Assignment + section routing (downward), pending acceptance, work queue queries.
-5. Parallel routes: routes/shares reference the **same** document row; completion semantics per agreement; block duplicate routes.
-6. Signature (internal record), release (record method: mailed/emailed/picked up/delivered), archive/restore.
-7. Return-for-revision requires remark (validated).
+1. [x] **Transition table as data:** `{ from, action, to }` in `WorkflowService`; it is the only decider, and `DocumentsService.executeAction` the only writer of `workflow_status`.
+2. [~] Guards live inside `WorkflowService.execute` (remark-required, clean+signed-attachment, release-method); extracting them into individually named pure functions is a tidy-up, not yet done.
+3. [x] `allowed-actions` = filter the table by actor capability + state (VIEWER excluded).
+4. [x] Assignment + section routing (`POST /documents/:id/routes`, downward move) + work-queue query (`GET /documents/assigned`).
+5. [~] Routing records `document_routes` and blocks the no-op self-route; **parallel routes + completion semantics deferred** (open policy — see "per agreement").
+6. [~] Release records method in `release_events`; archive/restore work; **`signature_events` deferred to Phase 4** (FKs `file_versions`), SIGN records `signedFileVersionId` on the row.
+7. [x] Return-for-revision requires a remark (validated in `WorkflowService`).
 
 **Frontend tasks**
 - Action bar driven by `allowed-actions` (never hard-code button logic), remark dialogs, assign/route pickers, work-queue views, timeline with per-route visibility.

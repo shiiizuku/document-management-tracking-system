@@ -48,7 +48,7 @@ runtime**.
 | workflow              | **DONE** (pure FSM, tested)              | Persist transitions to `workflow_events`; transactional version bump |
 | authorization         | **DONE** (pure RBAC/scope, tested)       | Enforce over _persisted_ users/divisions/sections                   |
 | auth / session        | STUBBED (in-memory users)                | Users from Postgres; keep JWT + bcrypt                              |
-| documents / search    | **Postgres-backed** (Phase 2)            | Remaining: routing/sharing, soft-delete + list exclusion, `EXPLAIN` indexes |
+| documents / search    | **Postgres-backed** (Phase 2–3)          | Routing/sharing/work-queue done; remaining: soft-delete endpoint, `signature_events` (Phase 4), `EXPLAIN` indexes |
 | files / versions      | STUBBED (in-memory `AttachmentStore`)    | Real object storage (MinIO) + ClamAV scan pipeline; files UI        |
 | notifications         | STUBBED (Map)                            | Persist + outbox/BullMQ + realtime fan-out; inbox UI                |
 | reports / print       | STUBBED data / **real** XLSX+PDF bytes   | Report + audit data from Postgres; reports & audit UI               |
@@ -191,8 +191,10 @@ storage and fills the document-management UI gaps.
       durable and all-or-nothing.
 - [x] (2h) Metadata edit: `PATCH /documents/:id/metadata` recording before/after in
       `document_metadata_revisions`, under optimistic concurrency. _Done-when:_ edits are captured as history.
-- [~] (2h) Persist assignments (`document_assignments`) — **done**; routing/sharing
-      (`document_routes`, `document_shares`) and the forward/route endpoint remain (Phase 3).
+- [x] (2h) Persist assignments (`document_assignments`), routing/forwarding (`document_routes`,
+      `POST /documents/:id/routes`) and sharing (`document_shares`, `POST /documents/:id/shares`),
+      plus the work queue (`GET /documents/assigned`). _(Phase 3; parallel-route completion
+      semantics deferred as an open policy.)_
 - [ ] (2h) Logical deletion (soft-delete) endpoint + list exclusion, capability-gated. _(the
       `deleted_at` column + `isNull` list/read guards are in place; the endpoint itself is pending.)_
 - [x] (2h) Move `DocumentSearchService` filtering/sort/pagination to SQL (`DocumentsRepository.search`
