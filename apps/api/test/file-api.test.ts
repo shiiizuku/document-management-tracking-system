@@ -7,9 +7,15 @@ import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { AuditWriter } from '../src/modules/audit/audit.writer.js';
+import { OutboxWriter } from '../src/modules/audit/outbox.writer.js';
+import { DATABASE } from '../src/database/database.constants.js';
+import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 import { InMemoryAuditWriter } from './in-memory-audit.writer.js';
+import { InMemoryDocumentsRepository } from './in-memory-documents.repository.js';
+import { InMemoryOutboxWriter } from './in-memory-outbox.writer.js';
 import { InMemoryUsersRepository } from './in-memory-users.repository.js';
+import { fakeTransactionalDatabase } from './test-database.js';
 
 const sessionCookie = (response: {
   headers: Record<string, string | string[] | undefined>;
@@ -39,6 +45,12 @@ describe('REST /api/v1 document attachments', () => {
       .useClass(InMemoryUsersRepository)
       .overrideProvider(AuditWriter)
       .useClass(InMemoryAuditWriter)
+      .overrideProvider(DocumentsRepository)
+      .useClass(InMemoryDocumentsRepository)
+      .overrideProvider(OutboxWriter)
+      .useClass(InMemoryOutboxWriter)
+      .overrideProvider(DATABASE)
+      .useValue(fakeTransactionalDatabase)
       .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
@@ -213,6 +225,19 @@ describe('REST /api/v1 document attachments', () => {
       releaseMethod: 'MAILED',
     }).expect(422);
     expect(blocked.body.error.code).toBe('RELEASE_BLOCKED');
+  });
+
+  it('rejects an empty upload', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const document = await createOutgoing(cookie);
+    const rejected = await uploadFile(
+      cookie,
+      document.id,
+      Buffer.alloc(0),
+      'empty.pdf',
+      'application/pdf',
+    ).expect(400);
+    expect(rejected.body.error.code).toBe('EMPTY_FILE');
   });
 
   it('rejects a file whose real bytes do not match an allowed media type', async () => {

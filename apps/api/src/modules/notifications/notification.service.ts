@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Injectable } from '@nestjs/common';
 
 export type NotificationType =
   'DOCUMENT_ASSIGNED' | 'SIGNATURE_REQUIRED' | 'REVISION_REQUIRED' | 'DOCUMENT_RELEASED';
@@ -21,6 +22,12 @@ export type CreateNotificationInput = Omit<
   'id' | 'cursor' | 'createdAt' | 'readAt'
 >;
 
+/**
+ * In-memory notification store (Phase 5 replaces it with persisted rows + realtime fan-out).
+ * A DI singleton so notifications created during a document assignment are visible to the
+ * recipient's inbox reads within the running app.
+ */
+@Injectable()
 export class NotificationService {
   readonly #notifications = new Map<string, NotificationRecord>();
   readonly #idByIdempotencyKey = new Map<string, string>();

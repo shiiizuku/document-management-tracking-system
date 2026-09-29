@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { strToU8, zipSync } from 'fflate';
 import PDFDocument from 'pdfkit';
 import { sanitizeSpreadsheetCell, type MonthlyReport } from './monthly-report.service.js';
-import type { DocumentRecord, TimelineRecord } from '../application/dts-application.service.js';
+import type { PublicDocument, TimelineEntry } from '../documents/documents.service.js';
 
 const escapeXml = (value: string): string =>
   value
@@ -133,7 +133,7 @@ export class ReportExportService {
     });
   }
 
-  routingSlip(document: DocumentRecord, timeline: TimelineRecord[]): Promise<Buffer> {
+  routingSlip(document: PublicDocument, timeline: TimelineEntry[]): Promise<Buffer> {
     return collectPdf((pdf) => {
       pdf.fillColor('#175c43').fontSize(11).text('DOCUMENT TRACKING SYSTEM');
       pdf.fillColor('#17231e').fontSize(25).text('Routing Slip');
