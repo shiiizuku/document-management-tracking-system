@@ -26,7 +26,15 @@ services:
       retries: 20
 
   minio:
-    image: quay.io/minio/aistor/minio:latest
+    # Free AGPLv3 MinIO compiled from source (./minio, RELEASE.2025-10-15T17-29-55Z).
+    # The published quay.io/minio/aistor image is license-gated and denies all S3
+    # operations offline; the community minio/minio image no longer exists. This
+    # builds the server from the vendored AGPL source, so `docker compose up --build`
+    # produces it automatically — no external MinIO image is pulled.
+    build:
+      context: ./minio
+      dockerfile: Dockerfile.fromsource
+    image: dts-minio:from-source
     command: server /data --console-address :9001
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-dts-local}
