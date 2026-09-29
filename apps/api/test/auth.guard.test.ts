@@ -6,7 +6,10 @@ import { AuthGuard } from '../src/common/auth.guard.js';
 import { SESSION_COOKIE, SessionService } from '../src/modules/auth/session.service.js';
 import type { AuthService } from '../src/modules/auth/auth.service.js';
 
-const jwt = new JwtService({ secret: 'guard-test-secret-that-is-long-enough', signOptions: { expiresIn: 1800 } });
+const jwt = new JwtService({
+  secret: 'guard-test-secret-that-is-long-enough',
+  signOptions: { expiresIn: 1800 },
+});
 
 const config = {
   getOrThrow: (key: string) =>
@@ -17,7 +20,11 @@ const sessions = new SessionService(jwt, config);
 
 // A structurally valid session token, so the guard reaches the user lookup rather than
 // failing at signature verification.
-const validToken = jwt.sign({ sub: 'user-id', csrf: 'csrf-token', sst: Math.floor(Date.now() / 1000) });
+const validToken = jwt.sign({
+  sub: 'user-id',
+  csrf: 'csrf-token',
+  sst: Math.floor(Date.now() / 1000),
+});
 
 const contextWithToken = (token: string): ExecutionContext =>
   ({

@@ -1,19 +1,16 @@
 import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
-import type { AuthorizationActor, Role } from '../src/modules/authorization/authorization.policy.js';
+import type {
+  AuthorizationActor,
+  Role,
+} from '../src/modules/authorization/authorization.policy.js';
 import { AuthorizationService } from '../src/modules/authorization/authorization.service.js';
 import type { UserResource } from '../src/modules/authorization/identity.policies.js';
 import { capabilitiesByRole } from '../src/modules/authorization/role-capabilities.js';
 
 const service = new AuthorizationService();
 
-const ROLES: Role[] = [
-  'ADMINISTRATOR',
-  'RECORDS_STAFF',
-  'DIVISION_HEAD',
-  'STAFF_MEMBER',
-  'VIEWER',
-];
+const ROLES: Role[] = ['ADMINISTRATOR', 'RECORDS_STAFF', 'DIVISION_HEAD', 'STAFF_MEMBER', 'VIEWER'];
 
 const actor = (role: Role, overrides: Partial<AuthorizationActor> = {}): AuthorizationActor => ({
   id: 'actor-1',

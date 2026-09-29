@@ -85,7 +85,9 @@ describe('OrganizationService.resolvePlacement (membership rules)', () => {
         divisionId: 'division-a',
         sectionId: 'section-a1',
       }),
-    ).rejects.toThrow(new BadRequestException('The requested section belongs to a different division'));
+    ).rejects.toThrow(
+      new BadRequestException('The requested section belongs to a different division'),
+    );
   });
 
   it('rejects placement into an inactive division', async () => {
@@ -115,9 +117,9 @@ describe('OrganizationService.resolvePlacement (membership rules)', () => {
 describe('OrganizationService authorization', () => {
   it('forbids a non-administrator from creating a division', async () => {
     const { service } = serviceWith({ insertDivision: vi.fn() });
-    await expect(service.createDivision(actor('DIVISION_HEAD'), { code: 'X', name: 'X' })).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(
+      service.createDivision(actor('DIVISION_HEAD'), { code: 'X', name: 'X' }),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('shows retired divisions only to an administrator who can manage them', async () => {

@@ -42,10 +42,7 @@ export const documentScopeFor = (actor: AuthorizationActor): SQL => {
       reachable.push(eq(documents.divisionId, actor.divisionId));
     } else if (actor.sectionId !== null) {
       reachable.push(
-        and(
-          eq(documents.divisionId, actor.divisionId),
-          eq(documents.sectionId, actor.sectionId),
-        )!,
+        and(eq(documents.divisionId, actor.divisionId), eq(documents.sectionId, actor.sectionId))!,
       );
     }
   }
