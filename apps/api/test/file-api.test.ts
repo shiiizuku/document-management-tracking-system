@@ -10,9 +10,11 @@ import { AuditWriter } from '../src/modules/audit/audit.writer.js';
 import { OutboxWriter } from '../src/modules/audit/outbox.writer.js';
 import { DATABASE } from '../src/database/database.constants.js';
 import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
+import { FileVersionsRepository } from '../src/modules/files/file-versions.repository.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 import { InMemoryAuditWriter } from './in-memory-audit.writer.js';
 import { InMemoryDocumentsRepository } from './in-memory-documents.repository.js';
+import { InMemoryFileVersionsRepository } from './in-memory-file-versions.repository.js';
 import { InMemoryOutboxWriter } from './in-memory-outbox.writer.js';
 import { InMemoryUsersRepository } from './in-memory-users.repository.js';
 import { fakeTransactionalDatabase } from './test-database.js';
@@ -47,6 +49,8 @@ describe('REST /api/v1 document attachments', () => {
       .useClass(InMemoryAuditWriter)
       .overrideProvider(DocumentsRepository)
       .useClass(InMemoryDocumentsRepository)
+      .overrideProvider(FileVersionsRepository)
+      .useClass(InMemoryFileVersionsRepository)
       .overrideProvider(OutboxWriter)
       .useClass(InMemoryOutboxWriter)
       .overrideProvider(DATABASE)

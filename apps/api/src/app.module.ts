@@ -16,9 +16,10 @@ import { AuthorizationService } from './modules/authorization/authorization.serv
 import { DocumentsController } from './modules/documents/documents.controller.js';
 import { DocumentsRepository } from './modules/documents/documents.repository.js';
 import { DocumentsService } from './modules/documents/documents.service.js';
-import { AttachmentStore } from './modules/files/attachment-store.js';
 import { AttachmentsService } from './modules/files/attachments.service.js';
+import { FileVersionsRepository } from './modules/files/file-versions.repository.js';
 import { FilesController } from './modules/files/files.controller.js';
+import { InMemoryStorageAdapter, StoragePort } from './modules/files/storage.port.js';
 import { HealthController } from './modules/health/health.controller.js';
 import { AccountRequestsController } from './modules/identity/account-requests.controller.js';
 import { AccountRequestsRepository } from './modules/identity/account-requests.repository.js';
@@ -79,8 +80,11 @@ import { UsersRepository } from './modules/users/users.repository.js';
   providers: [
     DocumentsRepository,
     DocumentsService,
-    AttachmentStore,
+    FileVersionsRepository,
     AttachmentsService,
+    // Attachment bytes live behind the storage port; the in-memory adapter is the current
+    // binding until the MinIO adapter lands (Phase 4 infra).
+    { provide: StoragePort, useClass: InMemoryStorageAdapter },
     NotificationService,
     UsersRepository,
     AccountRequestsRepository,

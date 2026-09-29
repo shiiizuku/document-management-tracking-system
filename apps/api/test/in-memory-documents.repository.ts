@@ -17,6 +17,7 @@ import type {
   NewDocument,
   NewWorkflowEvent,
   PlacementResult,
+  SignatureEventRow,
   WorkflowEventRow,
 } from '../src/modules/documents/documents.repository.js';
 import type { ReleaseMethod } from '../src/modules/workflow/workflow.service.js';
@@ -54,6 +55,7 @@ export class InMemoryDocumentsRepository {
   >();
   private readonly releaseMethods = new Map<string, ReleaseMethod>();
   private readonly routes = new Map<string, DocumentRouteRow[]>();
+  private readonly signatures = new Map<string, SignatureEventRow[]>();
   private trackingCounter = 0;
   private readonly referenceCounters = new Map<string, number>();
 
@@ -280,6 +282,21 @@ export class InMemoryDocumentsRepository {
 
   listRoutes(documentId: string): Promise<DocumentRouteRow[]> {
     return Promise.resolve([...(this.routes.get(documentId) ?? [])]);
+  }
+
+  insertSignatureEvent(signature: {
+    documentId: string;
+    fileVersionId: string;
+    signerId: string;
+  }): Promise<void> {
+    const list = this.signatures.get(signature.documentId) ?? [];
+    list.push({ id: randomUUID(), signedAt: now(), ...signature });
+    this.signatures.set(signature.documentId, list);
+    return Promise.resolve();
+  }
+
+  listSignatures(documentId: string): Promise<SignatureEventRow[]> {
+    return Promise.resolve([...(this.signatures.get(documentId) ?? [])]);
   }
 
   insertShare(share: { documentId: string; userId: string; sharedById: string }): Promise<void> {
