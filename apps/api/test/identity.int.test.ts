@@ -163,4 +163,46 @@ describe('identity & organization REST against a real database', () => {
     const actions = dataOf<{ action: string }[]>(events).map((row) => row.action);
     expect(actions).toContain('auth.login');
   }, 30_000);
+
+  it('filters the audit trail by user, action, date range, and paginates', async () => {
+    const admin = await login('admin@dts.local', ADMIN_PASSWORD);
+    const query = (params: string) =>
+      request(server())
+        .get(`/api/v1/audit-events${params}`)
+        .set('Cookie', admin.cookies)
+        .expect(200);
+
+    // action filter: every returned row matches the requested action.
+    const byAction = dataOf<{ action: string; actorId: string }[]>(
+      await query('?action=auth.login'),
+    );
+    expect(byAction.length).toBeGreaterThan(0);
+    expect(byAction.every((row) => row.action === 'auth.login')).toBe(true);
+
+    // user filter (alias for actorId): the login events belong to the admin actor.
+    const adminActorId = byAction[0]!.actorId;
+    const byUser = dataOf<{ actorId: string }[]>(await query(`?user=${adminActorId}`));
+    expect(byUser.length).toBeGreaterThan(0);
+    expect(byUser.every((row) => row.actorId === adminActorId)).toBe(true);
+
+    // date range: a window ending in the future includes recent rows; one starting in the
+    // future excludes them (from inclusive, to exclusive).
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    expect(dataOf<unknown[]>(await query(`?from=${past}&to=${future}`)).length).toBeGreaterThan(0);
+    expect(dataOf<unknown[]>(await query(`?from=${future}`))).toHaveLength(0);
+
+    // pagination: limit caps the page; offset skips into the ordered result.
+    const firstPage = dataOf<{ id: string }[]>(await query('?limit=1'));
+    expect(firstPage).toHaveLength(1);
+    const secondPage = dataOf<{ id: string }[]>(await query('?limit=1&offset=1'));
+    expect(secondPage).toHaveLength(1);
+    expect(secondPage[0]!.id).not.toBe(firstPage[0]!.id);
+
+    // a malformed date is rejected rather than silently ignored.
+    await request(server())
+      .get('/api/v1/audit-events?from=not-a-date')
+      .set('Cookie', admin.cookies)
+      .expect(400);
+  }, 30_000);
 });

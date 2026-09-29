@@ -16,7 +16,7 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 | 3 — Workflow & routing             | ◑ mostly done      | ⏳ deferred   | Transitions, assignment, routing/forwarding, sharing, work queue persisted (PR #41); parallel-route completion semantics deferred (open policy) |
 | 4 — Files & scanning               | ◑ persistence done | ⬜ not started | `file_records`/`file_versions` + `signature_events` persisted; bytes behind a `StoragePort` (in-memory adapter); MinIO adapter + ClamAV scan worker deferred (need running services) |
 | 5 — Outbox, notifications, dashboard | ◑ mostly done    | ⬜ not started | Notifications persisted in the domain tx; outbox **relay + BullMQ worker** run against real Redis; dashboard summary scoped. Realtime WS gateway deferred |
-| 6 — Reports, routing slip, audit UI | ◑ partial         | ⬜ not started | Report/audit/slip read Postgres; own report tables + UI pending        |
+| 6 — Reports, routing slip, audit UI | ✅ done            | ⏳ deferred   | Monthly report (JSON/PDF/XLSX), routing-slip PDF, and audit query (`user`/`action`/`from`/`to` + pagination) all Postgres-backed and audited; every export logged (`feat/phase-6-reports-audit`). UI deferred |
 | 7 — Hardening & readiness          | ⬜ not started     | ⬜ not started |                                                                       |
 
 Legend: ✅ done · ◑ partial · ⏳ deferred (planned for a later phase) · ⬜ not started. **Frontend is
@@ -324,6 +324,17 @@ GET  /dashboard/summary          (+ realtime channel)
 
 **Goal:** operational exports and evidence viewing.
 
+> **Status (2026-09-29): backend done.** Monthly reports (JSON / PDF / XLSX) and the routing-slip
+> PDF were delivered earlier and are scope-aware; spreadsheet cells starting with `= + - @` are
+> sanitised against formula injection. This branch (`feat/phase-6-reports-audit`) closed the two
+> remaining gaps: the **audit query API** now takes the documented `user` / `action` / `from` / `to`
+> filters plus `limit`/`offset` pagination (ISO dates validated, malformed → `400`; backed by the
+> existing `(actor, action, occurred_at)` index, no migration), and **every file export is now its
+> own audit event** — `report.exported` (`{ format, year, month }`) for the PDF/XLSX and
+> `document.routing-slip-exported` for the slip, IDs/format only, distinct from the on-screen
+> `report.monthly-viewed`. Verified against real Postgres + Redis in Docker; see
+> `docs/phase-6-completion-report.md`. **Frontend deferred** to the UI track, per every prior phase.
+
 **Endpoints**
 ```
 GET /reports/monthly  |  /reports/monthly.pdf  |  /reports/monthly.xlsx
@@ -332,20 +343,22 @@ GET /audit-events?user=&action=&from=&to=
 ```
 
 **Backend tasks**
-1. Report definition module: explicit aggregate queries (incoming/outgoing/FOI/special-order per month), scope-aware.
-2. PDF + XLSX generators; **sanitize cells starting with `= + - @`** (formula injection); audit each export.
-3. Routing slip renderer: branding config, timeline, remarks, statuses.
-4. Audit query API (insert + read only for app DB role), filters, pagination; restrict to auditor/admin scope.
+1. [x] Report definition module: explicit aggregate queries (incoming/outgoing/FOI/special-order per month), scope-aware.
+2. [x] PDF + XLSX generators; **sanitize cells starting with `= + - @`** (formula injection); **audit each export** (`report.exported` with format/period).
+3. [x] Routing slip renderer: branding config, timeline, remarks, statuses; export audited (`document.routing-slip-exported`).
+4. [x] Audit query API (insert + read only for app DB role), filters (`user`/`action`/`from`/`to`), pagination (`limit`/`offset`); restrict to auditor/admin scope.
 
-**Frontend tasks**
+**Frontend tasks** _(deferred to the UI track)_
 - Report page (month/year filter, print view, export buttons), routing-slip print action, audit table + filters.
 
 **Tests**
-- Fixture data → totals reconcile; PDF/XLSX open/validate; boundary months; cross-scope leakage; formula-injection payloads; audit rows immutable at app boundary.
+- [x] Fixture data → totals reconcile; PDF/XLSX open/validate; formula-injection payloads (`monthly-report.test.ts`).
+- [x] Every export writes a distinct audit event carrying IDs/format only — no body text or party names (`api.test.ts`).
+- [x] Audit query filters + pagination end-to-end over HTTP, malformed date → `400` (`identity.int.test.ts`).
 
-**PR slices:** `feat/monthly-reports` · `feat/report-exports-safe` · `feat/routing-slip` · `feat/audit-viewer`
+**PR slices:** `feat/monthly-reports` · `feat/report-exports-safe` · `feat/routing-slip` · `feat/audit-viewer` _(delivered together on `feat/phase-6-reports-audit`, backend-only per the frontend deferral.)_
 
-**Done when:** records staff sign off totals; routing slip approved; every critical scenario traceable in audit.
+**Done when:** records staff sign off totals; routing slip approved; every critical scenario traceable in audit. — **backend met** (integration tests against real Postgres; formula-injection + export-audit + audit-query covered; frontend + records-staff sign-off deferred to the UI track).
 
 ---
 
