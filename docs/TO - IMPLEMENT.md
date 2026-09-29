@@ -118,6 +118,18 @@ GET  /me                  POST /me/photo
 
 **Goal:** register, view, edit, list, and search documents end to end with scoped access.
 
+> **Status (2026-09-29): backend slices complete.** The document aggregate is now Postgres-backed
+> (`modules/documents/documents.repository.ts` + `documents.service.ts`), replacing the in-memory
+> `DtsApplicationService`, which has been retired. Create (with atomic tracking + outgoing-reference
+> allocation), list/search with authorization predicates in SQL, metadata edit with optimistic
+> concurrency + revision history, and — carried along to keep the running app coherent — workflow
+> transitions, assignment, and the attachment→document link are all durable. Attachment bytes/version
+> metadata stay in an in-memory `AttachmentStore` until Phase 4 (Files & scanning); notification and
+> report *reads* now come from Postgres, but their own persistence lands in Phases 5–6.
+> **Frontend is deferred to a later phase** (consistent with the Phase 1 frontend deferral), so this
+> was a backend + tests increment rather than a full vertical slice. Covered by
+> `test/documents.int.test.ts` against real Postgres in CI.
+
 **Schema**
 - `document (direction, title, type, description, priority, sender, company, external_ref, reference_number UNIQUE, workflow_status, owner_division_id, version, deleted_at)`
 - `document_metadata_revision`, `workflow_event`, `reference_counter (division_id, scope_key, next_value)`
@@ -129,23 +141,23 @@ PATCH /documents/{id}/metadata      (If-Match / version)
 ```
 
 **Backend tasks**
-1. Document create use case (incoming keeps external ref; outgoing allocates reference).
-2. **Reference allocation:** `SELECT … FOR UPDATE` (or atomic `UPDATE … RETURNING`) on `reference_counter` inside the create transaction.
-3. Metadata edit with optimistic version check → writes `document_metadata_revision` + audit.
-4. List query: keyset/limit pagination, deterministic sort, filters (status, priority, type, direction, division, section), search on title/reference/sender/company — **authorization predicates in the SQL**, never post-filtered in app memory.
-5. Add indexes only after `EXPLAIN` on seeded representative data (B-tree, trigram if measured).
+1. [x] Document create use case (incoming keeps external ref; outgoing allocates reference).
+2. [x] **Reference allocation:** atomic `INSERT … ON CONFLICT DO UPDATE … RETURNING` on `reference_counters` inside the create transaction (per division + year); tracking numbers from a separate office-wide `document_sequences` counter.
+3. [x] Metadata edit with optimistic version check → writes `document_metadata_revisions` + audit.
+4. [x] List query: limit/offset pagination, deterministic sort (sort key + `id` tiebreak), filters (status, priority, type, direction, division, section), search on title/tracking/reference/sender/company — **authorization predicates in the SQL** (`documentScopeFor`), never post-filtered in app memory.
+5. [ ] Add indexes only after `EXPLAIN` on seeded representative data (B-tree, trigram if measured). _(Deferred to the Phase 6/hardening EXPLAIN pass; the scope/sort indexes from Phase 0 already back these queries.)_
 
 **Frontend tasks**
 - Create form (incoming/outgoing variants), detail page + timeline, edit metadata with conflict UX, list with filters/sort/pagination/search.
 
 **Tests**
-- Concurrency: N parallel outgoing creates → N unique references.
-- Conflict: two edits → second gets 409.
-- Search/filter authorization; empty/malformed/boundary inputs; pagination stability.
+- [x] Concurrency: N parallel outgoing creates → N unique references. _(`documents.int.test.ts`, 12 parallel.)_
+- [x] Conflict: two edits → second gets 409. _(Also a stale workflow action → 409.)_
+- [x] Search/filter authorization; pagination stability. _(Cross-scope doc excluded from a staff member's totals; the pure `document-search` unit suite covers boundary inputs and sort/pagination.)_
 
-**PR slices:** `feat/document-create` · `feat/reference-allocation` · `feat/metadata-edit-history` · `feat/document-list-search`
+**PR slices:** `feat/document-create` · `feat/reference-allocation` · `feat/metadata-edit-history` · `feat/document-list-search` _(delivered together on `feat/phase-2-document-registry`, backend-only per the frontend deferral.)_
 
-**Done when:** records staff can register + retrieve; no duplicate refs; counts and results respect scope.
+**Done when:** records staff can register + retrieve; no duplicate refs; counts and results respect scope. — **met** (backend + integration tests; frontend deferred).
 
 ---
 
