@@ -1,7 +1,9 @@
+import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   PayloadTooLargeException,
@@ -9,11 +11,18 @@ import {
 } from '@nestjs/common';
 import { fileTypeFromBuffer } from 'file-type';
 import type { RequestUser } from '../../common/request-user.js';
+import type { Database } from '../../database/client.js';
+import { DATABASE } from '../../database/database.constants.js';
 import { AuditWriter } from '../audit/audit.writer.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import type { DocumentRow } from '../documents/documents.repository.js';
-import { AttachmentStore } from './attachment-store.js';
-import type { FileScanStatus, FileVersion } from './file-version.service.js';
+import {
+  FileVersionsRepository,
+  objectKeyFor,
+  type FileScanStatus,
+  type FileVersionRow,
+} from './file-versions.repository.js';
+import { StoragePort } from './storage.port.js';
 
 // Upload policy (decisions 107/117): only formats that can be stored safely and previewed
 // inline, each with a well-known magic-byte signature so the true content type is verified
@@ -44,16 +53,18 @@ export interface PublicAttachmentVersion {
 }
 
 /**
- * Attachment use cases. The document row (which version is current/signed, whether the record
- * is frozen) lives in Postgres and is owned by {@link DocumentsService}; the version metadata
- * and bytes still live in the in-memory {@link AttachmentStore} until Phase 4 swaps it for
- * MinIO + a scan worker. This service is the seam between the two.
+ * Attachment use cases. As of Phase 4 the version metadata is persistent
+ * ({@link FileVersionsRepository}) and the bytes live behind the {@link StoragePort}; the
+ * document row (which version is current/signed, whether the record is frozen) is owned by
+ * {@link DocumentsService}. This service is the seam that keeps the three consistent.
  */
 @Injectable()
 export class AttachmentsService {
   constructor(
+    @Inject(DATABASE) private readonly database: Database,
     private readonly documents: DocumentsService,
-    private readonly store: AttachmentStore,
+    private readonly versions: FileVersionsRepository,
+    private readonly storage: StoragePort,
     private readonly audit: AuditWriter,
   ) {}
 
@@ -81,21 +92,47 @@ export class AttachmentsService {
         message: 'Attachment type is not one of the supported formats',
       });
 
-    const version = this.store.createVersion(
-      documentId,
-      {
-        bytes: file.buffer,
-        originalName: file.originalName,
-        mediaType: detected.mime,
-        uploaderId: actor.id,
-      },
-      attachmentId,
-    );
+    // A provided attachmentId adds a version to an existing attachment of THIS document; a
+    // cross-document id is rejected. Otherwise a fresh attachment (file record) is started.
+    if (attachmentId !== undefined) {
+      const record = await this.versions.findRecordForDocument(documentId, attachmentId);
+      if (record === null) throw new NotFoundException('Attachment not found');
+    }
+    const checksumSha256 = createHash('sha256').update(file.buffer).digest('hex');
+    const versionId = randomUUID();
 
-    // The newest upload becomes the document's current attachment and resets clean-state: a
-    // new version starts PENDING (so `isVersionClean` is false) and can no longer match a
-    // prior signature — exactly what the outgoing-release invariant checks. Bumping the row
-    // version guards against signing a document whose evidence changed underneath.
+    const version = await this.database.transaction(async (tx) => {
+      const fileRecordId =
+        attachmentId ??
+        (
+          await this.versions.createRecord(
+            { documentId, displayName: file.originalName, createdById: actor.id },
+            tx,
+          )
+        ).id;
+      const versionNumber = await this.versions.nextVersionNumber(fileRecordId, tx);
+      return this.versions.createVersion(
+        {
+          id: versionId,
+          fileRecordId,
+          versionNumber,
+          objectKey: objectKeyFor(fileRecordId, versionNumber, versionId),
+          originalName: file.originalName,
+          mediaType: detected.mime,
+          sizeBytes: file.buffer.byteLength,
+          checksumSha256,
+          uploaderId: actor.id,
+        },
+        tx,
+      );
+    });
+    // Bytes land after the metadata commits, under the server-generated key (never overwritten).
+    await this.storage.put(version.objectKey, file.buffer);
+
+    // The newest upload becomes the document's current attachment and resets clean-state: a new
+    // version starts PENDING (so it is not downloadable and no longer matches a prior signature),
+    // which is exactly what the outgoing-release invariant checks. Bumping the row version guards
+    // against signing a document whose evidence changed underneath.
     const document = await this.documents.setCurrentAttachment(documentId, version.id);
     await this.audit.write({
       actorId: actor.id,
@@ -119,7 +156,8 @@ export class AttachmentsService {
     documentId: string,
   ): Promise<{ attachmentId: string; versions: PublicAttachmentVersion[] }[]> {
     const document = await this.documents.requireReadableDocument(actor, documentId);
-    return this.store.listForDocument(documentId).map((entry) => ({
+    const grouped = await this.versions.listForDocument(documentId);
+    return grouped.map((entry) => ({
       attachmentId: entry.attachmentId,
       versions: entry.versions.map((version) => this.toPublic(version, document)),
     }));
@@ -131,21 +169,16 @@ export class AttachmentsService {
     versionId: string,
   ): Promise<{ fileName: string; mediaType: string; bytes: Uint8Array }> {
     await this.documents.requireReadableDocument(actor, documentId);
-    const version = this.store.versionForDocument(documentId, versionId);
-    // Fail-closed: the store is the authority on whether bytes may leave the quarantine
-    // boundary. Translate its plain error into a stable 409 so a not-yet-clean file is a
-    // deliberate refusal, never a masked 500.
-    let downloadable: { version: FileVersion; bytes: Uint8Array };
-    try {
-      downloadable = this.store.requireDownloadable(version.id);
-    } catch (error) {
-      if (error instanceof Error && error.message === 'File is not clean')
-        throw new ConflictException({
-          code: 'FILE_NOT_CLEAN',
-          message: 'Attachment is unavailable until it passes malware scanning',
-        });
-      throw new NotFoundException('Attachment not found');
-    }
+    const version = await this.versions.findVersionForDocument(documentId, versionId);
+    if (version === null) throw new NotFoundException('Attachment not found');
+    // Fail-closed: bytes never leave the quarantine boundary until the version is CLEAN.
+    if (version.scanStatus !== 'CLEAN')
+      throw new ConflictException({
+        code: 'FILE_NOT_CLEAN',
+        message: 'Attachment is unavailable until it passes malware scanning',
+      });
+    const bytes = await this.storage.get(version.objectKey);
+    if (bytes === null) throw new NotFoundException('Attachment content not found');
     await this.audit.write({
       actorId: actor.id,
       action: 'attachment.downloaded',
@@ -154,11 +187,7 @@ export class AttachmentsService {
       outcome: 'SUCCESS',
       summary: { versionId: version.id },
     });
-    return {
-      fileName: downloadable.version.originalName,
-      mediaType: downloadable.version.mediaType,
-      bytes: downloadable.bytes,
-    };
+    return { fileName: version.originalName, mediaType: version.mediaType, bytes };
   }
 
   async recordScan(
@@ -170,16 +199,10 @@ export class AttachmentsService {
     const document = await this.documents.requireReadableDocument(actor, documentId);
     if (!actor.capabilities.includes('FILE_SCAN_RECORD'))
       throw new ForbiddenException('Recording scan results is not allowed');
-    const version = this.store.versionForDocument(documentId, versionId);
-    let result: { version: FileVersion; changed: boolean };
-    try {
-      result = this.store.recordScan(version.id, status);
-    } catch (error) {
-      throw new ConflictException({
-        code: 'SCAN_RESULT_CONFLICT',
-        message: error instanceof Error ? error.message : 'Scan result cannot be changed',
-      });
-    }
+    const version = await this.versions.findVersionForDocument(documentId, versionId);
+    if (version === null) throw new NotFoundException('Attachment not found');
+    // The repository enforces immutability of a final result and raises a 409 on a change.
+    const result = await this.versions.recordScanStatus(version.id, status);
     await this.audit.write({
       actorId: actor.id,
       action: 'attachment.scan-recorded',
@@ -195,7 +218,7 @@ export class AttachmentsService {
     return this.toPublic(result.version, document);
   }
 
-  private toPublic(version: FileVersion, document: DocumentRow): PublicAttachmentVersion {
+  private toPublic(version: FileVersionRow, document: DocumentRow): PublicAttachmentVersion {
     return {
       id: version.id,
       attachmentId: version.fileRecordId,

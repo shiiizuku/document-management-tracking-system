@@ -21,7 +21,7 @@ import { AuthorizationPolicy } from '../authorization/authorization.policy.js';
 import { NotificationService } from '../notifications/notification.service.js';
 import type { MonthlyReport } from '../reports/monthly-report.service.js';
 import { UsersRepository } from '../users/users.repository.js';
-import { AttachmentStore } from '../files/attachment-store.js';
+import { FileVersionsRepository } from '../files/file-versions.repository.js';
 import {
   IllegalTransitionError,
   WORKFLOW_ACTION_CAPABILITIES,
@@ -97,10 +97,18 @@ export interface RouteEntry {
   createdAt: Date;
 }
 
+export interface SignatureEntry {
+  id: string;
+  fileVersionId: string;
+  signerId: string;
+  signedAt: Date;
+}
+
 export interface DocumentDetail extends PublicDocument {
   assigneeUserIds: string[];
   sharedUserIds: string[];
   routes: RouteEntry[];
+  signatures: SignatureEntry[];
   timeline: TimelineEntry[];
   allowedActions: WorkflowAction[];
 }
@@ -135,16 +143,21 @@ export class DocumentsService {
     @Inject(DATABASE) private readonly database: Database,
     private readonly repository: DocumentsRepository,
     private readonly users: UsersRepository,
-    private readonly attachments: AttachmentStore,
+    private readonly fileVersions: FileVersionsRepository,
     private readonly notifications: NotificationService,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
   ) {}
 
-  // The row's file-version columns are aliased to the API's "attachment" vocabulary here, and
-  // the derived clean flag comes from the scan store. `releaseMethod` is only known where it
-  // has been loaded (detail) or just applied (the RELEASE response); elsewhere it stays null.
-  private toPublic(row: DocumentRow, releaseMethod: ReleaseMethod | null = null): PublicDocument {
+  // The row's file-version columns are aliased to the API's "attachment" vocabulary here.
+  // `hasCleanCurrentAttachment` and `releaseMethod` are passed in only where they have been
+  // loaded (single-document responses); list items leave them at their defaults to avoid an
+  // N+1 scan/release lookup per row.
+  private toPublic(
+    row: DocumentRow,
+    releaseMethod: ReleaseMethod | null = null,
+    hasCleanCurrentAttachment = false,
+  ): PublicDocument {
     return {
       id: row.id,
       trackingNumber: row.trackingNumber,
@@ -165,13 +178,18 @@ export class DocumentsService {
       version: row.version,
       currentAttachmentVersionId: row.currentFileVersionId,
       signedAttachmentVersionId: row.signedFileVersionId,
-      hasCleanCurrentAttachment:
-        row.currentFileVersionId !== null &&
-        this.attachments.isVersionClean(row.currentFileVersionId),
+      hasCleanCurrentAttachment,
       releaseMethod,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
+  }
+
+  /** Whether a document's current attachment version has passed scanning. */
+  private async cleanFlag(row: DocumentRow): Promise<boolean> {
+    return row.currentFileVersionId !== null
+      ? this.fileVersions.isClean(row.currentFileVersionId)
+      : false;
   }
 
   // ------------------------------------------------------------------- create
@@ -260,17 +278,26 @@ export class DocumentsService {
 
   async getDocument(actor: RequestUser, id: string): Promise<DocumentDetail> {
     const row = await this.requireReadable(actor, id);
-    const [timeline, assigneeUserIds, sharedUserIds, releaseMethod, routes] = await Promise.all([
-      this.repository.listTimeline(id),
-      this.repository.listActiveAssigneeIds(id),
-      this.repository.listSharedUserIds(id),
-      this.repository.findReleaseMethod(id),
-      this.repository.listRoutes(id),
-    ]);
+    const [timeline, assigneeUserIds, sharedUserIds, releaseMethod, routes, signatures, clean] =
+      await Promise.all([
+        this.repository.listTimeline(id),
+        this.repository.listActiveAssigneeIds(id),
+        this.repository.listSharedUserIds(id),
+        this.repository.findReleaseMethod(id),
+        this.repository.listRoutes(id),
+        this.repository.listSignatures(id),
+        this.cleanFlag(row),
+      ]);
     return {
-      ...this.toPublic(row, releaseMethod),
+      ...this.toPublic(row, releaseMethod, clean),
       assigneeUserIds,
       sharedUserIds,
+      signatures: signatures.map((signature) => ({
+        id: signature.id,
+        fileVersionId: signature.fileVersionId,
+        signerId: signature.signerId,
+        signedAt: signature.signedAt,
+      })),
       routes: routes.map((route) => ({
         id: route.id,
         fromDivisionId: route.fromDivisionId,
@@ -330,9 +357,9 @@ export class DocumentsService {
         message: 'The supplied metadata matches the current values',
       });
 
-    return this.database.transaction(async (tx) => {
-      const updated = await this.repository.updateMetadata(id, input.expectedVersion, patch, tx);
-      if (updated === null) throw this.staleConflict();
+    const updated = await this.database.transaction(async (tx) => {
+      const row = await this.repository.updateMetadata(id, input.expectedVersion, patch, tx);
+      if (row === null) throw this.staleConflict();
       await this.repository.insertMetadataRevision(
         { documentId: id, actorId: actor.id, before, after },
         tx,
@@ -354,12 +381,13 @@ export class DocumentsService {
           aggregateId: id,
           eventType: 'document.metadata-edited',
           payload: { documentId: id, fields: Object.keys(after) },
-          idempotencyKey: `document.metadata-edited:${id}:${updated.version}`,
+          idempotencyKey: `document.metadata-edited:${id}:${row.version}`,
         },
         tx,
       );
-      return this.toPublic(updated);
+      return row;
     });
+    return this.toPublic(updated, null, await this.cleanFlag(updated));
   }
 
   // --------------------------------------------------------------- workflow
@@ -376,10 +404,8 @@ export class DocumentsService {
       throw new ForbiddenException('Action is not allowed');
 
     // Signing pins the version being signed; releasing checks that pin against the current
-    // clean attachment. Both facts come from the attachment store, which owns scan state.
-    const currentClean =
-      current.currentFileVersionId !== null &&
-      this.attachments.isVersionClean(current.currentFileVersionId);
+    // clean attachment. Scan state is read from the persisted file version.
+    const currentClean = await this.cleanFlag(current);
 
     try {
       const result = this.workflow.execute(
@@ -423,10 +449,14 @@ export class DocumentsService {
             { documentId: id, releasedById: actor.id, method: result.event.releaseMethod },
             tx,
           );
-        // NOTE: `signature_events` rows are deferred to Phase 4 — that table FKs to
-        // `file_versions`, which is not persisted yet (attachment versions still live in the
-        // in-memory store). SIGN records the signed version on the document row via
-        // `signedFileVersionId`, which is what the release invariant reads.
+        // Signing is recorded as an evidentiary event against the version that was signed (now
+        // that `file_versions` is persisted). With no current attachment there is nothing to
+        // reference, so only the status moves and `signedFileVersionId` stays null.
+        if (action === 'SIGN' && current.currentFileVersionId !== null)
+          await this.repository.insertSignatureEvent(
+            { documentId: id, fileVersionId: current.currentFileVersionId, signerId: actor.id },
+            tx,
+          );
         await this.audit.write(
           {
             actorId: actor.id,
@@ -448,7 +478,7 @@ export class DocumentsService {
           },
           tx,
         );
-        return this.toPublic(updated, result.event.releaseMethod);
+        return this.toPublic(updated, result.event.releaseMethod, currentClean);
       });
     } catch (error) {
       // Best-effort failure trail; a workflow rejection is expected traffic, not a fault.

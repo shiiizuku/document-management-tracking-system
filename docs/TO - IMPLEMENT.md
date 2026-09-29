@@ -12,9 +12,9 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 | ---------------------------------- | ------------------ | ------------- | --------------------------------------------------------------------- |
 | 0 — Foundations                    | ✅ done            | n/a           | Cold-boot + IT sign-off are external gates (see `policy-register.md`) |
 | 1 — Identity & Organization        | ✅ done            | ⏳ deferred   | Merged in PR #39; frontend intentionally deferred                      |
-| 2 — Document registry              | ✅ done            | ⏳ deferred   | This branch; aggregate is Postgres-backed, `DtsApplicationService` retired |
-| 3 — Workflow & routing             | ◑ mostly done      | ⏳ deferred   | Transitions, assignment, routing/forwarding, sharing, work queue all persisted; parallel-route completion semantics + `signature_events` (needs Phase 4 `file_versions`) deferred |
-| 4 — Files & scanning               | ⬜ not started     | ⬜ not started | Bytes still in an in-memory `AttachmentStore`; no MinIO/ClamAV yet     |
+| 2 — Document registry              | ✅ done            | ⏳ deferred   | Aggregate is Postgres-backed, `DtsApplicationService` retired (PR #40) |
+| 3 — Workflow & routing             | ◑ mostly done      | ⏳ deferred   | Transitions, assignment, routing/forwarding, sharing, work queue persisted (PR #41); parallel-route completion semantics deferred (open policy) |
+| 4 — Files & scanning               | ◑ persistence done | ⬜ not started | `file_records`/`file_versions` + `signature_events` persisted; bytes behind a `StoragePort` (in-memory adapter); MinIO adapter + ClamAV scan worker deferred (need running services) |
 | 5 — Outbox, notifications, dashboard | ◑ partial        | ⬜ not started | `OutboxWriter` writes in-transaction; no relay/worker; notifs in memory |
 | 6 — Reports, routing slip, audit UI | ◑ partial         | ⬜ not started | Report/audit/slip read Postgres; own report tables + UI pending        |
 | 7 — Hardening & readiness          | ⬜ not started     | ⬜ not started |                                                                       |
@@ -211,7 +211,7 @@ POST /documents/{id}/routes               # + assignment/share endpoints
 3. [x] `allowed-actions` = filter the table by actor capability + state (VIEWER excluded).
 4. [x] Assignment + section routing (`POST /documents/:id/routes`, downward move) + work-queue query (`GET /documents/assigned`).
 5. [~] Routing records `document_routes` and blocks the no-op self-route; **parallel routes + completion semantics deferred** (open policy — see "per agreement").
-6. [~] Release records method in `release_events`; archive/restore work; **`signature_events` deferred to Phase 4** (FKs `file_versions`), SIGN records `signedFileVersionId` on the row.
+6. [x] Release records method in `release_events`; archive/restore work; **`signature_events` now persisted** (Phase 4 landed `file_versions`), and SIGN records `signedFileVersionId` on the row.
 7. [x] Return-for-revision requires a remark (validated in `WorkflowService`).
 
 **Frontend tasks**
@@ -233,6 +233,17 @@ POST /documents/{id}/routes               # + assignment/share endpoints
 
 **Goal:** private, immutable, scanned files; nothing downloadable unless CLEAN.
 
+> **Status (2026-09-29): persistence + storage seam done; scanner infra deferred.** Attachment
+> metadata now lives in Postgres (`file_records` + `file_versions`, one version immutable except its
+> `scan_status`), and bytes live behind a `StoragePort` whose current binding is an in-memory adapter
+> (server-generated quarantine keys, no overwrite) — a MinIO/S3 adapter drops in without touching the
+> use cases. Upload sniffs the real media type, enforces the size limit, and quarantines as PENDING;
+> download **fails closed** until CLEAN; a final scan result is immutable; the IDOR guard is a SQL
+> join. `signature_events` are now persisted (closing the Phase 3 deferral). **Deferred:** the MinIO
+> adapter, the ClamAV **scan worker** (BullMQ/Redis) — the manual `POST …/scan` endpoint stands in for
+> it — and short-lived/presigned download. These need running services the sandbox can't host and are
+> best landed with the infra they target. Frontend deferred.
+
 **Schema**
 - `file_record (document_id)`, `file_version (file_record_id, version_number, object_key, checksum, size, mime, scan_status)`, `file_scan (file_version_id, result, attempts, scanned_at)`; unique `(file_record_id, version_number)`.
 
@@ -243,11 +254,11 @@ GET  /files/{id}/versions/{vid}/content
 ```
 
 **Backend tasks**
-1. Storage port + MinIO adapter (`put`, `getStream`, no overwrite — random non-guessable keys).
-2. Upload use case: authorize → size/type limits at ingress → insert `PENDING` version → stream to quarantine prefix → checksum → enqueue scan (via outbox).
-3. Scan worker: stream to scanner, set `CLEAN` / `INFECTED` / `SCAN_FAILED`; bounded retries; **fail closed**.
-4. Content endpoint: authorize → require `CLEAN` → short-lived access; safe `Content-Type`/`Content-Disposition`, `nosniff`, CSP; no inline for active types.
-5. Wire release guard: outgoing needs ≥1 CLEAN attachment + signature.
+1. [~] Storage port (`put`/`get`, no overwrite, server-generated keys) — **done** with an in-memory adapter; **MinIO adapter deferred**.
+2. [~] Upload use case: authorize → size/type limits at ingress → insert `PENDING` version → store bytes under the quarantine key → checksum. **Done**; enqueue-scan-via-outbox lands with the worker.
+3. [ ] Scan worker: stream to scanner, set `CLEAN`/`INFECTED`/`SCAN_FAILED`; bounded retries; **fail closed**. **Deferred** (needs ClamAV + Redis); the manual `POST …/scan` endpoint stands in, and download already fails closed.
+4. [~] Content endpoint: authorize → require `CLEAN` → `nosniff` + attachment disposition. **Done** (in-memory bytes); short-lived/presigned access lands with MinIO.
+5. [x] Release guard: outgoing needs its current attachment CLEAN **and** signed — enforced from the persisted version + document row.
 
 **Frontend tasks**
 - Multi-file upload with per-version status chips, version history, PDF/image preview, download, infected/failed messages.

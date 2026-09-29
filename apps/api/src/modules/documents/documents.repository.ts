@@ -16,6 +16,7 @@ import {
   referenceCounters,
   releaseEvents,
   sections,
+  signatureEvents,
   workflowEvents,
 } from '../../database/schema.js';
 import type { ReleaseMethod } from '../workflow/workflow.service.js';
@@ -23,6 +24,7 @@ import type { ReleaseMethod } from '../workflow/workflow.service.js';
 export type DocumentRow = typeof documents.$inferSelect;
 export type WorkflowEventRow = typeof workflowEvents.$inferSelect;
 export type DocumentRouteRow = typeof documentRoutes.$inferSelect;
+export type SignatureEventRow = typeof signatureEvents.$inferSelect;
 
 export type NewDocument = typeof documents.$inferInsert;
 
@@ -459,6 +461,21 @@ export class DocumentsRepository {
       .from(documentRoutes)
       .where(eq(documentRoutes.documentId, documentId))
       .orderBy(asc(documentRoutes.createdAt));
+  }
+
+  async insertSignatureEvent(
+    signature: { documentId: string; fileVersionId: string; signerId: string },
+    executor: DatabaseExecutor = this.database,
+  ): Promise<void> {
+    await executor.insert(signatureEvents).values(signature);
+  }
+
+  async listSignatures(documentId: string): Promise<SignatureEventRow[]> {
+    return this.database
+      .select()
+      .from(signatureEvents)
+      .where(eq(signatureEvents.documentId, documentId))
+      .orderBy(asc(signatureEvents.signedAt));
   }
 
   /** Grants a user read access. Idempotent: a repeat share for the same user is a no-op. */
