@@ -129,4 +129,86 @@ describe('REST /api/v1 public seam', () => {
       .expect(200);
     expect(search.body.data.total).toBe(0);
   });
+
+  it('audits every report and routing-slip export as a distinct download event', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'records@dts.local', password: 'Records@1234!' })
+      .expect(201);
+    const cookie = sessionCookie(login);
+
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/documents')
+      .set('Cookie', cookie)
+      .send({
+        title: 'Report subject',
+        type: 'MEMORANDUM',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'Citizen',
+        divisionId: 'division-records',
+        sectionId: 'section-intake',
+      })
+      .expect(201);
+    const documentId = created.body.data.id as string;
+
+    const audit = app.get(AuditWriter);
+    if (!(audit instanceof InMemoryAuditWriter))
+      throw new Error('expected the in-memory audit writer to be wired in');
+    audit.entries.length = 0; // ignore the create/accept trail; assert only on the exports below
+
+    await request(app.getHttpServer())
+      .get('/api/v1/reports/monthly.xlsx?year=2026&month=9')
+      .set('Cookie', cookie)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/reports/monthly.pdf?year=2026&month=9')
+      .set('Cookie', cookie)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`/api/v1/documents/${documentId}/routing-slip.pdf`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    const exports = audit.entries
+      .filter((entry) =>
+        ['report.exported', 'document.routing-slip-exported'].includes(entry.action),
+      )
+      .map((entry) => ({
+        action: entry.action,
+        targetType: entry.targetType,
+        targetId: entry.targetId,
+        outcome: entry.outcome,
+        summary: entry.summary,
+      }));
+    expect(exports).toEqual([
+      {
+        action: 'report.exported',
+        targetType: 'report',
+        targetId: '2026-9',
+        outcome: 'SUCCESS',
+        summary: { format: 'xlsx', year: 2026, month: 9 },
+      },
+      {
+        action: 'report.exported',
+        targetType: 'report',
+        targetId: '2026-9',
+        outcome: 'SUCCESS',
+        summary: { format: 'pdf', year: 2026, month: 9 },
+      },
+      {
+        action: 'document.routing-slip-exported',
+        targetType: 'document',
+        targetId: documentId,
+        outcome: 'SUCCESS',
+        summary: { format: 'pdf' },
+      },
+    ]);
+    // The export trail must never carry document body text or party names — IDs, format and
+    // period only (audit policy P-14).
+    for (const entry of exports) {
+      expect(JSON.stringify(entry.summary)).not.toContain('Report subject');
+      expect(JSON.stringify(entry.summary)).not.toContain('Citizen');
+    }
+  });
 });

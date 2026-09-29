@@ -19,6 +19,7 @@ import { CurrentUser } from '../../common/current-user.decorator.js';
 import type { RequestUser } from '../../common/request-user.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { ReportExportService } from '../reports/report-export.service.js';
+import { AuditWriter } from '../audit/audit.writer.js';
 import type { ReleaseMethod } from '../workflow/workflow.service.js';
 import { DocumentsService } from './documents.service.js';
 import type { DocumentSearchFilters } from './documents.repository.js';
@@ -29,6 +30,7 @@ export class DocumentsController {
   constructor(
     private readonly documents: DocumentsService,
     private readonly exports: ReportExportService,
+    private readonly audit: AuditWriter,
   ) {}
 
   @Get()
@@ -72,12 +74,24 @@ export class DocumentsController {
     @Res() response: Response,
   ): Promise<void> {
     const document = await this.documents.getDocument(actor, id);
+    const content = await this.exports.routingSlip(document, document.timeline);
+    // The routing slip is a printable dossier (title, status, full timeline with remarks) that
+    // leaves the system as a file, so its export is audited even though the on-screen detail read
+    // is not. IDs and format only — never the remark text or party names.
+    await this.audit.write({
+      actorId: actor.id,
+      action: 'document.routing-slip-exported',
+      targetType: 'document',
+      targetId: id,
+      outcome: 'SUCCESS',
+      summary: { format: 'pdf' },
+    });
     response.setHeader('Content-Type', 'application/pdf');
     response.setHeader(
       'Content-Disposition',
       `attachment; filename="routing-slip-${document.trackingNumber}.pdf"`,
     );
-    response.send(await this.exports.routingSlip(document, document.timeline));
+    response.send(content);
   }
 
   @Get(':id')

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { desc, eq, and, type SQL } from 'drizzle-orm';
+import { desc, eq, and, gte, lt, type SQL } from 'drizzle-orm';
 import { getCorrelationId } from '../../common/request-context.js';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
@@ -30,7 +30,13 @@ export type AuditEventRow = typeof auditEvents.$inferSelect;
 export interface AuditQuery {
   actorId?: string;
   action?: string;
+  /** Inclusive lower bound on `occurredAt`. Rows at or after this instant match. */
+  from?: Date;
+  /** Exclusive upper bound on `occurredAt`. Rows strictly before this instant match. */
+  to?: Date;
   limit?: number;
+  /** Row offset for pagination; paired with a deterministic `occurredAt DESC` order. */
+  offset?: number;
 }
 
 /**
@@ -83,11 +89,17 @@ export class DrizzleAuditWriter extends AuditWriter {
     const filters: SQL[] = [];
     if (query.actorId) filters.push(eq(auditEvents.actorId, query.actorId));
     if (query.action) filters.push(eq(auditEvents.action, query.action));
+    // `from` is inclusive and `to` exclusive so a caller can page day-by-day (`from` of one day =
+    // `to` of the next) without double-counting the boundary instant. Both hit the composite
+    // `(actor, action, occurred_at)` index.
+    if (query.from) filters.push(gte(auditEvents.occurredAt, query.from));
+    if (query.to) filters.push(lt(auditEvents.occurredAt, query.to));
     return this.database
       .select()
       .from(auditEvents)
       .where(filters.length === 0 ? undefined : and(...filters))
       .orderBy(desc(auditEvents.occurredAt))
-      .limit(Math.min(query.limit ?? 100, MAX_AUDIT_PAGE));
+      .limit(Math.min(query.limit ?? 100, MAX_AUDIT_PAGE))
+      .offset(Math.max(query.offset ?? 0, 0));
   }
 }
