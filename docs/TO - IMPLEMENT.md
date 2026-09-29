@@ -6,6 +6,25 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 
 ---
 
+## Phase status (updated 2026-09-29)
+
+| Phase                              | Backend            | Frontend      | Notes                                                                 |
+| ---------------------------------- | ------------------ | ------------- | --------------------------------------------------------------------- |
+| 0 — Foundations                    | ✅ done            | n/a           | Cold-boot + IT sign-off are external gates (see `policy-register.md`) |
+| 1 — Identity & Organization        | ✅ done            | ⏳ deferred   | Merged in PR #39; frontend intentionally deferred                      |
+| 2 — Document registry              | ✅ done            | ⏳ deferred   | This branch; aggregate is Postgres-backed, `DtsApplicationService` retired |
+| 3 — Workflow & routing             | ◑ partial          | ⏳ deferred   | Transitions + assignment persisted in Phase 2; routing/sharing pending |
+| 4 — Files & scanning               | ⬜ not started     | ⬜ not started | Bytes still in an in-memory `AttachmentStore`; no MinIO/ClamAV yet     |
+| 5 — Outbox, notifications, dashboard | ◑ partial        | ⬜ not started | `OutboxWriter` writes in-transaction; no relay/worker; notifs in memory |
+| 6 — Reports, routing slip, audit UI | ◑ partial         | ⬜ not started | Report/audit/slip read Postgres; own report tables + UI pending        |
+| 7 — Hardening & readiness          | ⬜ not started     | ⬜ not started |                                                                       |
+
+Legend: ✅ done · ◑ partial · ⏳ deferred (planned for a later phase) · ⬜ not started. **Frontend is
+deferred across the board** by an explicit decision (`docs/phase-1-completion-report.md`); the
+backend is being driven to durability first, with the UI to follow.
+
+---
+
 ## Global conventions (set once in Phase 0, obey forever)
 
 **Rules for every slice**
