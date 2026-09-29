@@ -2,33 +2,40 @@
 
 **Date:** 2026-09-29
 **Scope reference:** `docs/TO - IMPLEMENT.md` → *Phase 1 — Identity & Organization*
-**Branch / commit:** `main` @ `a92a575` (*feat(identity): Phase 1 Identity & Organization, hardened test-first*)
+**Branch / commit:** `main` lineage, PR #39 (latest `c8abcfe`); backend at `a92a575`, integration tests at `c8abcfe`.
 
 ## Verdict
 
-**Backend: complete and verified at the unit/service level. Overall Phase 1: not yet closed.**
+**Backend complete and verified end-to-end against Postgres. One item — the frontend
+identity/admin UI — remains before Phase 1 is fully closed.**
 
-The Identity, Authentication/Session, Authorization, Organization, Account-request and
-Audit backend is implemented and now covered by fast, mutation-checked tests. Two areas of
-the Phase 1 definition remain open and should be treated as carry-over into (or a gate before)
-the next phase:
+The Identity, Authentication/Session, Authorization, Organization, Account-request and Audit
+backend is implemented and covered by fast unit/service tests **and** by HTTP + Postgres
+integration tests (added in `c8abcfe`). The two integration gaps this report originally
+flagged as the gate before Phase 2 are now closed:
 
-1. **Frontend tasks** for the slice are largely unbuilt (login/logout exist; the admin/identity
-   UI does not).
-2. **Integration verification** against real Postgres and over HTTP for the identity/org/
-   account-request endpoints is absent — the current tests exercise these through mocks and an
-   in-memory adapter, not a live database or the full request pipeline.
+- ✅ **Integration verification** — `identity.int.test.ts` boots the app against a real
+  database and drives the account lifecycle over HTTP (controllers, validation, guards, DB
+  transactions, policies).
+- ✅ **`query-scope.ts`** — `query-scope.int.test.ts` proves `documentScopeFor` against real
+  Postgres across all actor kinds (division/section/assignment/share/confidentiality).
 
-Do not read the green suite as "the endpoints are proven end-to-end." It proves the domain
-logic and policies are correct in isolation.
+Remaining:
 
-## Quality gate (as of this commit)
+1. **Frontend identity/admin UI** is largely unbuilt (login/logout exist; the account-request
+   form, admin user table, approve/reject dialogs, division/section manager and profile-photo
+   upload do not). Note the dependency-aware roadmap in `docs/CONTEXT.md` places most UI on the
+   **Phase 3 (Weeks 10–13)** track; whether this UI is a Phase 1 exit criterion or Phase 3 work
+   is an open sequencing decision, not a defect.
+
+## Quality gate (as of `c8abcfe`)
 
 | Check | Result |
 | --- | --- |
-| `npm test -w @dts/api` (vitest) | **193 passing / 0 failing** (24 files) |
+| `npm test -w @dts/api` (unit) | **193 passing / 0 failing** (24 files) |
+| `npm run test:integration -w @dts/api` (Postgres) | **10 passing / 0 failing** (4 files) |
 | `npm run typecheck -w @dts/api` | **0 errors** |
-| `npx eslint apps/api` | **clean** |
+| `npx eslint apps/api` + Prettier | **clean** |
 | Mutation check on all new/changed code | every mutation turned a test red (no survivors) |
 
 Starting point for this work was **13 failing tests**; the failures were stale tests and a
@@ -86,13 +93,13 @@ mis-wired rate limiter left by an in-progress refactor (see *Defects fixed*).
 
 ## Outstanding for Phase 1 (carry-over)
 
-| # | Gap | Severity | Notes |
+| # | Gap | Severity | Status |
 | --- | --- | --- | --- |
-| 1 | **Frontend identity/admin UI** | High | `apps/web` has login/logout and a document dashboard only. Missing: request-account form, admin user table, approve/reject dialogs, division/section manager, profile + photo upload, explicit session-expired handling. Listed under Phase 1 "Frontend tasks". |
-| 2 | **HTTP/DB integration tests for identity, org, account-request, user-admin endpoints** | High | Currently unit/service + in-memory only. The controllers, Zod validation wiring, guards on those routes, and DB transactions are not exercised end-to-end. `migration.int.test.ts` proves migrations run; the identity behaviors are not run against Postgres. |
-| 3 | **`authorization/query-scope.ts` untested** | Medium | `documentScopeFor`/`scopeToActor` (the SQL twin of the read policy) has no test — its own comment references a `query-scope.int.test.ts` that does not exist. A pure-unit test on Drizzle SQL objects would be a change-detector; correctness needs a Postgres integration test. This underpins "no list/detail/count endpoint leaks data." |
-| 4 | **"Done when" not fully evidenced** | Medium | Matrix passes positive+negative ✅. "No list/detail/count/admin endpoint leaks data" is verified at the policy/service layer, **not** proven end-to-end over HTTP with a real DB (depends on #2/#3). |
-| 5 | **Sessions table** | Low | Schema lists `session (if server sessions)`; implementation uses stateless JWTs per ADR-0002, so there is intentionally no session table. Noted so it is not mistaken for a missing item. |
+| 1 | **Frontend identity/admin UI** | High | **Open.** `apps/web` has login/logout and a document dashboard only. Missing: request-account form, admin user table, approve/reject dialogs, division/section manager, profile + photo upload, explicit session-expired handling. `docs/CONTEXT.md` places most UI on the Phase 3 track — sequencing decision pending. |
+| 2 | **HTTP/DB integration tests for identity, org, account-request, user-admin endpoints** | High | **Closed** in `c8abcfe` — `identity.int.test.ts` drives the lifecycle over HTTP against real Postgres (controllers, Zod validation, guards, transactions). |
+| 3 | **`authorization/query-scope.ts` untested** | Medium | **Closed** in `c8abcfe` — `query-scope.int.test.ts` proves `documentScopeFor` against real Postgres across all actor kinds. |
+| 4 | **"Done when" not fully evidenced** | Medium | **Closed** for the backend — "no list/count endpoint leaks data" is now proven end-to-end over HTTP (deny-by-default on the admin queue and user list) and at the SQL layer (query-scope). Remaining evidence is UI-side only (#1). |
+| 5 | **Sessions table** | Low | **N/A by design** — schema lists `session (if server sessions)`; implementation uses stateless JWTs per ADR-0002, so there is intentionally no session table. |
 
 ## Environment notes (will bite the next session)
 
@@ -101,14 +108,19 @@ mis-wired rate limiter left by an in-progress refactor (see *Defects fixed*).
   vitest (which aliases to source). Fix: `npm run build -w @dts/contracts`, then repoint the
   symlinks to this checkout. `npm test` passing does **not** imply typecheck passes — run it
   separately.
-- The API test suite runs **without Postgres/Redis/MinIO**; identity/auth DB access is
-  overridden with in-memory doubles. Integration tests (`*.int.test.ts`) need live services and
-  are excluded from the default run.
+- The unit suite runs **without Postgres/Redis/MinIO**; identity/auth DB access is overridden
+  with in-memory doubles. Integration tests (`*.int.test.ts`) need Postgres and are excluded
+  from the default run — invoke with `npm run test:integration -w @dts/api`, with `DATABASE_URL`
+  pointing at a **disposable** database and `ALLOW_DATABASE_RESET=true` (they drop/recreate
+  `public`). App-config env is supplied by `test/setup-int-env.ts`. The booted app needs only
+  Postgres at startup, matching the CI integration job.
 
-## Recommended gate before Phase 2
+## Gate before Phase 2 — satisfied
 
 Phase 2 (Document registry) depends on the authorization predicates and scope enforcement from
-Phase 1. Before building on them, close **#2 and #3** at minimum, so the scope guarantees the
-document endpoints will reuse are proven against a real database rather than in-memory mocks.
+Phase 1. The recommended gate (integration items #2 and #3) is now **closed**: the scope
+guarantees the document endpoints will reuse are proven against a real database, not in-memory
+mocks. The only open Phase 1 item is the frontend identity/admin UI (#1), which does not block
+Phase 2 backend work and may be scheduled on the Phase 3 UI track.
 The frontend (#1) can proceed in parallel or on the Phase 3 UI track, but should not be
 silently dropped from Phase 1's acceptance.
