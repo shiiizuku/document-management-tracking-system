@@ -9,6 +9,7 @@ import {
 import type {
   DocumentActionPatch,
   DocumentMetadataPatch,
+  DocumentRouteRow,
   DocumentRow,
   DocumentSearchFilters,
   DocumentSearchPage,
@@ -52,6 +53,7 @@ export class InMemoryDocumentsRepository {
     }[]
   >();
   private readonly releaseMethods = new Map<string, ReleaseMethod>();
+  private readonly routes = new Map<string, DocumentRouteRow[]>();
   private trackingCounter = 0;
   private readonly referenceCounters = new Map<string, number>();
 
@@ -243,6 +245,48 @@ export class InMemoryDocumentsRepository {
 
   listSharedUserIds(documentId: string): Promise<string[]> {
     return Promise.resolve([...(this.shares.get(documentId) ?? [])]);
+  }
+
+  listAssignedTo(userId: string): Promise<DocumentRow[]> {
+    return Promise.resolve(
+      [...this.documents.values()].filter(
+        (row) => row.deletedAt === null && (this.assignments.get(row.id)?.has(userId) ?? false),
+      ),
+    );
+  }
+
+  relocate(
+    id: string,
+    expectedVersion: number,
+    divisionId: string,
+    sectionId: string | null,
+  ): Promise<DocumentRow | null> {
+    return Promise.resolve(this.applyVersioned(id, expectedVersion, { divisionId, sectionId }));
+  }
+
+  insertRoute(route: {
+    documentId: string;
+    fromDivisionId: string | null;
+    toDivisionId: string;
+    toSectionId: string | null;
+    routedById: string;
+    remarks: string | null;
+  }): Promise<void> {
+    const list = this.routes.get(route.documentId) ?? [];
+    list.push({ id: randomUUID(), completedAt: null, createdAt: now(), ...route });
+    this.routes.set(route.documentId, list);
+    return Promise.resolve();
+  }
+
+  listRoutes(documentId: string): Promise<DocumentRouteRow[]> {
+    return Promise.resolve([...(this.routes.get(documentId) ?? [])]);
+  }
+
+  insertShare(share: { documentId: string; userId: string; sharedById: string }): Promise<void> {
+    const set = this.shares.get(share.documentId) ?? new Set<string>();
+    set.add(share.userId);
+    this.shares.set(share.documentId, set);
+    return Promise.resolve();
   }
 
   listForReport(actor: AuthorizationActor, year: number, month: number): Promise<DocumentRow[]> {

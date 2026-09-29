@@ -7,7 +7,11 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { CreateDocumentInput, UpdateDocumentMetadataInput } from '@dts/contracts';
+import type {
+  CreateDocumentInput,
+  RouteDocumentInput,
+  UpdateDocumentMetadataInput,
+} from '@dts/contracts';
 import type { RequestUser } from '../../common/request-user.js';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
@@ -83,9 +87,20 @@ export interface MetadataRevisionEntry {
   occurredAt: Date;
 }
 
+export interface RouteEntry {
+  id: string;
+  fromDivisionId: string | null;
+  toDivisionId: string;
+  toSectionId: string | null;
+  routedById: string;
+  remarks: string | null;
+  createdAt: Date;
+}
+
 export interface DocumentDetail extends PublicDocument {
   assigneeUserIds: string[];
   sharedUserIds: string[];
+  routes: RouteEntry[];
   timeline: TimelineEntry[];
   allowedActions: WorkflowAction[];
 }
@@ -245,16 +260,26 @@ export class DocumentsService {
 
   async getDocument(actor: RequestUser, id: string): Promise<DocumentDetail> {
     const row = await this.requireReadable(actor, id);
-    const [timeline, assigneeUserIds, sharedUserIds, releaseMethod] = await Promise.all([
+    const [timeline, assigneeUserIds, sharedUserIds, releaseMethod, routes] = await Promise.all([
       this.repository.listTimeline(id),
       this.repository.listActiveAssigneeIds(id),
       this.repository.listSharedUserIds(id),
       this.repository.findReleaseMethod(id),
+      this.repository.listRoutes(id),
     ]);
     return {
       ...this.toPublic(row, releaseMethod),
       assigneeUserIds,
       sharedUserIds,
+      routes: routes.map((route) => ({
+        id: route.id,
+        fromDivisionId: route.fromDivisionId,
+        toDivisionId: route.toDivisionId,
+        toSectionId: route.toSectionId,
+        routedById: route.routedById,
+        remarks: route.remarks,
+        createdAt: route.createdAt,
+      })),
       timeline: timeline.map((event) => ({
         id: event.id,
         sequence: event.sequence,
@@ -398,6 +423,10 @@ export class DocumentsService {
             { documentId: id, releasedById: actor.id, method: result.event.releaseMethod },
             tx,
           );
+        // NOTE: `signature_events` rows are deferred to Phase 4 — that table FKs to
+        // `file_versions`, which is not persisted yet (attachment versions still live in the
+        // in-memory store). SIGN records the signed version on the document row via
+        // `signedFileVersionId`, which is what the release invariant reads.
         await this.audit.write(
           {
             actorId: actor.id,
@@ -498,6 +527,118 @@ export class DocumentsService {
     });
 
     return this.getDocument(actor, documentId);
+  }
+
+  // ------------------------------------------------------------ routing / sharing
+
+  /**
+   * Forwards a document to another division (optionally a section within it): moves its owning
+   * scope under the optimistic-version guard and records the hop in `document_routes`. Routing
+   * to the current location is rejected as a no-op.
+   */
+  async route(actor: RequestUser, id: string, input: RouteDocumentInput): Promise<DocumentDetail> {
+    const current = await this.requireReadable(actor, id);
+    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_ASSIGN'))
+      throw new ForbiddenException('Routing this document is not allowed');
+
+    const toSectionId = input.toSectionId ?? null;
+    if (current.divisionId === input.toDivisionId && current.sectionId === toSectionId)
+      throw new BadRequestException({
+        code: 'ROUTE_NO_OP',
+        message: 'The document is already at that division and section',
+      });
+    const placement = await this.repository.resolvePlacement(input.toDivisionId, toSectionId);
+    if (!placement.ok) throw new BadRequestException(placement.reason);
+
+    await this.database.transaction(async (tx) => {
+      const moved = await this.repository.relocate(
+        id,
+        input.expectedVersion,
+        input.toDivisionId,
+        toSectionId,
+        tx,
+      );
+      if (moved === null) throw this.staleConflict();
+      await this.repository.insertRoute(
+        {
+          documentId: id,
+          fromDivisionId: current.divisionId,
+          toDivisionId: input.toDivisionId,
+          toSectionId,
+          routedById: actor.id,
+          remarks: input.remarks?.trim() ? input.remarks.trim() : null,
+        },
+        tx,
+      );
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'document.routed',
+          targetType: 'document',
+          targetId: id,
+          outcome: 'SUCCESS',
+          summary: {
+            fromDivisionId: current.divisionId,
+            toDivisionId: input.toDivisionId,
+            toSectionId,
+          },
+        },
+        tx,
+      );
+      await this.outbox.enqueue(
+        {
+          aggregateType: 'document',
+          aggregateId: id,
+          eventType: 'document.routed',
+          payload: { documentId: id, toDivisionId: input.toDivisionId, toSectionId },
+          idempotencyKey: `document.routed:${id}:${moved.version}`,
+        },
+        tx,
+      );
+    });
+    return this.getDocument(actor, id);
+  }
+
+  /** Grants one user read access to a document without moving or reassigning it. */
+  async share(actor: RequestUser, id: string, userId: string): Promise<DocumentDetail> {
+    const current = await this.requireReadable(actor, id);
+    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_ASSIGN'))
+      throw new ForbiddenException('Sharing this document is not allowed');
+    const recipient = await this.users.findById(userId);
+    if (recipient === null || !recipient.active)
+      throw new NotFoundException('The recipient could not be found');
+
+    await this.database.transaction(async (tx) => {
+      await this.repository.insertShare({ documentId: id, userId, sharedById: actor.id }, tx);
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'document.shared',
+          targetType: 'document',
+          targetId: id,
+          outcome: 'SUCCESS',
+          summary: { userId },
+        },
+        tx,
+      );
+      await this.outbox.enqueue(
+        {
+          aggregateType: 'document',
+          aggregateId: id,
+          eventType: 'document.shared',
+          payload: { documentId: id, userId },
+          idempotencyKey: `document.shared:${id}:${userId}`,
+        },
+        tx,
+      );
+    });
+    return this.getDocument(actor, id);
+  }
+
+  /** The actor's work queue: live documents they currently hold an active assignment on. */
+  async assignedQueue(actor: RequestUser): Promise<PublicDocument[]> {
+    const rows = await this.repository.listAssignedTo(actor.id);
+    return rows.map((row) => this.toPublic(row));
   }
 
   // --------------------------------------------------------------- reports

@@ -9,6 +9,7 @@ import {
   divisions,
   documentAssignments,
   documentMetadataRevisions,
+  documentRoutes,
   documentSequences,
   documentShares,
   documents,
@@ -21,6 +22,7 @@ import type { ReleaseMethod } from '../workflow/workflow.service.js';
 
 export type DocumentRow = typeof documents.$inferSelect;
 export type WorkflowEventRow = typeof workflowEvents.$inferSelect;
+export type DocumentRouteRow = typeof documentRoutes.$inferSelect;
 
 export type NewDocument = typeof documents.$inferInsert;
 
@@ -396,6 +398,78 @@ export class DocumentsRepository {
         and(eq(documentAssignments.documentId, documentId), eq(documentAssignments.active, true)),
       );
     return rows.map((row) => row.userId).filter((userId): userId is string => userId !== null);
+  }
+
+  /** Live documents a user currently holds an active assignment on — their work queue. */
+  async listAssignedTo(userId: string): Promise<DocumentRow[]> {
+    return this.database
+      .select({ document: documents })
+      .from(documents)
+      .innerJoin(documentAssignments, eq(documentAssignments.documentId, documents.id))
+      .where(
+        and(
+          eq(documentAssignments.userId, userId),
+          eq(documentAssignments.active, true),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .orderBy(desc(documents.createdAt))
+      .then((rows) => rows.map((row) => row.document));
+  }
+
+  /** Moves a document to a new division/section under the optimistic-version guard. */
+  async relocate(
+    id: string,
+    expectedVersion: number,
+    divisionId: string,
+    sectionId: string | null,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<DocumentRow | null> {
+    const [row] = await executor
+      .update(documents)
+      .set({ divisionId, sectionId, version: sql`${documents.version} + 1` })
+      .where(
+        and(
+          eq(documents.id, id),
+          eq(documents.version, expectedVersion),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .returning();
+    return row ?? null;
+  }
+
+  async insertRoute(
+    route: {
+      documentId: string;
+      fromDivisionId: string | null;
+      toDivisionId: string;
+      toSectionId: string | null;
+      routedById: string;
+      remarks: string | null;
+    },
+    executor: DatabaseExecutor = this.database,
+  ): Promise<void> {
+    await executor.insert(documentRoutes).values(route);
+  }
+
+  async listRoutes(documentId: string): Promise<DocumentRouteRow[]> {
+    return this.database
+      .select()
+      .from(documentRoutes)
+      .where(eq(documentRoutes.documentId, documentId))
+      .orderBy(asc(documentRoutes.createdAt));
+  }
+
+  /** Grants a user read access. Idempotent: a repeat share for the same user is a no-op. */
+  async insertShare(
+    share: { documentId: string; userId: string; sharedById: string },
+    executor: DatabaseExecutor = this.database,
+  ): Promise<void> {
+    await executor
+      .insert(documentShares)
+      .values(share)
+      .onConflictDoNothing({ target: [documentShares.documentId, documentShares.userId] });
   }
 
   async listSharedUserIds(documentId: string): Promise<string[]> {

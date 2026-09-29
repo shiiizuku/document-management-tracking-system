@@ -227,6 +227,23 @@ export const assignDocumentSchema = z.object({
   recipientUserId: z.uuid(),
 });
 
+// Routing forwards a document to another division (and optionally a section within it),
+// moving its owning scope and recording the hop in the route history. `expectedVersion` keeps
+// it under the same optimistic-concurrency check as the other mutations; `divisionId` is a
+// plain string here (the service validates it exists/active against Postgres, rejecting a
+// malformed id) to match `createDocumentSchema`.
+export const routeDocumentSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  toDivisionId: z.string().trim().min(1),
+  toSectionId: z.string().trim().min(1).optional(),
+  remarks: z.string().trim().max(4000).optional(),
+});
+
+// Sharing grants one user read access to a document without moving or reassigning it.
+export const shareDocumentSchema = z.object({
+  userId: z.uuid(),
+});
+
 // Reportable scan outcomes. `PENDING` is intentionally excluded: an already-created
 // version starts PENDING, and a scanner may only ever report a resolved outcome — it
 // can never push a version back into the pending state (mirrors the domain service's
@@ -240,6 +257,8 @@ export type Role = z.infer<typeof roleSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentMetadataInput = z.infer<typeof updateDocumentMetadataSchema>;
 export type AssignDocumentInput = z.infer<typeof assignDocumentSchema>;
+export type RouteDocumentInput = z.infer<typeof routeDocumentSchema>;
+export type ShareDocumentInput = z.infer<typeof shareDocumentSchema>;
 export type FileScanResult = z.infer<typeof fileScanStatusSchema>;
 export type RecordScanInput = z.infer<typeof recordScanSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
