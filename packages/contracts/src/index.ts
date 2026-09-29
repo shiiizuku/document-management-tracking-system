@@ -197,6 +197,36 @@ export const workflowCommandSchema = z.object({
   releaseMethod: releaseMethodSchema.optional(),
 });
 
+// Metadata edit (`PATCH /documents/:id/metadata`). Only the descriptive fields are editable:
+// direction, division and section are structural (they drive reference allocation and access
+// scope) and workflow status moves only through the action endpoints, never a metadata patch.
+// `expectedVersion` carries the optimistic-concurrency check — a stale edit is a 409, not a
+// silent overwrite — and at least one field must actually change.
+export const updateDocumentMetadataSchema = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    title: z.string().trim().min(1).max(240).optional(),
+    type: z.string().trim().min(1).max(80).optional(),
+    description: z.string().trim().max(5000).nullable().optional(),
+    priority: documentPrioritySchema.optional(),
+    sender: z.string().trim().max(240).nullable().optional(),
+    company: z.string().trim().max(240).nullable().optional(),
+    referenceNumber: z.string().trim().max(120).nullable().optional(),
+    confidential: z.boolean().optional(),
+    dueAt: z.string().datetime().nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      Object.entries(value).some(
+        ([key, field]) => key !== 'expectedVersion' && field !== undefined,
+      ),
+    'At least one metadata field must be supplied',
+  );
+
+export const assignDocumentSchema = z.object({
+  recipientUserId: z.uuid(),
+});
+
 // Reportable scan outcomes. `PENDING` is intentionally excluded: an already-created
 // version starts PENDING, and a scanner may only ever report a resolved outcome — it
 // can never push a version back into the pending state (mirrors the domain service's
@@ -208,6 +238,8 @@ export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
 export type WorkflowAction = z.infer<typeof workflowActionSchema>;
 export type Role = z.infer<typeof roleSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
+export type UpdateDocumentMetadataInput = z.infer<typeof updateDocumentMetadataSchema>;
+export type AssignDocumentInput = z.infer<typeof assignDocumentSchema>;
 export type FileScanResult = z.infer<typeof fileScanStatusSchema>;
 export type RecordScanInput = z.infer<typeof recordScanSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
