@@ -20,44 +20,42 @@ const admin = (overrides: Partial<RequestUser> = {}): RequestUser => ({
   ...overrides,
 });
 
-const requestRow = (overrides: Partial<AccountRequestRow> = {}): AccountRequestRow =>
-  ({
-    id: 'request-1',
-    email: 'applicant@dts.local',
-    displayName: 'Applicant',
-    passwordHash: '$2b$12$applicanthash',
-    status: 'PENDING',
-    requestedDivisionId: 'division-a',
-    requestedSectionId: 'section-a1',
-    justification: null,
-    reviewedById: null,
-    reviewedAt: null,
-    rejectionReason: null,
-    createdUserId: null,
-    createdAt: new Date('2026-09-28T00:00:00.000Z'),
-    updatedAt: new Date('2026-09-28T00:00:00.000Z'),
-    ...overrides,
-  });
+const requestRow = (overrides: Partial<AccountRequestRow> = {}): AccountRequestRow => ({
+  id: 'request-1',
+  email: 'applicant@dts.local',
+  displayName: 'Applicant',
+  passwordHash: '$2b$12$applicanthash',
+  status: 'PENDING',
+  requestedDivisionId: 'division-a',
+  requestedSectionId: 'section-a1',
+  justification: null,
+  reviewedById: null,
+  reviewedAt: null,
+  rejectionReason: null,
+  createdUserId: null,
+  createdAt: new Date('2026-09-28T00:00:00.000Z'),
+  updatedAt: new Date('2026-09-28T00:00:00.000Z'),
+  ...overrides,
+});
 
-const userRow = (overrides: Partial<UserRow> = {}): UserRow =>
-  ({
-    id: 'user-1',
-    email: 'applicant@dts.local',
-    displayName: 'Applicant',
-    passwordHash: '$2b$12$applicanthash',
-    role: 'STAFF_MEMBER',
-    divisionId: 'division-a',
-    sectionId: 'section-a1',
-    canAccessConfidential: false,
-    active: true,
-    failedLoginAttempts: 0,
-    lockedUntil: null,
-    passwordChangedAt: new Date('2026-09-28T00:00:00.000Z'),
-    lastLoginAt: null,
-    createdAt: new Date('2026-09-28T00:00:00.000Z'),
-    updatedAt: new Date('2026-09-28T00:00:00.000Z'),
-    ...overrides,
-  });
+const userRow = (overrides: Partial<UserRow> = {}): UserRow => ({
+  id: 'user-1',
+  email: 'applicant@dts.local',
+  displayName: 'Applicant',
+  passwordHash: '$2b$12$applicanthash',
+  role: 'STAFF_MEMBER',
+  divisionId: 'division-a',
+  sectionId: 'section-a1',
+  canAccessConfidential: false,
+  active: true,
+  failedLoginAttempts: 0,
+  lockedUntil: null,
+  passwordChangedAt: new Date('2026-09-28T00:00:00.000Z'),
+  lastLoginAt: null,
+  createdAt: new Date('2026-09-28T00:00:00.000Z'),
+  updatedAt: new Date('2026-09-28T00:00:00.000Z'),
+  ...overrides,
+});
 
 interface Doubles {
   users?: Record<string, ReturnType<typeof vi.fn>>;

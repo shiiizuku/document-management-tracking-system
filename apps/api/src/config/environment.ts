@@ -131,7 +131,9 @@ export const validateEnvironment = (
   if (sessionAbsoluteMaxAgeMs % 1000 !== 0)
     throw new Error('SESSION_ABSOLUTE_MAX_AGE_MS must be a multiple of 1000');
   if (sessionAbsoluteMaxAgeMs < cookieMaxAgeMs)
-    throw new Error('SESSION_ABSOLUTE_MAX_AGE_MS must be greater than or equal to COOKIE_MAX_AGE_MS');
+    throw new Error(
+      'SESSION_ABSOLUTE_MAX_AGE_MS must be greater than or equal to COOKIE_MAX_AGE_MS',
+    );
 
   const loginMaxAttempts = parsePositiveInteger(
     environment.LOGIN_MAX_ATTEMPTS,

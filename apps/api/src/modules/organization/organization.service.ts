@@ -37,7 +37,9 @@ export interface ResolvedPlacement {
 // into a 409 instead of a 500, without a pre-flight SELECT that would still race.
 const UNIQUE_VIOLATION = '23505';
 const isUniqueViolation = (error: unknown): boolean =>
-  typeof error === 'object' && error !== null && (error as { code?: string }).code === UNIQUE_VIOLATION;
+  typeof error === 'object' &&
+  error !== null &&
+  (error as { code?: string }).code === UNIQUE_VIOLATION;
 
 @Injectable()
 export class OrganizationService {
@@ -162,8 +164,7 @@ export class OrganizationService {
   async resolvePlacement(placement: Placement): Promise<ResolvedPlacement> {
     const divisionId = placement.divisionId ?? null;
     const sectionId = placement.sectionId ?? null;
-    const needsDivision =
-      placement.role !== 'ADMINISTRATOR' && placement.role !== 'RECORDS_STAFF';
+    const needsDivision = placement.role !== 'ADMINISTRATOR' && placement.role !== 'RECORDS_STAFF';
     const needsSection = placement.role === 'STAFF_MEMBER' || placement.role === 'VIEWER';
 
     if (needsDivision && divisionId === null)

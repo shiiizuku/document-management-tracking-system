@@ -16,12 +16,7 @@ export interface UserResource {
 }
 
 export type UserAction =
-  | 'user:list'
-  | 'user:read'
-  | 'user:create'
-  | 'user:update'
-  | 'user:deactivate'
-  | 'user:reactivate';
+  'user:list' | 'user:read' | 'user:create' | 'user:update' | 'user:deactivate' | 'user:reactivate';
 
 export class UserPolicy implements Policy<UserResource> {
   readonly resourceType = 'user';
@@ -59,9 +54,7 @@ export class UserPolicy implements Policy<UserResource> {
 }
 
 export type AccountRequestAction =
-  | 'account-request:list'
-  | 'account-request:approve'
-  | 'account-request:reject';
+  'account-request:list' | 'account-request:approve' | 'account-request:reject';
 
 export class AccountRequestPolicy implements Policy<null> {
   readonly resourceType = 'account-request';
@@ -80,9 +73,7 @@ export class AccountRequestPolicy implements Policy<null> {
 }
 
 export type OrganizationAction =
-  | 'organization:read'
-  | 'organization:create'
-  | 'organization:update';
+  'organization:read' | 'organization:create' | 'organization:update';
 
 export class OrganizationPolicy implements Policy<null> {
   readonly resourceType = 'organization';

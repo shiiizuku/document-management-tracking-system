@@ -15,11 +15,7 @@ const DUMMY_PASSWORD_HASH = '$2b$12$oMsRoE0SMBoLdJCuWFrKuOosX2xBsOEyKVW/yzvBL2e3
 // locked account. Anything more specific tells an attacker which half of a guess was right.
 const INVALID_CREDENTIALS = 'Invalid email or password';
 
-type FailureReason =
-  | 'UNKNOWN_ACCOUNT'
-  | 'INVALID_PASSWORD'
-  | 'ACCOUNT_INACTIVE'
-  | 'ACCOUNT_LOCKED';
+type FailureReason = 'UNKNOWN_ACCOUNT' | 'INVALID_PASSWORD' | 'ACCOUNT_INACTIVE' | 'ACCOUNT_LOCKED';
 
 @Injectable()
 export class AuthService {

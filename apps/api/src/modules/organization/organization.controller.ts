@@ -44,10 +44,7 @@ export class OrganizationController {
   }
 
   @Get('sections')
-  async sections(
-    @CurrentUser() actor: RequestUser,
-    @Query('divisionId') divisionId?: string,
-  ) {
+  async sections(@CurrentUser() actor: RequestUser, @Query('divisionId') divisionId?: string) {
     return { data: await this.organization.listSections(actor, divisionId) };
   }
 
