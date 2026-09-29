@@ -11,6 +11,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    setupFiles: ['./test/setup-int-env.ts'],
     include: ['test/**/*.int.test.ts'],
     fileParallelism: false,
   },
