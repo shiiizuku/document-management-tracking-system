@@ -152,6 +152,17 @@ export const referenceCounters = pgTable(
   (table) => [primaryKey({ columns: [table.divisionId, table.year] })],
 );
 
+// Office-wide allocator for the human-facing tracking number stamped on every document at
+// registration. A tracking number only has to be unique, not gap-free, so a single counter
+// row per scope (incremented with `... ON CONFLICT DO UPDATE ... RETURNING`) is enough; the
+// year lives in the formatted string, not the key, mirroring the prototype's monotonic
+// sequence. Outgoing *reference* numbers are formal correspondence numbers and are allocated
+// separately, per division and year, from `reference_counters`.
+export const documentSequences = pgTable('document_sequences', {
+  scope: varchar('scope', { length: 60 }).primaryKey(),
+  value: integer('value').notNull().default(0),
+});
+
 export const documents = pgTable(
   'documents',
   {

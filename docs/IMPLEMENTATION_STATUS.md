@@ -28,13 +28,18 @@ This document is both a **status report** (what is real today) and a **working b
 
 ## Current reality (audited)
 
-Most of the running HTTP app is still a single **in-process, `Map`-backed** application
-(`apps/api/src/modules/application/dts-application.service.ts`). Slice 0's persistence spine is now
-real for **identity**: `DatabaseModule` provides the Drizzle instance as an injectable `DATABASE`
-token, `UsersRepository` reads the `users` table, `AuthService`/`AuthGuard` resolve users through it,
-and `GET /ready` probes Postgres with `select 1`. Everything else — documents, files, notifications,
-reports — still lives in `Map`s. The BullMQ/Redis/object-storage/WebSocket dependencies exist in the
-repo but are **not wired into the runtime**.
+The old in-process, `Map`-backed application (`DtsApplicationService`) has been **retired**.
+Slice 0's persistence spine is real for **identity** (`UsersRepository`, `AuthService`/`AuthGuard`,
+`GET /ready` probing Postgres) and, as of Phase 2, for the **document registry**: the document
+aggregate lives in `modules/documents/documents.repository.ts` + `documents.service.ts` — create with
+atomic tracking/reference allocation, list/search with SQL authorization predicates, metadata edit
+with optimistic concurrency + revision history, plus workflow transitions and assignment persisted in
+one transaction with their `workflow_events`/`audit_events`/`outbox_events`. **Attachment bytes and
+file-version metadata** still live in an in-memory `AttachmentStore` (the document row already points
+at the current/signed version by id) until Phase 4; **notifications** are still the in-memory prototype
+(Phase 5); **reports** now read persisted documents but their own tables land in Phase 6. The
+BullMQ/Redis/object-storage/WebSocket dependencies exist in the repo but are **not wired into the
+runtime**.
 
 ### Module verdict
 
@@ -43,8 +48,8 @@ repo but are **not wired into the runtime**.
 | workflow              | **DONE** (pure FSM, tested)              | Persist transitions to `workflow_events`; transactional version bump |
 | authorization         | **DONE** (pure RBAC/scope, tested)       | Enforce over _persisted_ users/divisions/sections                   |
 | auth / session        | STUBBED (in-memory users)                | Users from Postgres; keep JWT + bcrypt                              |
-| documents / search    | STUBBED (Maps)                           | Postgres repos, metadata edit + revisions, filters, routing, deletion |
-| files / versions      | STUBBED (`#objectStore` Map)             | Real object storage (MinIO) + ClamAV scan pipeline; files UI        |
+| documents / search    | **Postgres-backed** (Phase 2)            | Remaining: routing/sharing, soft-delete + list exclusion, `EXPLAIN` indexes |
+| files / versions      | STUBBED (in-memory `AttachmentStore`)    | Real object storage (MinIO) + ClamAV scan pipeline; files UI        |
 | notifications         | STUBBED (Map)                            | Persist + outbox/BullMQ + realtime fan-out; inbox UI                |
 | reports / print       | STUBBED data / **real** XLSX+PDF bytes   | Report + audit data from Postgres; reports & audit UI               |
 | admin / identity / org| STUBBED (users/audit list only)          | Account requests, org CRUD, role assignment, profile photos         |
@@ -53,10 +58,10 @@ repo but are **not wired into the runtime**.
 
 | Capability                     | Defined in code                                        | Connected to running app? |
 | ------------------------------ | ------------------------------------------------------ | ------------------------- |
-| Postgres + Drizzle             | Full schema (18 tables/7 enums), client, migration, seed | **Partly** — `DatabaseModule` provides the `DATABASE` token to identity + readiness; documents/files/notifications still `Map`-backed |
-| Object storage (MinIO/S3)      | `objectKey` columns + key computation                  | **No** — bytes in a `Map` |
+| Postgres + Drizzle             | Full schema (19 tables/7 enums), client, migration, seed | **Yes for identity + documents** — `DatabaseModule` provides the `DATABASE` token; identity and the document aggregate read/write Postgres. Attachment bytes/notifications not yet migrated |
+| Object storage (MinIO/S3)      | `objectKey` columns + key computation                  | **No** — bytes in an in-memory `AttachmentStore` |
 | BullMQ / Redis                 | Dependencies declared                                  | **No** — never imported   |
-| Transactional outbox           | `outbox_events` table                                  | **No** — no writer/relay  |
+| Transactional outbox           | `outbox_events` table + `OutboxWriter`                 | **Writer only** — document/identity use cases enqueue events in-transaction; no relay/dispatcher yet |
 | Antivirus scan                 | `scan_status` enum + `POST …/scan` endpoint            | **Manual only** — no scanner |
 | WebSockets / rate-limit        | Dependencies declared                                  | **No** — no gateway/module |
 | Config validation              | `config/environment.ts` + `ConfigModule.forRoot`        | **Yes** — validated at boot, fails fast |
@@ -178,20 +183,20 @@ storage and fills the document-management UI gaps.
 
 **Backend**
 
-- [ ] (2h) `DocumentsRepository` + atomic tracking/reference-number issue via `reference_counters`
-      inside a transaction. _Done-when:_ numbers are unique under concurrent creation.
-- [ ] (2h) Persist transitions atomically: `documents` update + `workflow_events` row +
-      `audit_events` in **one** transaction (replaces `#documents`/`#timeline`). _Done-when:_
-      `executeAction` is durable and all-or-nothing.
-- [ ] (2h) Metadata edit: `PATCH /documents/:id/metadata` recording before/after in
-      `document_metadata_revisions`. _Done-when:_ edits are captured as history.
-- [ ] (2h) Persist assignments + routing/sharing (`document_assignments`, `document_routes`,
-      `document_shares`) and add a forward/route endpoint. _Done-when:_ routing persists and authz
-      respects shares.
-- [ ] (2h) Logical deletion (soft-delete) endpoint + list exclusion, capability-gated.
-      _Done-when:_ deleted documents are hidden yet recoverable.
-- [ ] (2h) Move `DocumentSearchService` filtering/sort/pagination to SQL. _Done-when:_ search has
-      parity with the in-memory version plus real pagination.
+- [x] (2h) `DocumentsRepository` + atomic tracking/reference-number issue (`reference_counters`
+      for outgoing refs per division/year; `document_sequences` for office-wide tracking) inside a
+      transaction. _Done-when:_ numbers are unique under concurrent creation. ✓ (12-parallel int test)
+- [x] (2h) Persist transitions atomically: `documents` update (optimistic `version`) + `workflow_events`
+      row + `audit_events` + `outbox_events` in **one** transaction. _Done-when:_ `executeAction` is
+      durable and all-or-nothing.
+- [x] (2h) Metadata edit: `PATCH /documents/:id/metadata` recording before/after in
+      `document_metadata_revisions`, under optimistic concurrency. _Done-when:_ edits are captured as history.
+- [~] (2h) Persist assignments (`document_assignments`) — **done**; routing/sharing
+      (`document_routes`, `document_shares`) and the forward/route endpoint remain (Phase 3).
+- [ ] (2h) Logical deletion (soft-delete) endpoint + list exclusion, capability-gated. _(the
+      `deleted_at` column + `isNull` list/read guards are in place; the endpoint itself is pending.)_
+- [x] (2h) Move `DocumentSearchService` filtering/sort/pagination to SQL (`DocumentsRepository.search`
+      + `documentScopeFor`). _Done-when:_ search has parity with the in-memory version plus real pagination.
 
 **Frontend**
 

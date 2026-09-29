@@ -3,25 +3,25 @@ import type { Response } from 'express';
 import { AuthGuard } from '../../common/auth.guard.js';
 import { CurrentUser } from '../../common/current-user.decorator.js';
 import type { RequestUser } from '../../common/request-user.js';
-import { DtsApplicationService } from '../application/dts-application.service.js';
+import { DocumentsService } from '../documents/documents.service.js';
 import { ReportExportService } from './report-export.service.js';
 
 @Controller('reports')
 @UseGuards(AuthGuard)
 export class ReportsController {
   constructor(
-    private readonly application: DtsApplicationService,
+    private readonly documents: DocumentsService,
     private readonly exports: ReportExportService,
   ) {}
 
   @Get('monthly')
-  monthly(
+  async monthly(
     @CurrentUser() actor: RequestUser,
     @Query('year') year?: string,
     @Query('month') month?: string,
   ) {
     const { reportYear, reportMonth } = this.period(year, month);
-    return { data: this.application.monthlyReport(actor, reportYear, reportMonth) };
+    return { data: await this.documents.monthlyReport(actor, reportYear, reportMonth) };
   }
 
   @Get('monthly.xlsx')
@@ -32,7 +32,7 @@ export class ReportsController {
     @Query('month') month?: string,
   ): Promise<void> {
     const { reportYear, reportMonth } = this.period(year, month);
-    const report = this.application.monthlyReport(actor, reportYear, reportMonth);
+    const report = await this.documents.monthlyReport(actor, reportYear, reportMonth);
     const content = await this.exports.monthlyXlsx(report);
     response.setHeader(
       'Content-Type',
@@ -53,7 +53,7 @@ export class ReportsController {
     @Query('month') month?: string,
   ): Promise<void> {
     const { reportYear, reportMonth } = this.period(year, month);
-    const report = this.application.monthlyReport(actor, reportYear, reportMonth);
+    const report = await this.documents.monthlyReport(actor, reportYear, reportMonth);
     response.setHeader('Content-Type', 'application/pdf');
     response.setHeader(
       'Content-Disposition',

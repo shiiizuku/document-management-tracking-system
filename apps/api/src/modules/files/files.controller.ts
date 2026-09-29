@@ -17,10 +17,7 @@ import { AuthGuard } from '../../common/auth.guard.js';
 import { CurrentUser } from '../../common/current-user.decorator.js';
 import type { RequestUser } from '../../common/request-user.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
-import {
-  DtsApplicationService,
-  MAX_ATTACHMENT_BYTES,
-} from '../application/dts-application.service.js';
+import { AttachmentsService, MAX_ATTACHMENT_BYTES } from './attachments.service.js';
 
 // The subset of multer's in-memory file object this controller consumes. Declared locally
 // rather than relying on the `Express.Multer.File` ambient global, which does not resolve
@@ -44,7 +41,7 @@ const safeDispositionFilename = (name: string): string => {
 @Controller('documents/:documentId/attachments')
 @UseGuards(AuthGuard)
 export class FilesController {
-  constructor(private readonly application: DtsApplicationService) {}
+  constructor(private readonly attachments: AttachmentsService) {}
 
   @Post()
   // Memory storage (multer's default) exposes file.buffer; the fileSize limit rejects
@@ -62,7 +59,7 @@ export class FilesController {
         message: 'A file upload is required under the "file" field',
       });
     return {
-      data: await this.application.uploadAttachment(
+      data: await this.attachments.upload(
         actor,
         documentId,
         { buffer: file.buffer, originalName: file.originalname },
@@ -72,18 +69,18 @@ export class FilesController {
   }
 
   @Get()
-  list(@CurrentUser() actor: RequestUser, @Param('documentId') documentId: string) {
-    return { data: this.application.listAttachments(actor, documentId) };
+  async list(@CurrentUser() actor: RequestUser, @Param('documentId') documentId: string) {
+    return { data: await this.attachments.list(actor, documentId) };
   }
 
   @Get(':versionId/download')
-  download(
+  async download(
     @CurrentUser() actor: RequestUser,
     @Param('documentId') documentId: string,
     @Param('versionId') versionId: string,
     @Res() response: Response,
-  ): void {
-    const file = this.application.downloadAttachment(actor, documentId, versionId);
+  ): Promise<void> {
+    const file = await this.attachments.download(actor, documentId, versionId);
     response.setHeader('Content-Type', file.mediaType);
     // Never let the browser second-guess the validated type; force download disposition.
     response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -95,14 +92,14 @@ export class FilesController {
   }
 
   @Post(':versionId/scan')
-  scan(
+  async scan(
     @CurrentUser() actor: RequestUser,
     @Param('documentId') documentId: string,
     @Param('versionId') versionId: string,
     @Body(new ZodValidationPipe(recordScanSchema)) input: RecordScanInput,
   ) {
     return {
-      data: this.application.recordAttachmentScan(actor, documentId, versionId, input.status),
+      data: await this.attachments.recordScan(actor, documentId, versionId, input.status),
     };
   }
 }

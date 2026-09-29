@@ -6,9 +6,15 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { AuditWriter } from '../src/modules/audit/audit.writer.js';
+import { OutboxWriter } from '../src/modules/audit/outbox.writer.js';
+import { DATABASE } from '../src/database/database.constants.js';
+import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 import { InMemoryAuditWriter } from './in-memory-audit.writer.js';
+import { InMemoryDocumentsRepository } from './in-memory-documents.repository.js';
+import { InMemoryOutboxWriter } from './in-memory-outbox.writer.js';
 import { InMemoryUsersRepository } from './in-memory-users.repository.js';
+import { fakeTransactionalDatabase } from './test-database.js';
 
 const sessionCookie = (response: {
   headers: Record<string, string | string[] | undefined>;
@@ -27,6 +33,12 @@ describe('REST /api/v1 public seam', () => {
       .useClass(InMemoryUsersRepository)
       .overrideProvider(AuditWriter)
       .useClass(InMemoryAuditWriter)
+      .overrideProvider(DocumentsRepository)
+      .useClass(InMemoryDocumentsRepository)
+      .overrideProvider(OutboxWriter)
+      .useClass(InMemoryOutboxWriter)
+      .overrideProvider(DATABASE)
+      .useValue(fakeTransactionalDatabase)
       .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');

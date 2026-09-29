@@ -9,12 +9,15 @@ import { CorrelationIdMiddleware } from './common/correlation-id.middleware.js';
 import { CsrfGuard } from './common/csrf.guard.js';
 import { HttpErrorFilter } from './common/http-error.filter.js';
 import { AdminController } from './modules/admin/admin.controller.js';
-import { DtsApplicationService } from './modules/application/dts-application.service.js';
 import { AuditWriter, DrizzleAuditWriter } from './modules/audit/audit.writer.js';
 import { DrizzleOutboxWriter, OutboxWriter } from './modules/audit/outbox.writer.js';
 import { AuthController } from './modules/auth/auth.controller.js';
 import { AuthorizationService } from './modules/authorization/authorization.service.js';
 import { DocumentsController } from './modules/documents/documents.controller.js';
+import { DocumentsRepository } from './modules/documents/documents.repository.js';
+import { DocumentsService } from './modules/documents/documents.service.js';
+import { AttachmentStore } from './modules/files/attachment-store.js';
+import { AttachmentsService } from './modules/files/attachments.service.js';
 import { FilesController } from './modules/files/files.controller.js';
 import { HealthController } from './modules/health/health.controller.js';
 import { AccountRequestsController } from './modules/identity/account-requests.controller.js';
@@ -24,6 +27,7 @@ import { MeController } from './modules/identity/me.controller.js';
 import { ProfilePhotosRepository } from './modules/identity/profile-photos.repository.js';
 import { UsersController } from './modules/identity/users.controller.js';
 import { NotificationsController } from './modules/notifications/notifications.controller.js';
+import { NotificationService } from './modules/notifications/notification.service.js';
 import { OrganizationController } from './modules/organization/organization.controller.js';
 import { OrganizationRepository } from './modules/organization/organization.repository.js';
 import { OrganizationService } from './modules/organization/organization.service.js';
@@ -73,7 +77,11 @@ import { UsersRepository } from './modules/users/users.repository.js';
     HealthController,
   ],
   providers: [
-    DtsApplicationService,
+    DocumentsRepository,
+    DocumentsService,
+    AttachmentStore,
+    AttachmentsService,
+    NotificationService,
     UsersRepository,
     AccountRequestsRepository,
     ProfilePhotosRepository,

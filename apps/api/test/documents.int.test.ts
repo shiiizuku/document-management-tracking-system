@@ -1,0 +1,328 @@
+import 'reflect-metadata';
+import { hashSync } from 'bcryptjs';
+import cookieParser from 'cookie-parser';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { sql } from 'drizzle-orm';
+import { Test } from '@nestjs/testing';
+import type { INestApplication } from '@nestjs/common';
+import request from 'supertest';
+import type { Server } from 'node:http';
+import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AppModule } from '../src/app.module.js';
+import { DATABASE } from '../src/database/database.constants.js';
+import type { Database } from '../src/database/client.js';
+import { divisions, sections } from '../src/database/schema.js';
+import { UsersRepository } from '../src/modules/users/users.repository.js';
+
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error('DATABASE_URL is required for integration tests');
+if (process.env.ALLOW_DATABASE_RESET !== 'true')
+  throw new Error('ALLOW_DATABASE_RESET=true is required for the destructive documents int test');
+
+const RECORDS_PASSWORD = 'RecordsPass1234!';
+const STAFF_PASSWORD = 'StaffPass12345!';
+
+const DIV_A = '00000000-0000-4000-9000-0000000000a0';
+const DIV_B = '00000000-0000-4000-9000-0000000000b0';
+const SEC_A = '00000000-0000-4000-9000-0000000000a1';
+const SEC_B = '00000000-0000-4000-9000-0000000000b1';
+
+interface Session {
+  cookies: string[];
+  csrf: string;
+}
+
+const readSession = (response: {
+  headers: Record<string, string | string[] | undefined>;
+}): Session => {
+  const raw = response.headers['set-cookie'];
+  if (raw === undefined) throw new Error('response set no cookies');
+  const setCookies = Array.isArray(raw) ? raw : [raw];
+  const cookies = setCookies.map((entry) => entry.split(';')[0] ?? '');
+  const csrfPair = cookies.find((pair) => pair.startsWith('dts_csrf='));
+  if (csrfPair === undefined) throw new Error('login did not set a CSRF cookie');
+  return { cookies, csrf: csrfPair.slice('dts_csrf='.length) };
+};
+
+const dataOf = <T>(response: { body: unknown }): T => (response.body as { data: T }).data;
+
+interface DocumentPayload {
+  id: string;
+  trackingNumber: string;
+  referenceNumber: string | null;
+  status: string;
+  version: number;
+}
+
+describe('document registry REST against a real database', () => {
+  let app: INestApplication;
+  let staffId: string;
+  // The auth window is a tight 5/minute, so each principal signs in once in `beforeAll` and
+  // the session is reused across tests rather than logging in per case.
+  let records: Session;
+  let staff: Session;
+  const server = (): Server => app.getHttpServer() as Server;
+
+  const login = async (email: string, password: string): Promise<Session> => {
+    const response = await request(server())
+      .post('/api/v1/auth/login')
+      .send({ email, password })
+      .expect(201);
+    return readSession(response);
+  };
+
+  const registerDocument = (session: Session, body: Record<string, unknown>): request.Test =>
+    request(server())
+      .post('/api/v1/documents')
+      .set('Cookie', session.cookies)
+      .set('x-csrf-token', session.csrf)
+      .send(body);
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.use(cookieParser());
+    await app.init();
+
+    const database = app.get<Database>(DATABASE);
+    await database.execute(
+      sql.raw(
+        'DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;',
+      ),
+    );
+    await migrate(database, {
+      migrationsFolder: fileURLToPath(new URL('../drizzle', import.meta.url)),
+    });
+
+    await database.insert(divisions).values([
+      { id: DIV_A, code: 'DIVA', name: 'Division A' },
+      { id: DIV_B, code: 'DIVB', name: 'Division B' },
+    ]);
+    await database.insert(sections).values([
+      { id: SEC_A, divisionId: DIV_A, code: 'A1', name: 'Section A1' },
+      { id: SEC_B, divisionId: DIV_B, code: 'B1', name: 'Section B1' },
+    ]);
+
+    const users = app.get(UsersRepository);
+    await users.insert({
+      email: 'records@dts.local',
+      displayName: 'Records Officer',
+      passwordHash: hashSync(RECORDS_PASSWORD, 4),
+      role: 'RECORDS_STAFF',
+      divisionId: null,
+      sectionId: null,
+      canAccessConfidential: true,
+    });
+    const staffUser = await users.insert({
+      email: 'staff@dts.local',
+      displayName: 'Division A Staff',
+      passwordHash: hashSync(STAFF_PASSWORD, 4),
+      role: 'STAFF_MEMBER',
+      divisionId: DIV_A,
+      sectionId: SEC_A,
+      canAccessConfidential: false,
+    });
+    staffId = staffUser.id;
+
+    records = await login('records@dts.local', RECORDS_PASSWORD);
+    staff = await login('staff@dts.local', STAFF_PASSWORD);
+  }, 30_000);
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('registers incoming and outgoing documents, allocating a reference only for outgoing', async () => {
+    const incoming = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Incoming letter',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External Office',
+        referenceNumber: 'EXT-2026-42',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+    expect(incoming.trackingNumber).toMatch(/^DTS-\d{4}-\d{6}$/);
+    // Incoming keeps whatever external reference the sender used.
+    expect(incoming.referenceNumber).toBe('EXT-2026-42');
+    expect(incoming).toMatchObject({ status: 'PENDING', version: 1 });
+
+    const outgoing = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Outgoing memo',
+        type: 'MEMORANDUM',
+        priority: 'HIGH',
+        direction: 'OUTGOING',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+    // Outgoing is stamped with an office reference prefixed by the division code.
+    expect(outgoing.referenceNumber).toMatch(/^DIVA-\d{4}-\d{5}$/);
+
+    // Both are retrievable by tracking id.
+    const fetched = await request(server())
+      .get(`/api/v1/documents/${incoming.id}`)
+      .set('Cookie', records.cookies)
+      .expect(200);
+    expect(dataOf<DocumentPayload>(fetched).trackingNumber).toBe(incoming.trackingNumber);
+  }, 30_000);
+
+  it('allocates a unique reference number to every one of many concurrent outgoing creates', async () => {
+    const parallel = 12;
+    const responses = await Promise.all(
+      Array.from({ length: parallel }, (_, index) =>
+        registerDocument(records, {
+          title: `Concurrent outgoing ${index}`,
+          type: 'MEMORANDUM',
+          priority: 'NORMAL',
+          direction: 'OUTGOING',
+          divisionId: DIV_B,
+          sectionId: SEC_B,
+        }).expect(201),
+      ),
+    );
+    const references = responses.map(
+      (response) => dataOf<DocumentPayload>(response).referenceNumber,
+    );
+    const trackingNumbers = responses.map((r) => dataOf<DocumentPayload>(r).trackingNumber);
+    expect(new Set(references).size).toBe(parallel);
+    // Tracking numbers are office-wide unique too.
+    expect(new Set(trackingNumbers).size).toBe(parallel);
+  }, 30_000);
+
+  it('records a metadata edit as history and rejects a stale edit with 409', async () => {
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Original title',
+        type: 'LETTER',
+        priority: 'LOW',
+        direction: 'INCOMING',
+        sender: 'Someone',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+
+    const edit = (expectedVersion: number, title: string) =>
+      request(server())
+        .patch(`/api/v1/documents/${created.id}/metadata`)
+        .set('Cookie', records.cookies)
+        .set('x-csrf-token', records.csrf)
+        .send({ expectedVersion, title });
+
+    const updated = dataOf<DocumentPayload>(await edit(1, 'Revised title').expect(200));
+    expect(updated.version).toBe(2);
+
+    const revisions = await request(server())
+      .get(`/api/v1/documents/${created.id}/metadata-revisions`)
+      .set('Cookie', records.cookies)
+      .expect(200);
+    const history =
+      dataOf<{ before: Record<string, unknown>; after: Record<string, unknown> }[]>(revisions);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      before: { title: 'Original title' },
+      after: { title: 'Revised title' },
+    });
+
+    // The editor who still holds version 1 loses the optimistic-concurrency race.
+    const conflict = await edit(1, 'Late title').expect(409);
+    expect(conflict.body.error.code).toBe('DOCUMENT_CONFLICT');
+  }, 30_000);
+
+  it('keeps cross-scope documents out of a staff member’s search results and totals', async () => {
+    await registerDocument(records, {
+      title: 'Division B only secret plan',
+      type: 'MEMORANDUM',
+      priority: 'NORMAL',
+      direction: 'INCOMING',
+      sender: 'External',
+      divisionId: DIV_B,
+      sectionId: SEC_B,
+    }).expect(201);
+
+    const search = await request(server())
+      .get('/api/v1/documents?search=Division%20B%20only%20secret%20plan')
+      .set('Cookie', staff.cookies)
+      .expect(200);
+    const result = dataOf<{ total: number; items: unknown[] }>(search);
+    expect(result.total).toBe(0);
+    expect(result.items).toHaveLength(0);
+  }, 30_000);
+
+  it('persists a workflow transition with its timeline and enforces optimistic concurrency', async () => {
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Workflow subject',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+
+    const accept = (expectedVersion: number) =>
+      request(server())
+        .post(`/api/v1/documents/${created.id}/actions/ACCEPT`)
+        .set('Cookie', records.cookies)
+        .set('x-csrf-token', records.csrf)
+        .send({ expectedVersion });
+
+    const accepted = dataOf<DocumentPayload>(await accept(1).expect(201));
+    expect(accepted).toMatchObject({ status: 'IN_PROCESS', version: 2 });
+
+    const detail = await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', records.cookies)
+      .expect(200);
+    const timeline = dataOf<{ timeline: { action: string; toStatus: string }[] }>(detail).timeline;
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({ action: 'ACCEPT', toStatus: 'IN_PROCESS' });
+
+    // Replaying the accept against the now-stale version conflicts rather than double-applying.
+    const conflict = await accept(1).expect(409);
+    expect(conflict.body.error.code).toBe('WORKFLOW_CONFLICT');
+  }, 30_000);
+
+  it('lets an assignment reach a document a staff member is otherwise out of scope for', async () => {
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Cross-division assignment',
+        type: 'MEMORANDUM',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_B,
+        sectionId: SEC_B,
+      }).expect(201),
+    );
+
+    // Out of scope before the assignment: a Division A staff member cannot see a Division B doc.
+    await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', staff.cookies)
+      .expect(404);
+
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/assignments`)
+      .set('Cookie', records.cookies)
+      .set('x-csrf-token', records.csrf)
+      .send({ recipientUserId: staffId })
+      .expect(201);
+
+    // The assignment now brings the document into the staff member's readable scope.
+    const readable = await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', staff.cookies)
+      .expect(200);
+    expect(dataOf<DocumentPayload>(readable).id).toBe(created.id);
+  }, 30_000);
+});
