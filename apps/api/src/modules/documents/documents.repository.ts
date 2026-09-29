@@ -1,5 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  isNull,
+  notInArray,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import type { AuthorizationActor } from '../authorization/authorization.policy.js';
 import { documentScopeFor } from '../authorization/query-scope.js';
 import type { Database } from '../../database/client.js';
@@ -19,7 +31,7 @@ import {
   signatureEvents,
   workflowEvents,
 } from '../../database/schema.js';
-import type { ReleaseMethod } from '../workflow/workflow.service.js';
+import { workflowStatuses, type ReleaseMethod } from '../workflow/workflow.service.js';
 
 export type DocumentRow = typeof documents.$inferSelect;
 export type WorkflowEventRow = typeof workflowEvents.$inferSelect;
@@ -528,6 +540,42 @@ export class DocumentsRepository {
       .from(releaseEvents)
       .where(eq(releaseEvents.documentId, documentId));
     return row?.method ?? null;
+  }
+
+  /**
+   * Scope-aware dashboard rollup: totals per workflow status and the overdue count, computed
+   * from the same `documentScopeFor` predicate the list uses so the dashboard can never show a
+   * number the list can't back up (decision register 90 — one source of truth for scope).
+   */
+  async summary(
+    actor: AuthorizationActor,
+  ): Promise<{ total: number; byStatus: Record<DocumentRow['status'], number>; overdue: number }> {
+    const scoped = and(isNull(documents.deletedAt), documentScopeFor(actor));
+    const statusRows = await this.database
+      .select({ status: documents.status, total: count() })
+      .from(documents)
+      .where(scoped)
+      .groupBy(documents.status);
+    const [overdueRow] = await this.database
+      .select({ total: count() })
+      .from(documents)
+      .where(
+        and(
+          scoped,
+          notInArray(documents.status, ['RELEASED', 'ARCHIVED']),
+          sql`${documents.dueAt} is not null and ${documents.dueAt} < now()`,
+        ),
+      );
+    const byStatus = Object.fromEntries(workflowStatuses.map((status) => [status, 0])) as Record<
+      DocumentRow['status'],
+      number
+    >;
+    let total = 0;
+    for (const row of statusRows) {
+      byStatus[row.status] = row.total;
+      total += row.total;
+    }
+    return { total, byStatus, overdue: overdueRow?.total ?? 0 };
   }
 
   /** Scoped list of live documents registered within a calendar month, for the monthly report. */

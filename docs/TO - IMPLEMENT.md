@@ -15,7 +15,7 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 | 2 — Document registry              | ✅ done            | ⏳ deferred   | Aggregate is Postgres-backed, `DtsApplicationService` retired (PR #40) |
 | 3 — Workflow & routing             | ◑ mostly done      | ⏳ deferred   | Transitions, assignment, routing/forwarding, sharing, work queue persisted (PR #41); parallel-route completion semantics deferred (open policy) |
 | 4 — Files & scanning               | ◑ persistence done | ⬜ not started | `file_records`/`file_versions` + `signature_events` persisted; bytes behind a `StoragePort` (in-memory adapter); MinIO adapter + ClamAV scan worker deferred (need running services) |
-| 5 — Outbox, notifications, dashboard | ◑ partial        | ⬜ not started | `OutboxWriter` writes in-transaction; no relay/worker; notifs in memory |
+| 5 — Outbox, notifications, dashboard | ◑ mostly done    | ⬜ not started | Notifications persisted in the domain tx; outbox **relay + BullMQ worker** run against real Redis; dashboard summary scoped. Realtime WS gateway deferred |
 | 6 — Reports, routing slip, audit UI | ◑ partial         | ⬜ not started | Report/audit/slip read Postgres; own report tables + UI pending        |
 | 7 — Hardening & readiness          | ⬜ not started     | ⬜ not started |                                                                       |
 
@@ -278,6 +278,17 @@ GET  /files/{id}/versions/{vid}/content
 
 **Goal:** committed events are never lost; users get notifications live and after reconnect.
 
+> **Status (2026-09-29): durable pipeline + dashboard done; realtime deferred.** Notification rows
+> are written in the **same transaction** as the domain change (`NotificationsRepository.insert` inside
+> the assignment tx), so a notification can't be lost to a downed worker. The **outbox relay**
+> (`modules/jobs/outbox-relay.ts`) leases unpublished `outbox_events` with `FOR UPDATE SKIP LOCKED`,
+> enqueues an idempotent **BullMQ** job (jobId = outbox row id) and marks them published; the **worker**
+> (`worker.ts`) runs the relay on an interval and a BullMQ `Worker` consumes the queue. This is tested
+> against a **real Redis** (run natively; a `redis` service added to the CI integration job). The
+> **dashboard summary** (`GET /dashboard/summary`) reuses `documentScopeFor`. **Deferred:** the realtime
+> WS/SSE gateway (task 4) — the consumer is the seam where it plugs in — and per-recipient email; the
+> durable inbox works without them. Frontend deferred.
+
 **Schema**
 - `notification (user_id, type, document_id, read_at, seq)`; outbox columns: `status`, `lease_until`, `attempts`, `idempotency_key`.
 
@@ -288,11 +299,11 @@ GET  /dashboard/summary          (+ realtime channel)
 ```
 
 **Backend tasks**
-1. **Outbox publisher:** lease unpublished rows (`FOR UPDATE SKIP LOCKED`) → enqueue idempotent BullMQ job → mark published.
-2. Job conventions: name, payload schema, idempotency key, backoff, dead-letter + inspection.
-3. Notification audience resolver (from assignment/route/workflow events); rows written in the domain transaction.
-4. Realtime gateway: authenticated subscribe, authorized fan-out, cursor catch-up on reconnect, unread-count reconciliation.
-5. Dashboard queries reusing the same scoped list predicates (single source of truth).
+1. [x] **Outbox publisher:** lease unpublished rows (`FOR UPDATE SKIP LOCKED`) → enqueue idempotent BullMQ job → mark published, all in one transaction.
+2. [x] Job conventions: queue name, typed payload, idempotency (jobId = outbox row id), bounded retries + exponential backoff, failures kept for inspection.
+3. [~] Notification rows written in the domain transaction; audience resolver currently covers assignment (assignee). Route/workflow audiences are easy follow-ons.
+4. [ ] Realtime gateway (authenticated subscribe, authorized fan-out, catch-up) — **deferred**; the queue consumer is the plug-in point.
+5. [x] Dashboard summary reuses the scoped list predicate (`documentScopeFor`) — one source of truth for scope.
 
 **Frontend tasks**
 - Notification bell + inbox, unread badge, mark-read, reconnect/catch-up, dashboard cards, pending-by-division chart, activity feed, quick accept/assign, overdue highlighting.

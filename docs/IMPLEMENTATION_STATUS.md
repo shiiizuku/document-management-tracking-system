@@ -50,7 +50,7 @@ runtime**.
 | auth / session        | STUBBED (in-memory users)                | Users from Postgres; keep JWT + bcrypt                              |
 | documents / search    | **Postgres-backed** (Phase 2–3)          | Routing/sharing/work-queue done; remaining: soft-delete endpoint, `signature_events` (Phase 4), `EXPLAIN` indexes |
 | files / versions      | **Postgres metadata + storage port** (Phase 4) | Remaining: MinIO adapter, ClamAV scan worker (BullMQ/Redis), files UI |
-| notifications         | STUBBED (Map)                            | Persist + outbox/BullMQ + realtime fan-out; inbox UI                |
+| notifications         | **Postgres in-tx + outbox relay/worker** (Phase 5) | Remaining: realtime WS fan-out, inbox UI                |
 | reports / print       | STUBBED data / **real** XLSX+PDF bytes   | Report + audit data from Postgres; reports & audit UI               |
 | admin / identity / org| STUBBED (users/audit list only)          | Account requests, org CRUD, role assignment, profile photos         |
 
@@ -60,8 +60,8 @@ runtime**.
 | ------------------------------ | ------------------------------------------------------ | ------------------------- |
 | Postgres + Drizzle             | Full schema (19 tables/7 enums), client, migration, seed | **Yes for identity + documents** — `DatabaseModule` provides the `DATABASE` token; identity and the document aggregate read/write Postgres. Attachment bytes/notifications not yet migrated |
 | Object storage (MinIO/S3)      | `StoragePort` + `objectKey` columns + key computation  | **Behind a port** — bytes in an in-memory `StoragePort` adapter; MinIO adapter is a drop-in |
-| BullMQ / Redis                 | Dependencies declared                                  | **No** — never imported   |
-| Transactional outbox           | `outbox_events` table + `OutboxWriter`                 | **Writer only** — document/identity use cases enqueue events in-transaction; no relay/dispatcher yet |
+| BullMQ / Redis                 | `outbox-queue.ts` (queue + worker factories)           | **Yes** — the worker runs a relay + BullMQ consumer against Redis; tested in CI's integration job |
+| Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published. Consumer's realtime fan-out deferred |
 | Antivirus scan                 | `scan_status` enum + `POST …/scan` endpoint            | **Manual only** — no scanner |
 | WebSockets / rate-limit        | Dependencies declared                                  | **No** — no gateway/module |
 | Config validation              | `config/environment.ts` + `ConfigModule.forRoot`        | **Yes** — validated at boot, fails fast |
@@ -282,14 +282,15 @@ module makes them durable, event-driven, and live.
 
 **Backend**
 
-- [ ] (2h) Persist notifications to the `notifications` table. _Done-when:_ notifications survive a
-      restart.
-- [ ] (2h) Transactional outbox writer: domain mutations enqueue `outbox_events` in the _same_
-      transaction as the state change. _Done-when:_ events are recorded atomically with the change.
-- [ ] (2h) Implement the BullMQ worker in `worker.ts`: relay `outbox_events` → queue → notification
-      fan-out. _Done-when:_ the worker drains the outbox into notifications.
-- [ ] (2h) Authenticated WebSocket/SSE gateway for realtime delivery. _Done-when:_ a connected
-      client receives a pushed notification.
+- [x] (2h) Persist notifications to the `notifications` table (`NotificationsRepository`), written in
+      the domain transaction. _Done-when:_ notifications survive a restart. ✓
+- [x] (2h) Transactional outbox: domain mutations enqueue `outbox_events` in the _same_ transaction
+      (`OutboxWriter`, since Phase 2). ✓
+- [x] (2h) BullMQ relay + worker in `worker.ts`: `OutboxRelay` leases `outbox_events` → queue → the
+      worker consumes. _Done-when:_ the relay drains the outbox onto the queue and a worker consumes it
+      (tested against real Redis). ✓ — the consumer's realtime fan-out is the deferred piece.
+- [ ] (2h) Authenticated WebSocket/SSE gateway for realtime delivery. **Deferred**; the durable inbox
+      + relay/worker are in place, and the consumer is the plug-in point.
 
 **Frontend**
 

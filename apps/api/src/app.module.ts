@@ -27,8 +27,9 @@ import { IdentityService } from './modules/identity/identity.service.js';
 import { MeController } from './modules/identity/me.controller.js';
 import { ProfilePhotosRepository } from './modules/identity/profile-photos.repository.js';
 import { UsersController } from './modules/identity/users.controller.js';
+import { DashboardController } from './modules/dashboard/dashboard.controller.js';
 import { NotificationsController } from './modules/notifications/notifications.controller.js';
-import { NotificationService } from './modules/notifications/notification.service.js';
+import { NotificationsRepository } from './modules/notifications/notifications.repository.js';
 import { OrganizationController } from './modules/organization/organization.controller.js';
 import { OrganizationRepository } from './modules/organization/organization.repository.js';
 import { OrganizationService } from './modules/organization/organization.service.js';
@@ -73,6 +74,7 @@ import { UsersRepository } from './modules/users/users.repository.js';
     DocumentsController,
     FilesController,
     NotificationsController,
+    DashboardController,
     ReportsController,
     AdminController,
     HealthController,
@@ -85,7 +87,7 @@ import { UsersRepository } from './modules/users/users.repository.js';
     // Attachment bytes live behind the storage port; the in-memory adapter is the current
     // binding until the MinIO adapter lands (Phase 4 infra).
     { provide: StoragePort, useClass: InMemoryStorageAdapter },
-    NotificationService,
+    NotificationsRepository,
     UsersRepository,
     AccountRequestsRepository,
     ProfilePhotosRepository,
