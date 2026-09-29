@@ -5,7 +5,9 @@ import { type INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
+import { AuditWriter } from '../src/modules/audit/audit.writer.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
+import { InMemoryAuditWriter } from './in-memory-audit.writer.js';
 import { InMemoryUsersRepository } from './in-memory-users.repository.js';
 
 const sessionCookie = (response: {
@@ -23,6 +25,8 @@ describe('REST /api/v1 public seam', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(UsersRepository)
       .useClass(InMemoryUsersRepository)
+      .overrideProvider(AuditWriter)
+      .useClass(InMemoryAuditWriter)
       .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');

@@ -33,9 +33,140 @@ export const documentPrioritySchema = z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']
 export const releaseMethodSchema = z.enum(['MAILED', 'EMAILED', 'PICKED_UP', 'DELIVERED']);
 
 export const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   password: z.string().min(12).max(128),
 });
+
+// Applied to every password the system accepts (account requests, admin-created users,
+// password changes). Login deliberately reuses only the length bound: rejecting a
+// weak-but-correct password at sign-in would lock out accounts created before a policy
+// change and would tell an attacker which candidate passwords are worth trying.
+export const strongPasswordSchema = z
+  .string()
+  .min(12, 'Password must be at least 12 characters')
+  .max(128)
+  .refine((value) => /[a-z]/.test(value), 'Password must contain a lowercase letter')
+  .refine((value) => /[A-Z]/.test(value), 'Password must contain an uppercase letter')
+  .refine((value) => /[0-9]/.test(value), 'Password must contain a digit')
+  .refine((value) => /[^A-Za-z0-9]/.test(value), 'Password must contain a symbol');
+
+export const accountRequestStatusSchema = z.enum(['PENDING', 'APPROVED', 'REJECTED']);
+
+export const submitAccountRequestSchema = z.object({
+  email: z.email().max(320),
+  displayName: z.string().trim().min(1).max(200),
+  password: strongPasswordSchema,
+  requestedDivisionId: z.uuid().optional(),
+  requestedSectionId: z.uuid().optional(),
+  justification: z.string().trim().max(2000).optional(),
+});
+
+// Roles differ in how much of the organization tree they must be pinned to. Records staff
+// and administrators work across the whole office, so their placement is optional; everyone
+// else is scoped, and the two lowest roles are scoped all the way down to a section because
+// the read policy falls back to a section match for them.
+const membershipRules = (
+  value: { role: Role; divisionId?: string | undefined; sectionId?: string | undefined },
+  context: z.RefinementCtx,
+): void => {
+  const needsDivision = value.role !== 'ADMINISTRATOR' && value.role !== 'RECORDS_STAFF';
+  const needsSection = value.role === 'STAFF_MEMBER' || value.role === 'VIEWER';
+  if (needsDivision && !value.divisionId) {
+    context.addIssue({
+      code: 'custom',
+      path: ['divisionId'],
+      message: `A division is required for the ${value.role} role`,
+    });
+  }
+  if (needsSection && !value.sectionId) {
+    context.addIssue({
+      code: 'custom',
+      path: ['sectionId'],
+      message: `A section is required for the ${value.role} role`,
+    });
+  }
+  if (value.sectionId && !value.divisionId) {
+    context.addIssue({
+      code: 'custom',
+      path: ['divisionId'],
+      message: 'A section cannot be assigned without its division',
+    });
+  }
+};
+
+export const approveAccountRequestSchema = z
+  .object({
+    role: roleSchema,
+    divisionId: z.uuid().optional(),
+    sectionId: z.uuid().optional(),
+    canAccessConfidential: z.boolean().default(false),
+  })
+  .superRefine(membershipRules);
+
+export const rejectAccountRequestSchema = z.object({
+  reason: z.string().trim().min(1).max(2000),
+});
+
+export const createUserSchema = z
+  .object({
+    email: z.email().max(320),
+    displayName: z.string().trim().min(1).max(200),
+    password: strongPasswordSchema,
+    role: roleSchema,
+    divisionId: z.uuid().optional(),
+    sectionId: z.uuid().optional(),
+    canAccessConfidential: z.boolean().default(false),
+  })
+  .superRefine(membershipRules);
+
+// Every field is optional, but the membership rules still apply to the *resulting* user, so
+// the service re-checks the merged row. Zod can only reject the shapes that are wrong on
+// their face — a section sent without a division.
+export const updateUserSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(200).optional(),
+    role: roleSchema.optional(),
+    divisionId: z.uuid().nullable().optional(),
+    sectionId: z.uuid().nullable().optional(),
+    canAccessConfidential: z.boolean().optional(),
+  })
+  .refine(
+    (value) => Object.values(value).some((field) => field !== undefined),
+    'At least one field must be supplied',
+  );
+
+export const createDivisionSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(2)
+    .max(20)
+    .regex(/^[A-Z0-9-]+$/, 'Code may contain uppercase letters, digits and hyphens only'),
+  name: z.string().trim().min(2).max(160),
+});
+export const updateDivisionSchema = z
+  .object({
+    name: z.string().trim().min(2).max(160).optional(),
+    active: z.boolean().optional(),
+  })
+  .refine(
+    (value) => value.name !== undefined || value.active !== undefined,
+    'At least one field must be supplied',
+  );
+
+export const createSectionSchema = createDivisionSchema.extend({ divisionId: z.uuid() });
+export const updateSectionSchema = updateDivisionSchema;
+
+export const listAccountRequestsQuerySchema = z.object({
+  status: accountRequestStatusSchema.optional(),
+});
+export const listUsersQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  role: roleSchema.optional(),
+  divisionId: z.uuid().optional(),
+  active: z.stringbool().optional(),
+});
+
 export const createDocumentSchema = z
   .object({
     title: z.string().trim().min(1).max(240),
@@ -79,3 +210,15 @@ export type Role = z.infer<typeof roleSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type FileScanResult = z.infer<typeof fileScanStatusSchema>;
 export type RecordScanInput = z.infer<typeof recordScanSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
+export type AccountRequestStatus = z.infer<typeof accountRequestStatusSchema>;export type SubmitAccountRequestInput = z.infer<typeof submitAccountRequestSchema>;
+export type ApproveAccountRequestInput = z.infer<typeof approveAccountRequestSchema>;
+export type RejectAccountRequestInput = z.infer<typeof rejectAccountRequestSchema>;
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type CreateDivisionInput = z.infer<typeof createDivisionSchema>;
+export type UpdateDivisionInput = z.infer<typeof updateDivisionSchema>;
+export type CreateSectionInput = z.infer<typeof createSectionSchema>;
+export type UpdateSectionInput = z.infer<typeof updateSectionSchema>;
+export type ListAccountRequestsQuery = z.infer<typeof listAccountRequestsQuerySchema>;
+export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;

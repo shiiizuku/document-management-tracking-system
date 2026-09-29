@@ -13,7 +13,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import { identityColumns, timestampColumns, versionColumn } from './schema-helpers.js';
+import { customBytea, identityColumns, timestampColumns, versionColumn } from './schema-helpers.js';
 
 export const roleEnum = pgEnum('role', [
   'ADMINISTRATOR',
@@ -48,6 +48,11 @@ export const releaseMethodEnum = pgEnum('release_method', [
   'DELIVERED',
 ]);
 export const auditOutcomeEnum = pgEnum('audit_outcome', ['SUCCESS', 'FAILURE']);
+export const accountRequestStatusEnum = pgEnum('account_request_status', [
+  'PENDING',
+  'APPROVED',
+  'REJECTED',
+]);
 
 export const divisions = pgTable('divisions', {
   ...identityColumns(),
@@ -69,7 +74,10 @@ export const sections = pgTable(
     active: boolean('active').notNull().default(true),
     ...timestampColumns(),
   },
-  (table) => [uniqueIndex('sections_division_name_uq').on(table.divisionId, table.name)],
+  (table) => [
+    uniqueIndex('sections_division_name_uq').on(table.divisionId, table.name),
+    uniqueIndex('sections_division_code_uq').on(table.divisionId, table.code),
+  ],
 );
 
 export const users = pgTable('users', {
@@ -82,22 +90,55 @@ export const users = pgTable('users', {
   sectionId: uuid('section_id').references(() => sections.id),
   canAccessConfidential: boolean('can_access_confidential').notNull().default(false),
   active: boolean('active').notNull().default(true),
-  profilePhotoObjectKey: text('profile_photo_object_key'),
+  // Lockout state lives on the user row rather than in a cache so a restart cannot wipe it.
+  // Both columns are cleared on a successful login; `lockedUntil` in the future is the lock.
+  failedLoginAttempts: integer('failed_login_attempts').notNull().default(0),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  passwordChangedAt: timestamp('password_changed_at', { withTimezone: true }),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   ...timestampColumns(),
 });
 
-export const accountRequests = pgTable('account_requests', {
-  ...identityColumns(),
-  email: varchar('email', { length: 320 }).notNull(),
-  displayName: varchar('display_name', { length: 200 }).notNull(),
-  passwordHash: varchar('password_hash', { length: 100 }).notNull(),
-  status: varchar('status', { length: 20 }).notNull().default('PENDING'),
-  reviewedById: uuid('reviewed_by_id').references(() => users.id),
-  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
-  rejectionReason: text('rejection_reason'),
+// Profile photos are small, non-evidentiary and never versioned, so they live in Postgres
+// instead of the object store that Phase 4 introduces for document attachments. One row per
+// user; replacing a photo overwrites the row.
+export const profilePhotos = pgTable('profile_photos', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  mediaType: varchar('media_type', { length: 80 }).notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  checksumSha256: varchar('checksum_sha256', { length: 64 }).notNull(),
+  content: customBytea('content').notNull(),
   ...timestampColumns(),
 });
+
+export const accountRequests = pgTable(
+  'account_requests',
+  {
+    ...identityColumns(),
+    email: varchar('email', { length: 320 }).notNull(),
+    displayName: varchar('display_name', { length: 200 }).notNull(),
+    passwordHash: varchar('password_hash', { length: 100 }).notNull(),
+    status: accountRequestStatusEnum('status').notNull().default('PENDING'),
+    requestedDivisionId: uuid('requested_division_id').references(() => divisions.id),
+    requestedSectionId: uuid('requested_section_id').references(() => sections.id),
+    justification: text('justification'),
+    reviewedById: uuid('reviewed_by_id').references(() => users.id),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    rejectionReason: text('rejection_reason'),
+    createdUserId: uuid('created_user_id').references(() => users.id),
+    ...timestampColumns(),
+  },
+  (table) => [
+    // One open request per address at a time. Rejected requests stay for the audit trail and
+    // do not block the applicant from trying again, so the constraint is partial.
+    uniqueIndex('account_requests_pending_email_uq')
+      .on(sql`lower(${table.email})`)
+      .where(sql`${table.status} = 'PENDING'`),
+    index('account_requests_status_idx').on(table.status, table.createdAt),
+  ],
+);
 
 export const referenceCounters = pgTable(
   'reference_counters',

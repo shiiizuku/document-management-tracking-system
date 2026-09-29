@@ -1,7 +1,13 @@
-import { integer, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { customType, integer, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const identityColumns = () => ({
   id: uuid('id').primaryKey().defaultRandom(),
+});
+
+// `drizzle-orm/pg-core` ships no `bytea` column, and node-postgres already hands back a
+// Buffer for it, so the driver mapping is the identity function in both directions.
+export const customBytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
 });
 
 export const timestampColumns = () => ({

@@ -13,6 +13,9 @@ export interface ValidatedEnvironment {
   COOKIE_SECURE: boolean;
   COOKIE_SAME_SITE: CookieSameSite;
   COOKIE_MAX_AGE_MS: number;
+  SESSION_ABSOLUTE_MAX_AGE_MS: number;
+  LOGIN_MAX_ATTEMPTS: number;
+  LOGIN_LOCKOUT_MS: number;
   UPLOAD_MAX_BYTES: number;
   PORT: number;
   WORKER_HEALTH_PORT: number;
@@ -116,6 +119,31 @@ export const validateEnvironment = (
   );
   if (cookieMaxAgeMs % 1000 !== 0) throw new Error('COOKIE_MAX_AGE_MS must be a multiple of 1000');
 
+  // `COOKIE_MAX_AGE_MS` is the *inactivity* window and is renewed on every authenticated
+  // request (policy register P-10). This is the ceiling that renewal cannot push past, so a
+  // browser left open on a shared desk eventually has to authenticate again. It must exceed
+  // the inactivity window, otherwise a session would expire before it could ever be renewed.
+  const sessionAbsoluteMaxAgeMs = parsePositiveInteger(
+    environment.SESSION_ABSOLUTE_MAX_AGE_MS,
+    'SESSION_ABSOLUTE_MAX_AGE_MS',
+    8 * 60 * 60 * 1000,
+  );
+  if (sessionAbsoluteMaxAgeMs % 1000 !== 0)
+    throw new Error('SESSION_ABSOLUTE_MAX_AGE_MS must be a multiple of 1000');
+  if (sessionAbsoluteMaxAgeMs < cookieMaxAgeMs)
+    throw new Error('SESSION_ABSOLUTE_MAX_AGE_MS must be greater than or equal to COOKIE_MAX_AGE_MS');
+
+  const loginMaxAttempts = parsePositiveInteger(
+    environment.LOGIN_MAX_ATTEMPTS,
+    'LOGIN_MAX_ATTEMPTS',
+    5,
+  );
+  const loginLockoutMs = parsePositiveInteger(
+    environment.LOGIN_LOCKOUT_MS,
+    'LOGIN_LOCKOUT_MS',
+    15 * 60 * 1000,
+  );
+
   const uploadMaxBytes = parsePositiveInteger(
     environment.UPLOAD_MAX_BYTES,
     'UPLOAD_MAX_BYTES',
@@ -146,6 +174,9 @@ export const validateEnvironment = (
     COOKIE_SECURE: cookieSecure,
     COOKIE_SAME_SITE: rawSameSite,
     COOKIE_MAX_AGE_MS: cookieMaxAgeMs,
+    SESSION_ABSOLUTE_MAX_AGE_MS: sessionAbsoluteMaxAgeMs,
+    LOGIN_MAX_ATTEMPTS: loginMaxAttempts,
+    LOGIN_LOCKOUT_MS: loginLockoutMs,
     UPLOAD_MAX_BYTES: uploadMaxBytes,
     PORT: port,
     WORKER_HEALTH_PORT: workerHealthPort,
