@@ -49,7 +49,7 @@ runtime**.
 | authorization         | **DONE** (pure RBAC/scope, tested)       | Enforce over _persisted_ users/divisions/sections                   |
 | auth / session        | STUBBED (in-memory users)                | Users from Postgres; keep JWT + bcrypt                              |
 | documents / search    | **Postgres-backed** (Phase 2–3)          | Routing/sharing/work-queue done; remaining: soft-delete endpoint, `signature_events` (Phase 4), `EXPLAIN` indexes |
-| files / versions      | STUBBED (in-memory `AttachmentStore`)    | Real object storage (MinIO) + ClamAV scan pipeline; files UI        |
+| files / versions      | **Postgres metadata + storage port** (Phase 4) | Remaining: MinIO adapter, ClamAV scan worker (BullMQ/Redis), files UI |
 | notifications         | STUBBED (Map)                            | Persist + outbox/BullMQ + realtime fan-out; inbox UI                |
 | reports / print       | STUBBED data / **real** XLSX+PDF bytes   | Report + audit data from Postgres; reports & audit UI               |
 | admin / identity / org| STUBBED (users/audit list only)          | Account requests, org CRUD, role assignment, profile photos         |
@@ -59,7 +59,7 @@ runtime**.
 | Capability                     | Defined in code                                        | Connected to running app? |
 | ------------------------------ | ------------------------------------------------------ | ------------------------- |
 | Postgres + Drizzle             | Full schema (19 tables/7 enums), client, migration, seed | **Yes for identity + documents** — `DatabaseModule` provides the `DATABASE` token; identity and the document aggregate read/write Postgres. Attachment bytes/notifications not yet migrated |
-| Object storage (MinIO/S3)      | `objectKey` columns + key computation                  | **No** — bytes in an in-memory `AttachmentStore` |
+| Object storage (MinIO/S3)      | `StoragePort` + `objectKey` columns + key computation  | **Behind a port** — bytes in an in-memory `StoragePort` adapter; MinIO adapter is a drop-in |
 | BullMQ / Redis                 | Dependencies declared                                  | **No** — never imported   |
 | Transactional outbox           | `outbox_events` table + `OutboxWriter`                 | **Writer only** — document/identity use cases enqueue events in-transaction; no relay/dispatcher yet |
 | Antivirus scan                 | `scan_status` enum + `POST …/scan` endpoint            | **Manual only** — no scanner |
@@ -236,16 +236,16 @@ behind it.
 
 **Backend**
 
-- [ ] (2h) Introduce an object-storage client (MinIO/S3 SDK) with a private bucket; replace the
-      `#objectStore` Map in `uploadAttachment`/`downloadAttachment`. _Done-when:_ bytes live in
-      MinIO under the server-generated `objectKey`.
-- [ ] (2h) Persist `file_records` + `file_versions` to Postgres with immutability enforced.
-      _Done-when:_ versions are durable and cannot be mutated.
-- [ ] (2h) Persist `signature_events` + `release_events`; keep the clean-and-signed outgoing-release
-      invariant, now evaluated from DB state. _Done-when:_ sign/release are recorded and the
-      invariant holds.
-- [ ] (2h) Streamed/presigned download that still fails closed unless the version's scan is `CLEAN`.
-      _Done-when:_ pending/infected versions are never downloadable.
+- [~] (2h) Introduce a storage abstraction with server-generated keys and no overwrite. **Done** as
+      `StoragePort` + an in-memory adapter (`storage.port.ts`); the **MinIO/S3 adapter is the pending
+      drop-in** — the use cases already go through the port.
+- [x] (2h) Persist `file_records` + `file_versions` to Postgres with immutability enforced
+      (`file-versions.repository.ts`; unique `(file_record_id, version_number)`, scan-status the only
+      mutable field). _Done-when:_ versions are durable and cannot be mutated. ✓
+- [x] (2h) Persist `signature_events` + `release_events`; the clean-and-signed outgoing-release
+      invariant is evaluated from the persisted version + document row. ✓
+- [~] (2h) Download fails closed unless the version's scan is `CLEAN` — **done**; streamed/presigned
+      access lands with the MinIO adapter.
 
 **Frontend**
 
