@@ -24,9 +24,10 @@ Remaining:
 
 1. **Frontend identity/admin UI** is largely unbuilt (login/logout exist; the account-request
    form, admin user table, approve/reject dialogs, division/section manager and profile-photo
-   upload do not). Note the dependency-aware roadmap in `docs/CONTEXT.md` places most UI on the
-   **Phase 3 (Weeks 10–13)** track; whether this UI is a Phase 1 exit criterion or Phase 3 work
-   is an open sequencing decision, not a defect.
+   upload do not).
+   **Decision (2026-09-29): deferred to the Phase 3 UI track** (Weeks 10–13 in
+   `docs/CONTEXT.md`), to be built with the rest of the API-integrated screens. Phase 1 is
+   therefore considered **backend-complete**; this item does not block Phase 2 backend work.
 
 ## Quality gate (as of `c8abcfe`)
 
@@ -95,7 +96,7 @@ mis-wired rate limiter left by an in-progress refactor (see *Defects fixed*).
 
 | # | Gap | Severity | Status |
 | --- | --- | --- | --- |
-| 1 | **Frontend identity/admin UI** | High | **Open.** `apps/web` has login/logout and a document dashboard only. Missing: request-account form, admin user table, approve/reject dialogs, division/section manager, profile + photo upload, explicit session-expired handling. `docs/CONTEXT.md` places most UI on the Phase 3 track — sequencing decision pending. |
+| 1 | **Frontend identity/admin UI** | High | **Deferred to Phase 3** (decision 2026-09-29). `apps/web` has login/logout and a document dashboard only. To build on the Phase 3 UI track: request-account form, admin user table, approve/reject dialogs, division/section manager, profile + photo upload, explicit session-expired handling. Does not block Phase 2. |
 | 2 | **HTTP/DB integration tests for identity, org, account-request, user-admin endpoints** | High | **Closed** in `c8abcfe` — `identity.int.test.ts` drives the lifecycle over HTTP against real Postgres (controllers, Zod validation, guards, transactions). |
 | 3 | **`authorization/query-scope.ts` untested** | Medium | **Closed** in `c8abcfe` — `query-scope.int.test.ts` proves `documentScopeFor` against real Postgres across all actor kinds. |
 | 4 | **"Done when" not fully evidenced** | Medium | **Closed** for the backend — "no list/count endpoint leaks data" is now proven end-to-end over HTTP (deny-by-default on the admin queue and user list) and at the SQL layer (query-scope). Remaining evidence is UI-side only (#1). |
