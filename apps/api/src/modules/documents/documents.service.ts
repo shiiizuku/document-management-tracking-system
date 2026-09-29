@@ -18,7 +18,7 @@ import { DATABASE } from '../../database/database.constants.js';
 import { AuditWriter } from '../audit/audit.writer.js';
 import { OutboxWriter } from '../audit/outbox.writer.js';
 import { AuthorizationPolicy } from '../authorization/authorization.policy.js';
-import { NotificationService } from '../notifications/notification.service.js';
+import { NotificationsRepository } from '../notifications/notifications.repository.js';
 import type { MonthlyReport } from '../reports/monthly-report.service.js';
 import { UsersRepository } from '../users/users.repository.js';
 import { FileVersionsRepository } from '../files/file-versions.repository.js';
@@ -144,7 +144,7 @@ export class DocumentsService {
     private readonly repository: DocumentsRepository,
     private readonly users: UsersRepository,
     private readonly fileVersions: FileVersionsRepository,
-    private readonly notifications: NotificationService,
+    private readonly notifications: NotificationsRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
   ) {}
@@ -522,6 +522,20 @@ export class DocumentsService {
         { documentId, userId: recipientUserId, assignedById: actor.id },
         tx,
       );
+      // The durable inbox row is written in the same transaction as the assignment, so a
+      // notification can never go missing because the delivery worker was down. The outbox row
+      // beside it is what the relay fans out for realtime/email delivery.
+      await this.notifications.insert(
+        {
+          recipientUserId,
+          type: 'DOCUMENT_ASSIGNED',
+          title: 'Document assigned',
+          body: `${current.trackingNumber}: ${current.title}`,
+          documentId,
+          idempotencyKey: `notify:document.assigned:${documentId}:${recipientUserId}`,
+        },
+        tx,
+      );
       await this.audit.write(
         {
           actorId: actor.id,
@@ -543,17 +557,6 @@ export class DocumentsService {
         },
         tx,
       );
-    });
-
-    // Notifications are still the in-memory prototype (persisted delivery is a later phase);
-    // the outbox row above is the durable record the future dispatcher will fan out from.
-    this.notifications.create({
-      recipientUserId,
-      type: 'DOCUMENT_ASSIGNED',
-      title: 'Document assigned',
-      body: `${current.trackingNumber}: ${current.title}`,
-      documentId,
-      idempotencyKey: `assignment:${documentId}:${recipientUserId}`,
     });
 
     return this.getDocument(actor, documentId);
@@ -669,6 +672,11 @@ export class DocumentsService {
   async assignedQueue(actor: RequestUser): Promise<PublicDocument[]> {
     const rows = await this.repository.listAssignedTo(actor.id);
     return rows.map((row) => this.toPublic(row));
+  }
+
+  /** Scope-aware dashboard rollup (totals per status + overdue), for the dashboard summary. */
+  async dashboardSummary(actor: RequestUser) {
+    return this.repository.summary(actor);
   }
 
   // --------------------------------------------------------------- reports
