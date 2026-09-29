@@ -1,0 +1,16 @@
+process.env.DATABASE_URL ??= 'postgresql://dts:dts@localhost:5432/dts_test';
+process.env.REDIS_URL ??= 'redis://localhost:6379';
+process.env.MINIO_ENDPOINT ??= 'http://localhost:9000';
+process.env.MINIO_ACCESS_KEY ??= 'dts-local';
+process.env.MINIO_SECRET_KEY ??= 'test-minio-secret';
+process.env.MINIO_BUCKET ??= 'dts-files';
+process.env.CLAMAV_HOST ??= 'localhost';
+process.env.CLAMAV_PORT ??= '3310';
+process.env.SESSION_SECRET ??= 'test-session-secret-that-is-at-least-32-characters';
+process.env.COOKIE_SECURE ??= 'false';
+process.env.COOKIE_SAME_SITE ??= 'lax';
+process.env.COOKIE_MAX_AGE_MS ??= '1800000';
+process.env.UPLOAD_MAX_BYTES ??= '26214400';
+process.env.PORT ??= '4000';
+process.env.WORKER_HEALTH_PORT ??= '4001';
+process.env.WEB_ORIGIN ??= 'http://localhost:3000';
