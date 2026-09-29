@@ -3,11 +3,15 @@ import type { Response } from 'express';
 import {
   assignDocumentSchema,
   createDocumentSchema,
+  routeDocumentSchema,
+  shareDocumentSchema,
   updateDocumentMetadataSchema,
   workflowActionSchema,
   workflowCommandSchema,
   type AssignDocumentInput,
   type CreateDocumentInput,
+  type RouteDocumentInput,
+  type ShareDocumentInput,
   type UpdateDocumentMetadataInput,
 } from '@dts/contracts';
 import { AuthGuard } from '../../common/auth.guard.js';
@@ -53,6 +57,12 @@ export class DocumentsController {
     @Body(new ZodValidationPipe(createDocumentSchema)) input: CreateDocumentInput,
   ) {
     return this.documents.create(actor, input).then((data) => ({ data }));
+  }
+
+  // Declared before the `:id` routes so the literal path is not captured as a document id.
+  @Get('assigned')
+  assigned(@CurrentUser() actor: RequestUser) {
+    return this.documents.assignedQueue(actor).then((data) => ({ data }));
   }
 
   @Get(':id/routing-slip.pdf')
@@ -113,5 +123,23 @@ export class DocumentsController {
     @Body(new ZodValidationPipe(assignDocumentSchema)) input: AssignDocumentInput,
   ) {
     return this.documents.assign(actor, id, input.recipientUserId).then((data) => ({ data }));
+  }
+
+  @Post(':id/routes')
+  route(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(routeDocumentSchema)) input: RouteDocumentInput,
+  ) {
+    return this.documents.route(actor, id, input).then((data) => ({ data }));
+  }
+
+  @Post(':id/shares')
+  share(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(shareDocumentSchema)) input: ShareDocumentInput,
+  ) {
+    return this.documents.share(actor, id, input.userId).then((data) => ({ data }));
   }
 }

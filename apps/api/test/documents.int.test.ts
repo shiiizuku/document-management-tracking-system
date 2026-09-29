@@ -325,4 +325,105 @@ describe('document registry REST against a real database', () => {
       .expect(200);
     expect(dataOf<DocumentPayload>(readable).id).toBe(created.id);
   }, 30_000);
+
+  it('routes a document to another division, moving its scope and recording the hop', async () => {
+    // Registered in Division A / Section A, where the staff member can see it.
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'To be forwarded',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+    await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', staff.cookies)
+      .expect(200);
+
+    const routed = dataOf<DocumentPayload & { divisionId: string; routes: unknown[] }>(
+      await request(server())
+        .post(`/api/v1/documents/${created.id}/routes`)
+        .set('Cookie', records.cookies)
+        .set('x-csrf-token', records.csrf)
+        .send({
+          expectedVersion: 1,
+          toDivisionId: DIV_B,
+          toSectionId: SEC_B,
+          remarks: 'Please handle',
+        })
+        .expect(201),
+    );
+    expect(routed.divisionId).toBe(DIV_B);
+    expect(routed.routes).toHaveLength(1);
+    expect(routed.version).toBe(2);
+
+    // The forward moved the document out of the Division A staff member's scope.
+    await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', staff.cookies)
+      .expect(404);
+  }, 30_000);
+
+  it('shares a document with a specific user without moving it', async () => {
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Shared not moved',
+        type: 'MEMORANDUM',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_B,
+        sectionId: SEC_B,
+      }).expect(201),
+    );
+    await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', staff.cookies)
+      .expect(404);
+
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/shares`)
+      .set('Cookie', records.cookies)
+      .set('x-csrf-token', records.csrf)
+      .send({ userId: staffId })
+      .expect(201);
+
+    const readable = await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', staff.cookies)
+      .expect(200);
+    // Shared, not relocated: it still belongs to Division B.
+    expect(dataOf<DocumentPayload & { divisionId: string }>(readable).divisionId).toBe(DIV_B);
+  }, 30_000);
+
+  it('surfaces a document on the assignee’s work queue', async () => {
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Queue item',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_B,
+        sectionId: SEC_B,
+      }).expect(201),
+    );
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/assignments`)
+      .set('Cookie', records.cookies)
+      .set('x-csrf-token', records.csrf)
+      .send({ recipientUserId: staffId })
+      .expect(201);
+
+    const queue = await request(server())
+      .get('/api/v1/documents/assigned')
+      .set('Cookie', staff.cookies)
+      .expect(200);
+    const ids = dataOf<DocumentPayload[]>(queue).map((doc) => doc.id);
+    expect(ids).toContain(created.id);
+  }, 30_000);
 });
