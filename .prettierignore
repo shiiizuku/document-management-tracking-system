@@ -6,4 +6,5 @@ package-lock.json
 docs
 apps/api/drizzle/meta
 apps/web/next-env.d.ts
+minio
 

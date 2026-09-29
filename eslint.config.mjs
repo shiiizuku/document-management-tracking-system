@@ -9,6 +9,7 @@ export default tseslint.config(
       '**/.next/**',
       '**/coverage/**',
       '**/drizzle/meta/**',
+      'minio/**',
       '**/*.config.ts',
       'eslint.config.mjs',
       'packages/contracts/test/**',
