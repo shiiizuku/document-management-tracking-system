@@ -14,6 +14,7 @@ import type { RequestUser } from '../../common/request-user.js';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
 import { AuditWriter } from '../audit/audit.writer.js';
+import { OutboxWriter } from '../audit/outbox.writer.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import type { DocumentRow } from '../documents/documents.repository.js';
 import {
@@ -66,6 +67,7 @@ export class AttachmentsService {
     private readonly versions: FileVersionsRepository,
     private readonly storage: StoragePort,
     private readonly audit: AuditWriter,
+    private readonly outbox: OutboxWriter,
   ) {}
 
   async upload(
@@ -147,6 +149,17 @@ export class AttachmentsService {
         mediaType: version.mediaType,
         sizeBytes: version.sizeBytes,
       },
+    });
+    // Request a malware scan now that the bytes are stored. Enqueued after `put` (not inside the
+    // metadata transaction) so the worker never races ahead of the bytes it must read; the key
+    // makes a retried upload idempotent, and the version stays PENDING — undownloadable — until
+    // the worker records a result, so a lost event fails safe rather than leaking an unscanned file.
+    await this.outbox.enqueue({
+      aggregateType: 'file-version',
+      aggregateId: version.id,
+      eventType: 'attachment.uploaded',
+      payload: { documentId, versionId: version.id, objectKey: version.objectKey },
+      idempotencyKey: `attachment.uploaded:${version.id}`,
     });
     return this.toPublic(version, document);
   }
