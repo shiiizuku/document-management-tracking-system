@@ -46,11 +46,12 @@ The old in-process, `Map`-backed application (`DtsApplicationService`) has been 
 - **Reports & audit** — monthly report + XLSX/PDF export read scoped Postgres documents;
   `audit_events` are persisted and queryable via `GET admin/audit-events` (actor/action/date filters).
 
-**Still on stand-ins:** there is **no realtime WS/SSE gateway**. Otherwise the runtime is wired:
-`docker-compose.yml` defines postgres, redis, minio (built from source), and clamav; the app writes
-attachment bytes to **MinIO** through the `StoragePort`, and the worker **auto-scans** each upload
-through **ClamAV** and records the verdict. The **frontend is essentially unbuilt** (`apps/web/src`
-has only `dts-app.tsx` + `status-badge.tsx`).
+**Runtime is fully wired:** `docker-compose.yml` defines postgres, redis, minio (built from source),
+and clamav; the app writes attachment bytes to **MinIO** through the `StoragePort`, the worker
+**auto-scans** each upload through **ClamAV** and records the verdict, and notifications fan out over
+an authenticated **WebSocket** gateway (worker → Redis → per-user sockets). The backend is
+feature-complete per this audit; the **frontend is essentially unbuilt** (`apps/web/src` has only
+`dts-app.tsx` + `status-badge.tsx`).
 
 ### Module verdict
 
@@ -61,7 +62,7 @@ has only `dts-app.tsx` + `status-badge.tsx`).
 | auth / session        | **DONE** (Postgres users, JWT + bcrypt)  | —                                                                   |
 | documents / search    | **Postgres-backed** (Phase 2–3)          | Remaining: soft-delete/restore endpoint, `EXPLAIN` indexes, documents UI |
 | files / versions      | **Postgres metadata + MinIO storage + ClamAV auto-scan** (Phase 4) | Remaining: files UI                         |
-| notifications         | **Postgres in-tx + outbox relay/worker** (Phase 5) | Remaining: realtime WS fan-out, inbox UI                |
+| notifications         | **Postgres in-tx + outbox relay/worker + realtime WS** (Phase 5) | Remaining: inbox UI                        |
 | reports / print       | **Postgres data + real XLSX/PDF** (Phase 6) | Remaining: reports & audit UI                                    |
 | admin / identity / org| **DONE** (account requests, org CRUD, roles, audit query, profile photos) | Remaining: admin & org UI          |
 
@@ -72,9 +73,9 @@ has only `dts-app.tsx` + `status-badge.tsx`).
 | Postgres + Drizzle             | Full schema (19 tables/7 enums), client, migration, seed | **Yes for identity + documents** — `DatabaseModule` provides the `DATABASE` token; identity and the document aggregate read/write Postgres. Attachment bytes/notifications not yet migrated |
 | Object storage (MinIO/S3)      | `StoragePort` + `MinioStorageAdapter` + `objectKey` columns | **Yes** — the running app writes bytes to MinIO (`minio` SDK); tests override the port with the in-memory adapter. _(Local caveat: the currently-running compose container is the license-gated AIStor image and denies S3 — `docker compose up --build` picks up the vendored AGPL build.)_ |
 | BullMQ / Redis                 | `outbox-queue.ts` (queue + worker factories)           | **Yes** — the worker runs a relay + BullMQ consumer against Redis; tested in CI's integration job |
-| Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published. Consumer's realtime fan-out deferred |
+| Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay + consumer** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published; the consumer fans out realtime notifications |
 | Antivirus scan                 | `ClamAvScanner` (INSTREAM) + scan consumer + `POST …/scan` override | **Yes** — the worker scans each upload via clamd and records the verdict; manual endpoint remains for re-scans |
-| WebSockets                     | Dependencies declared                                  | **No** — no gateway/module |
+| WebSockets                     | Socket.IO `NotificationsGateway` + Redis `RealtimeBridge` | **Yes** — authenticated per-user realtime delivery; worker publishes, each API instance relays |
 | Rate limiting                  | `ThrottlerModule`                                      | **Partial** — enforced on auth + account-request endpoints; not yet on all mutations |
 | Config validation              | `config/environment.ts` + `ConfigModule.forRoot`        | **Yes** — validated at boot, fails fast |
 | Structured logging + correlation IDs | `StructuredLogger`, `CorrelationIdMiddleware`     | **Yes** — global logger + per-request IDs |
@@ -312,9 +313,12 @@ module makes them durable, event-driven, and live.
       (`OutboxWriter`, since Phase 2). ✓
 - [x] (2h) BullMQ relay + worker in `worker.ts`: `OutboxRelay` leases `outbox_events` → queue → the
       worker consumes. _Done-when:_ the relay drains the outbox onto the queue and a worker consumes it
-      (tested against real Redis). ✓ — the consumer's realtime fan-out is the deferred piece.
-- [ ] (2h) Authenticated WebSocket/SSE gateway for realtime delivery. **Deferred**; the durable inbox
-      + relay/worker are in place, and the consumer is the plug-in point.
+      (tested against real Redis). ✓
+- [x] (2h) Authenticated WebSocket gateway for realtime delivery. ✓ — Socket.IO `NotificationsGateway`
+      authenticates the handshake with the same `dts_session` cookie as REST and joins a per-user
+      room; the worker's outbox consumer publishes to a Redis channel (`RealtimePublisher`) and each
+      API instance's `RealtimeBridge` relays it to that user's sockets. Proven end-to-end (authenticated
+      delivery, no cross-user leakage, unauthenticated socket rejected) against real Postgres + Redis.
 
 **Frontend**
 

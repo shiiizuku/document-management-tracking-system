@@ -14,6 +14,8 @@ import { ClamAvScanner } from './modules/files/clamav-scanner.js';
 import { FileVersionsRepository } from './modules/files/file-versions.repository.js';
 import { MinioStorageAdapter } from './modules/files/minio-storage.adapter.js';
 import { scanUploadedVersion } from './modules/files/scan-consumer.js';
+import { RealtimePublisher } from './modules/realtime/realtime.publisher.js';
+import { realtimeMessageForEvent } from './modules/realtime/realtime.events.js';
 
 config({ path: new URL('../../../.env', import.meta.url) });
 const environment = validateEnvironment(process.env);
@@ -47,9 +49,15 @@ const redisProbeClient = new Redis(environment.REDIS_URL, {
   lazyConnect: true,
 });
 
-// Consumer of published domain events. An uploaded attachment is scanned; other events (realtime
-// fan-out, email) plug in here — that gateway is deferred, so for now they are logged. The durable
-// notification inbox is written in the domain transaction, so it does not depend on this worker.
+// A normal (non-subscriber) Redis connection for publishing realtime fan-out; the API's bridge
+// subscribes to the same channel. Separate from BullMQ's own connections.
+const realtimePublishClient = new Redis(environment.REDIS_URL, { maxRetriesPerRequest: null });
+const realtimePublisher = new RealtimePublisher(realtimePublishClient);
+
+// Consumer of published domain events. An uploaded attachment is scanned; any other event that
+// concerns a specific user is fanned out to that user's live sockets via the realtime channel.
+// The durable notification inbox is written in the domain transaction, so it does not depend on
+// this worker.
 const worker = createOutboxWorker(environment.REDIS_URL, async (job) => {
   if (job.data.eventType === 'attachment.uploaded') {
     const versionId = job.data.payload.versionId;
@@ -62,6 +70,8 @@ const worker = createOutboxWorker(environment.REDIS_URL, async (job) => {
     return;
   }
   logger.log(`delivered ${job.data.eventType} for ${job.data.aggregateId}`, 'OutboxConsumer');
+  const message = realtimeMessageForEvent(job.data.eventType, job.data.payload);
+  if (message !== null) await realtimePublisher.publish(message);
 });
 worker.on('failed', (job, error) => logger.error(error, `OutboxConsumer:${job?.id ?? 'unknown'}`));
 
@@ -113,6 +123,7 @@ const shutdown = (): void => {
       await worker.close();
       await queue.close();
       redisProbeClient.disconnect();
+      realtimePublishClient.disconnect();
       await pool.end();
     } catch (error) {
       logger.error(error, 'WorkerShutdown');
