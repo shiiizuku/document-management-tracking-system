@@ -390,6 +390,95 @@ export class DocumentsService {
     return this.toPublic(updated, null, await this.cleanFlag(updated));
   }
 
+  // ----------------------------------------------------------- logical deletion
+
+  /**
+   * Soft-deletes a document: it disappears from every list/search/detail (all of which exclude
+   * `deleted_at`) but its rows and history are preserved for restore. Capability-gated and under
+   * optimistic concurrency, so a stale delete is a 409 rather than a silent clobber.
+   */
+  async softDelete(
+    actor: RequestUser,
+    id: string,
+    expectedVersion: number,
+  ): Promise<PublicDocument> {
+    const current = await this.requireReadable(actor, id);
+    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_DELETE'))
+      throw new ForbiddenException('Deleting this document is not allowed');
+
+    const deleted = await this.database.transaction(async (tx) => {
+      const row = await this.repository.softDelete(id, expectedVersion, tx);
+      if (row === null) throw this.staleConflict();
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'document.deleted',
+          targetType: 'document',
+          targetId: id,
+          outcome: 'SUCCESS',
+          summary: { trackingNumber: current.trackingNumber },
+        },
+        tx,
+      );
+      await this.outbox.enqueue(
+        {
+          aggregateType: 'document',
+          aggregateId: id,
+          eventType: 'document.deleted',
+          payload: { documentId: id },
+          idempotencyKey: `document.deleted:${id}:${row.version}`,
+        },
+        tx,
+      );
+      return row;
+    });
+    return this.toPublic(deleted);
+  }
+
+  /**
+   * Restores a soft-deleted document. It loads the row *including* deleted ones (the normal read
+   * path cannot see it), then enforces the restore capability and scope on the loaded row.
+   */
+  async restore(actor: RequestUser, id: string, expectedVersion: number): Promise<PublicDocument> {
+    const current = await this.repository.findByIdIncludingDeleted(id);
+    if (current === null) throw new NotFoundException('Document not found');
+    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_RESTORE'))
+      throw new ForbiddenException('Restoring this document is not allowed');
+    if (current.deletedAt === null)
+      throw new ConflictException({
+        code: 'DOCUMENT_NOT_DELETED',
+        message: 'The document is not deleted',
+      });
+
+    const restored = await this.database.transaction(async (tx) => {
+      const row = await this.repository.restore(id, expectedVersion, tx);
+      if (row === null) throw this.staleConflict();
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'document.restored',
+          targetType: 'document',
+          targetId: id,
+          outcome: 'SUCCESS',
+          summary: { trackingNumber: current.trackingNumber },
+        },
+        tx,
+      );
+      await this.outbox.enqueue(
+        {
+          aggregateType: 'document',
+          aggregateId: id,
+          eventType: 'document.restored',
+          payload: { documentId: id },
+          idempotencyKey: `document.restored:${id}:${row.version}`,
+        },
+        tx,
+      );
+      return row;
+    });
+    return this.toPublic(restored);
+  }
+
   // --------------------------------------------------------------- workflow
 
   async executeAction(

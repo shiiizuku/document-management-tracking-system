@@ -209,8 +209,10 @@ storage and fills the document-management UI gaps.
       `POST /documents/:id/routes`) and sharing (`document_shares`, `POST /documents/:id/shares`),
       plus the work queue (`GET /documents/assigned`). _(Phase 3; parallel-route completion
       semantics deferred as an open policy.)_
-- [ ] (2h) Logical deletion (soft-delete) endpoint + list exclusion, capability-gated. _(the
-      `deleted_at` column + `isNull` list/read guards are in place; the endpoint itself is pending.)_
+- [x] (2h) Logical deletion (soft-delete) endpoint + list exclusion, capability-gated. ✓ —
+      `DELETE /documents/:id` and `POST /documents/:id/restore` under optimistic concurrency, gated by
+      the new `DOCUMENT_DELETE` / existing `DOCUMENT_RESTORE` capabilities (admin-only); both audited
+      and enqueued to the outbox. Covered by the Postgres integration flow.
 - [x] (2h) Move `DocumentSearchService` filtering/sort/pagination to SQL (`DocumentsRepository.search`
       + `documentScopeFor`). _Done-when:_ search has parity with the in-memory version plus real pagination.
 

@@ -6,6 +6,7 @@ import {
   desc,
   eq,
   ilike,
+  isNotNull,
   isNull,
   notInArray,
   or,
@@ -136,6 +137,16 @@ export class DocumentsRepository {
       .select()
       .from(documents)
       .where(and(eq(documents.id, id), isNull(documents.deletedAt)));
+    return row ?? null;
+  }
+
+  /**
+   * Unscoped fetch of a document that may be soft-deleted. Only the restore path uses it — every
+   * other read excludes `deleted_at IS NOT NULL` — so a deleted row can still be found to bring
+   * it back, while staying invisible to list/search/detail.
+   */
+  async findByIdIncludingDeleted(id: string): Promise<DocumentRow | null> {
+    const [row] = await this.database.select().from(documents).where(eq(documents.id, id));
     return row ?? null;
   }
 
@@ -320,6 +331,51 @@ export class DocumentsRepository {
           eq(documents.id, id),
           eq(documents.version, expectedVersion),
           isNull(documents.deletedAt),
+        ),
+      )
+      .returning();
+    return row ?? null;
+  }
+
+  /**
+   * Logically deletes a live document under the same optimistic-version guard as the other
+   * mutations: it stamps `deleted_at` only if the row still matches `expectedVersion` and is not
+   * already deleted, and bumps `version`. A mismatch (stale, missing, or already deleted) returns
+   * `null`, which the service turns into a 409.
+   */
+  async softDelete(
+    id: string,
+    expectedVersion: number,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<DocumentRow | null> {
+    const [row] = await executor
+      .update(documents)
+      .set({ deletedAt: new Date(), version: sql`${documents.version} + 1` })
+      .where(
+        and(
+          eq(documents.id, id),
+          eq(documents.version, expectedVersion),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .returning();
+    return row ?? null;
+  }
+
+  /** Reverses {@link softDelete}: clears `deleted_at` only if the row *is* currently deleted. */
+  async restore(
+    id: string,
+    expectedVersion: number,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<DocumentRow | null> {
+    const [row] = await executor
+      .update(documents)
+      .set({ deletedAt: null, version: sql`${documents.version} + 1` })
+      .where(
+        and(
+          eq(documents.id, id),
+          eq(documents.version, expectedVersion),
+          isNotNull(documents.deletedAt),
         ),
       )
       .returning();
