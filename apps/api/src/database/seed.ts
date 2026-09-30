@@ -34,7 +34,7 @@ try {
       set: { code: 'GENERAL', active: true, updatedAt: new Date() },
     })
     .returning();
-  const passwordHash = await hash(process.env.SEED_ADMIN_PASSWORD ?? 'Admin@1234!', 12);
+  const passwordHash = await hash(process.env.SEED_ADMIN_PASSWORD ?? 'Admin@12345!', 12);
   await db
     .insert(users)
     .values({
