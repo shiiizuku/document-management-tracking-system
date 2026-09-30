@@ -12,6 +12,7 @@ import {
 import { fetchDivisions, fetchSections, type Division, type Section } from '../lib/organization';
 import { AttachmentsSection } from './attachments-section';
 import { MetadataEditModal } from './metadata-edit-modal';
+import { RouteModal } from './route-modal';
 import { ReportsView } from './reports-view';
 import { useNotifications } from '../hooks/use-notifications';
 import { NotificationsPanel } from './notifications-panel';
@@ -79,6 +80,7 @@ export function DtsApp() {
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showRoute, setShowRoute] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [view, setView] = useState<'workspace' | 'reports'>('workspace');
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -480,13 +482,22 @@ export function DtsApp() {
                       <h2>{selected.title}</h2>
                       <div className="detail-head-row">
                         <StatusBadge status={selected.status} />
-                        <button
-                          type="button"
-                          className="secondary compact"
-                          onClick={() => setShowEdit(true)}
-                        >
-                          Edit metadata
-                        </button>
+                        <div className="detail-head-actions">
+                          <button
+                            type="button"
+                            className="secondary compact"
+                            onClick={() => setShowRoute(true)}
+                          >
+                            Forward
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary compact"
+                            onClick={() => setShowEdit(true)}
+                          >
+                            Edit metadata
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <dl>
@@ -701,6 +712,19 @@ export function DtsApp() {
           onClose={() => setShowEdit(false)}
           onSaved={() => {
             setShowEdit(false);
+            void loadDetail(selected.id);
+            void refreshDocuments();
+          }}
+        />
+      )}
+      {showRoute && selected && (
+        <RouteModal
+          documentId={selected.id}
+          expectedVersion={selected.version}
+          currentDivisionId={selected.divisionId}
+          onClose={() => setShowRoute(false)}
+          onRouted={() => {
+            setShowRoute(false);
             void loadDetail(selected.id);
             void refreshDocuments();
           }}
