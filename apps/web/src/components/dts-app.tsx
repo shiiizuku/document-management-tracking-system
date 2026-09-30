@@ -11,6 +11,7 @@ import {
 } from '../lib/documents';
 import { fetchDivisions, fetchSections, type Division, type Section } from '../lib/organization';
 import { AttachmentsSection } from './attachments-section';
+import { ReportsView } from './reports-view';
 import { useNotifications } from '../hooks/use-notifications';
 import { NotificationsPanel } from './notifications-panel';
 import { Pagination } from './pagination';
@@ -76,6 +77,7 @@ export function DtsApp() {
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [view, setView] = useState<'workspace' | 'reports'>('workspace');
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [createDivisionId, setCreateDivisionId] = useState('');
@@ -303,7 +305,10 @@ export function DtsApp() {
           </div>
         </div>
         <nav aria-label="Primary">
-          <button className="nav-active">
+          <button
+            className={view === 'workspace' ? 'nav-active' : ''}
+            onClick={() => setView('workspace')}
+          >
             <span>◫</span> Workspace
           </button>
           <button
@@ -313,7 +318,10 @@ export function DtsApp() {
             <span>◎</span> Notifications{' '}
             {notifications.unreadCount > 0 && <b>{notifications.unreadCount}</b>}
           </button>
-          <button>
+          <button
+            className={view === 'reports' ? 'nav-active' : ''}
+            onClick={() => setView('reports')}
+          >
             <span>▤</span> Reports
           </button>
           <button>
@@ -334,12 +342,18 @@ export function DtsApp() {
       <main className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Operational workspace</p>
-            <h1>Good day, {user.displayName.split(' ')[0]}</h1>
+            <p className="eyebrow">{view === 'reports' ? 'Reporting' : 'Operational workspace'}</p>
+            <h1>
+              {view === 'reports'
+                ? 'Monthly reports'
+                : `Good day, ${user.displayName.split(' ')[0]}`}
+            </h1>
           </div>
-          <button className="primary compact" onClick={() => setShowCreate(true)}>
-            + Register document
-          </button>
+          {view === 'workspace' && (
+            <button className="primary compact" onClick={() => setShowCreate(true)}>
+              + Register document
+            </button>
+          )}
         </header>
         {error && (
           <div className="alert" role="alert">
@@ -347,179 +361,190 @@ export function DtsApp() {
             {error}
           </div>
         )}
-        <section className="metrics">
-          <article>
-            <span>Pending intake</span>
-            <strong>{metrics.pending}</strong>
-            <small>Awaiting acceptance</small>
-          </article>
-          <article>
-            <span>Active work</span>
-            <strong>{metrics.active}</strong>
-            <small>Across your authorized scope</small>
-          </article>
-          <article>
-            <span>Released / archived</span>
-            <strong>{metrics.completed}</strong>
-            <small>Completed records</small>
-          </article>
-          <article className="attention">
-            <span>Unread notices</span>
-            <strong>{notifications.unreadCount}</strong>
-            <small>Assignments and actions</small>
-          </article>
-        </section>
-        <section className="content-grid">
-          <div className="document-panel">
-            <div className="panel-head">
-              <div>
-                <p className="eyebrow">Registry</p>
-                <h2>
-                  Documents <span>{total}</span>
-                </h2>
-              </div>
-            </div>
-            <RegistryControls
-              filters={filters}
-              onChange={applyFilters}
-              onSearchSubmit={() => {
-                setQuery(filters);
-                setPage(1);
-              }}
-              onClear={() => {
-                setFilters(DEFAULT_FILTERS);
-                setQuery(DEFAULT_FILTERS);
-                setPage(1);
-              }}
-            />
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Document</th>
-                    <th>Status</th>
-                    <th>Priority</th>
-                    <th>Direction</th>
-                    <th>Registered</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {documents.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="empty">
-                        No accessible documents found.
-                      </td>
-                    </tr>
-                  ) : (
-                    documents.map((document) => (
-                      <tr
-                        key={document.id}
-                        onClick={() => void loadDetail(document.id)}
-                        className={selected?.id === document.id ? 'selected' : ''}
-                      >
-                        <td>
-                          <strong>{document.title}</strong>
-                          <small>
-                            {document.trackingNumber}
-                            {document.referenceNumber ? ` · ${document.referenceNumber}` : ''}
-                          </small>
-                        </td>
-                        <td>
-                          <StatusBadge status={document.status} />
-                        </td>
-                        <td>
-                          <span className={`priority priority-${document.priority.toLowerCase()}`}>
-                            {document.priority}
-                          </span>
-                        </td>
-                        <td>{document.direction === 'INCOMING' ? '↘ Incoming' : '↗ Outgoing'}</td>
-                        <td>{new Date(document.createdAt).toLocaleDateString()}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={page}
-              total={total}
-              pageSize={DEFAULT_PAGE_SIZE}
-              onPageChange={setPage}
-            />
-          </div>
-          <aside className="detail-panel">
-            {selected ? (
-              <>
-                <div className="detail-head">
-                  <p className="eyebrow">{selected.trackingNumber}</p>
-                  <button onClick={() => setSelected(null)}>×</button>
-                  <h2>{selected.title}</h2>
-                  <StatusBadge status={selected.status} />
+        {view === 'reports' && <ReportsView />}
+        {view === 'workspace' && (
+          <>
+            <section className="metrics">
+              <article>
+                <span>Pending intake</span>
+                <strong>{metrics.pending}</strong>
+                <small>Awaiting acceptance</small>
+              </article>
+              <article>
+                <span>Active work</span>
+                <strong>{metrics.active}</strong>
+                <small>Across your authorized scope</small>
+              </article>
+              <article>
+                <span>Released / archived</span>
+                <strong>{metrics.completed}</strong>
+                <small>Completed records</small>
+              </article>
+              <article className="attention">
+                <span>Unread notices</span>
+                <strong>{notifications.unreadCount}</strong>
+                <small>Assignments and actions</small>
+              </article>
+            </section>
+            <section className="content-grid">
+              <div className="document-panel">
+                <div className="panel-head">
+                  <div>
+                    <p className="eyebrow">Registry</p>
+                    <h2>
+                      Documents <span>{total}</span>
+                    </h2>
+                  </div>
                 </div>
-                <dl>
-                  <div>
-                    <dt>Direction</dt>
-                    <dd>{selected.direction}</dd>
-                  </div>
-                  <div>
-                    <dt>Priority</dt>
-                    <dd>{selected.priority}</dd>
-                  </div>
-                  <div>
-                    <dt>Sender</dt>
-                    <dd>{selected.sender ?? '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Reference</dt>
-                    <dd>{selected.referenceNumber ?? '—'}</dd>
-                  </div>
-                </dl>
-                <div className="actions">
-                  {selected.allowedActions.map((action) => (
-                    <button
-                      key={action}
-                      className={action === 'REQUEST_REVISION' ? 'secondary danger' : 'secondary'}
-                      onClick={() => void runAction(action)}
-                    >
-                      {actionLabels[action] ?? action}
-                    </button>
-                  ))}
-                </div>
-                <AttachmentsSection
-                  documentId={selected.id}
-                  canUpload={!['RELEASED', 'ARCHIVED'].includes(selected.status)}
-                  onUploaded={() => {
-                    void loadDetail(selected.id);
-                    void refreshDocuments();
+                <RegistryControls
+                  filters={filters}
+                  onChange={applyFilters}
+                  onSearchSubmit={() => {
+                    setQuery(filters);
+                    setPage(1);
+                  }}
+                  onClear={() => {
+                    setFilters(DEFAULT_FILTERS);
+                    setQuery(DEFAULT_FILTERS);
+                    setPage(1);
                   }}
                 />
-                <div className="timeline">
-                  <h3>Timeline</h3>
-                  {selected.timeline.length === 0 ? (
-                    <p className="muted">No workflow actions yet.</p>
-                  ) : (
-                    selected.timeline.map((event) => (
-                      <article key={event.id}>
-                        <i />
-                        <div>
-                          <strong>{actionLabels[event.action] ?? event.action}</strong>
-                          <small>{new Date(event.occurredAt).toLocaleString()}</small>
-                          {event.remarks && <p>{event.remarks}</p>}
-                        </div>
-                      </article>
-                    ))
-                  )}
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Document</th>
+                        <th>Status</th>
+                        <th>Priority</th>
+                        <th>Direction</th>
+                        <th>Registered</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {documents.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="empty">
+                            No accessible documents found.
+                          </td>
+                        </tr>
+                      ) : (
+                        documents.map((document) => (
+                          <tr
+                            key={document.id}
+                            onClick={() => void loadDetail(document.id)}
+                            className={selected?.id === document.id ? 'selected' : ''}
+                          >
+                            <td>
+                              <strong>{document.title}</strong>
+                              <small>
+                                {document.trackingNumber}
+                                {document.referenceNumber ? ` · ${document.referenceNumber}` : ''}
+                              </small>
+                            </td>
+                            <td>
+                              <StatusBadge status={document.status} />
+                            </td>
+                            <td>
+                              <span
+                                className={`priority priority-${document.priority.toLowerCase()}`}
+                              >
+                                {document.priority}
+                              </span>
+                            </td>
+                            <td>
+                              {document.direction === 'INCOMING' ? '↘ Incoming' : '↗ Outgoing'}
+                            </td>
+                            <td>{new Date(document.createdAt).toLocaleDateString()}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-              </>
-            ) : (
-              <div className="detail-empty">
-                <span>↗</span>
-                <h3>Select a document</h3>
-                <p>Review metadata, allowed actions, and its complete timeline.</p>
+                <Pagination
+                  page={page}
+                  total={total}
+                  pageSize={DEFAULT_PAGE_SIZE}
+                  onPageChange={setPage}
+                />
               </div>
-            )}
-          </aside>
-        </section>
+              <aside className="detail-panel">
+                {selected ? (
+                  <>
+                    <div className="detail-head">
+                      <p className="eyebrow">{selected.trackingNumber}</p>
+                      <button onClick={() => setSelected(null)}>×</button>
+                      <h2>{selected.title}</h2>
+                      <StatusBadge status={selected.status} />
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Direction</dt>
+                        <dd>{selected.direction}</dd>
+                      </div>
+                      <div>
+                        <dt>Priority</dt>
+                        <dd>{selected.priority}</dd>
+                      </div>
+                      <div>
+                        <dt>Sender</dt>
+                        <dd>{selected.sender ?? '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Reference</dt>
+                        <dd>{selected.referenceNumber ?? '—'}</dd>
+                      </div>
+                    </dl>
+                    <div className="actions">
+                      {selected.allowedActions.map((action) => (
+                        <button
+                          key={action}
+                          className={
+                            action === 'REQUEST_REVISION' ? 'secondary danger' : 'secondary'
+                          }
+                          onClick={() => void runAction(action)}
+                        >
+                          {actionLabels[action] ?? action}
+                        </button>
+                      ))}
+                    </div>
+                    <AttachmentsSection
+                      documentId={selected.id}
+                      canUpload={!['RELEASED', 'ARCHIVED'].includes(selected.status)}
+                      onUploaded={() => {
+                        void loadDetail(selected.id);
+                        void refreshDocuments();
+                      }}
+                    />
+                    <div className="timeline">
+                      <h3>Timeline</h3>
+                      {selected.timeline.length === 0 ? (
+                        <p className="muted">No workflow actions yet.</p>
+                      ) : (
+                        selected.timeline.map((event) => (
+                          <article key={event.id}>
+                            <i />
+                            <div>
+                              <strong>{actionLabels[event.action] ?? event.action}</strong>
+                              <small>{new Date(event.occurredAt).toLocaleString()}</small>
+                              {event.remarks && <p>{event.remarks}</p>}
+                            </div>
+                          </article>
+                        ))
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="detail-empty">
+                    <span>↗</span>
+                    <h3>Select a document</h3>
+                    <p>Review metadata, allowed actions, and its complete timeline.</p>
+                  </div>
+                )}
+              </aside>
+            </section>
+          </>
+        )}
       </main>
       {showCreate && (
         <div
