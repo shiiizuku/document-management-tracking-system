@@ -22,6 +22,7 @@ if (process.env.ALLOW_DATABASE_RESET !== 'true')
 
 const RECORDS_PASSWORD = 'RecordsPass1234!';
 const STAFF_PASSWORD = 'StaffPass12345!';
+const ADMIN_PASSWORD = 'AdminPass12345!';
 
 const DIV_A = '00000000-0000-4000-9000-0000000000a0';
 const DIV_B = '00000000-0000-4000-9000-0000000000b0';
@@ -62,6 +63,7 @@ describe('document registry REST against a real database', () => {
   // the session is reused across tests rather than logging in per case.
   let records: Session;
   let staff: Session;
+  let admin: Session;
   const server = (): Server => app.getHttpServer() as Server;
 
   const login = async (email: string, password: string): Promise<Session> => {
@@ -125,9 +127,19 @@ describe('document registry REST against a real database', () => {
       canAccessConfidential: false,
     });
     staffId = staffUser.id;
+    await users.insert({
+      email: 'admin@dts.local',
+      displayName: 'System Administrator',
+      passwordHash: hashSync(ADMIN_PASSWORD, 4),
+      role: 'ADMINISTRATOR',
+      divisionId: null,
+      sectionId: null,
+      canAccessConfidential: true,
+    });
 
     records = await login('records@dts.local', RECORDS_PASSWORD);
     staff = await login('staff@dts.local', STAFF_PASSWORD);
+    admin = await login('admin@dts.local', ADMIN_PASSWORD);
   }, 30_000);
 
   afterAll(async () => {
@@ -425,5 +437,74 @@ describe('document registry REST against a real database', () => {
       .expect(200);
     const ids = dataOf<DocumentPayload[]>(queue).map((doc) => doc.id);
     expect(ids).toContain(created.id);
+  }, 30_000);
+
+  it('soft-deletes a document (admin only), hides it from reads, then restores it', async () => {
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'To be deleted',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+
+    const deleteAs = (session: Session, expectedVersion: number) =>
+      request(server())
+        .delete(`/api/v1/documents/${created.id}`)
+        .set('Cookie', session.cookies)
+        .set('x-csrf-token', session.csrf)
+        .send({ expectedVersion });
+
+    // A records officer has no DOCUMENT_DELETE capability, so the delete is forbidden.
+    await deleteAs(records, created.version).expect(403);
+    // The document is still readable — the forbidden attempt changed nothing.
+    await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', records.cookies)
+      .expect(200);
+
+    // A stale version loses the optimistic-concurrency race even for the admin.
+    const conflict = await deleteAs(admin, 999).expect(409);
+    expect(conflict.body.error.code).toBe('DOCUMENT_CONFLICT');
+
+    const deleted = dataOf<DocumentPayload>(await deleteAs(admin, created.version).expect(200));
+    expect(deleted.version).toBe(created.version + 1);
+
+    // Gone from detail and search once deleted.
+    await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', records.cookies)
+      .expect(404);
+    const search = await request(server())
+      .get('/api/v1/documents?search=To%20be%20deleted')
+      .set('Cookie', records.cookies)
+      .expect(200);
+    expect(dataOf<{ total: number }>(search).total).toBe(0);
+
+    const restoreAs = (session: Session, expectedVersion: number) =>
+      request(server())
+        .post(`/api/v1/documents/${created.id}/restore`)
+        .set('Cookie', session.cookies)
+        .set('x-csrf-token', session.csrf)
+        .send({ expectedVersion });
+
+    // Restore is admin-only too.
+    await restoreAs(records, deleted.version).expect(403);
+    const restored = dataOf<DocumentPayload>(await restoreAs(admin, deleted.version).expect(201));
+    expect(restored.version).toBe(deleted.version + 1);
+
+    // Readable again after restore.
+    await request(server())
+      .get(`/api/v1/documents/${created.id}`)
+      .set('Cookie', records.cookies)
+      .expect(200);
+
+    // Restoring a document that is not deleted is a conflict.
+    const notDeleted = await restoreAs(admin, restored.version).expect(409);
+    expect(notDeleted.body.error.code).toBe('DOCUMENT_NOT_DELETED');
   }, 30_000);
 });

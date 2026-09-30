@@ -14,6 +14,7 @@ import { DATABASE } from '../src/database/database.constants.js';
 import type { Database } from '../src/database/client.js';
 import { divisions, sections } from '../src/database/schema.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
+import { InMemoryStorageAdapter, StoragePort } from '../src/modules/files/storage.port.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for integration tests');
@@ -64,7 +65,12 @@ describe('attachment files REST against a real database', () => {
       .send({ status });
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    // This suite proves the Postgres metadata + fail-closed download paths; the bytes stay in an
+    // in-memory adapter so it needs no MinIO service (CI provisions only Postgres + Redis).
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(StoragePort)
+      .useClass(InMemoryStorageAdapter)
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());
