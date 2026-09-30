@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
+import { useNotifications } from '../hooks/use-notifications';
+import { NotificationsPanel } from './notifications-panel';
 import { StatusBadge } from './status-badge';
 
 type User = {
@@ -40,16 +42,6 @@ type Detail = DocumentItem & {
   }>;
   allowedActions: string[];
 };
-type Notification = {
-  id: string;
-  cursor: number;
-  title: string;
-  body: string;
-  readAt: string | null;
-  createdAt: string;
-  documentId: string;
-};
-
 const actionLabels: Record<string, string> = {
   ACCEPT: 'Accept & begin',
   REQUEST_REVISION: 'Request revision',
@@ -69,10 +61,11 @@ export function DtsApp() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<Detail | null>(null);
-  const [, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  const notifications = useNotifications(user !== null);
 
   const refreshDocuments = useCallback(async (term = '') => {
     const result = await api<{ items: DocumentItem[]; total: number }>(
@@ -80,11 +73,6 @@ export function DtsApp() {
     );
     setDocuments(result.items);
     setTotal(result.total);
-  }, []);
-  const refreshNotifications = useCallback(async () => {
-    const result = await api<{ items: Notification[]; unreadCount: number }>('/notifications');
-    setNotifications(result.items);
-    setUnreadCount(result.unreadCount);
   }, []);
   const loadDetail = useCallback(async (id: string) => {
     setSelected(await api<Detail>(`/documents/${id}`));
@@ -94,11 +82,11 @@ export function DtsApp() {
     void api<User>('/auth/me')
       .then(async (me) => {
         setUser(me);
-        await Promise.all([refreshDocuments(), refreshNotifications()]);
+        await refreshDocuments();
       })
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
-  }, [refreshDocuments, refreshNotifications]);
+  }, [refreshDocuments]);
 
   const metrics = useMemo(
     () => ({
@@ -119,7 +107,7 @@ export function DtsApp() {
         body: JSON.stringify({ email: form.get('email'), password: form.get('password') }),
       });
       setUser(me);
-      await Promise.all([refreshDocuments(), refreshNotifications()]);
+      await refreshDocuments();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Login failed');
     }
@@ -170,11 +158,7 @@ export function DtsApp() {
         method: 'POST',
         body: JSON.stringify({ expectedVersion: selected.version, remarks, releaseMethod }),
       });
-      await Promise.all([
-        loadDetail(selected.id),
-        refreshDocuments(search),
-        refreshNotifications(),
-      ]);
+      await Promise.all([loadDetail(selected.id), refreshDocuments(search)]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Action failed');
     }
@@ -184,6 +168,7 @@ export function DtsApp() {
     await api('/auth/logout', { method: 'POST' });
     setUser(null);
     setSelected(null);
+    setShowNotifications(false);
   }
 
   if (loading)
@@ -271,8 +256,12 @@ export function DtsApp() {
           <button className="nav-active">
             <span>◫</span> Workspace
           </button>
-          <button onClick={() => void refreshNotifications()}>
-            <span>◎</span> Notifications {unreadCount > 0 && <b>{unreadCount}</b>}
+          <button
+            className={showNotifications ? 'nav-active' : ''}
+            onClick={() => setShowNotifications(true)}
+          >
+            <span>◎</span> Notifications{' '}
+            {notifications.unreadCount > 0 && <b>{notifications.unreadCount}</b>}
           </button>
           <button>
             <span>▤</span> Reports
@@ -326,7 +315,7 @@ export function DtsApp() {
           </article>
           <article className="attention">
             <span>Unread notices</span>
-            <strong>{unreadCount}</strong>
+            <strong>{notifications.unreadCount}</strong>
             <small>Assignments and actions</small>
           </article>
         </section>
@@ -546,6 +535,20 @@ export function DtsApp() {
             </form>
           </section>
         </div>
+      )}
+      {showNotifications && (
+        <NotificationsPanel
+          items={notifications.items}
+          unreadCount={notifications.unreadCount}
+          live={notifications.live}
+          onClose={() => setShowNotifications(false)}
+          onMarkRead={(id) => void notifications.markRead(id)}
+          onMarkAllRead={() => void notifications.markAllRead()}
+          onOpenDocument={(id) => {
+            setShowNotifications(false);
+            void loadDetail(id);
+          }}
+        />
       )}
     </div>
   );
