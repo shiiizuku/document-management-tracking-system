@@ -50,7 +50,7 @@ runtime**.
 | auth / session        | STUBBED (in-memory users)                | Users from Postgres; keep JWT + bcrypt                              |
 | documents / search    | **Postgres-backed** (Phase 2–3)          | Routing/sharing/work-queue done; remaining: soft-delete endpoint, `signature_events` (Phase 4), `EXPLAIN` indexes |
 | files / versions      | **Postgres metadata + storage port** (Phase 4) | Remaining: MinIO adapter, ClamAV scan worker (BullMQ/Redis), files UI |
-| notifications         | **Postgres in-tx + outbox relay/worker** (Phase 5) | Remaining: realtime WS fan-out, inbox UI                |
+| notifications         | **Postgres in-tx + outbox relay/worker + realtime WS** (Phase 5) | Remaining: inbox UI                        |
 | reports / print       | STUBBED data / **real** XLSX+PDF bytes   | Report + audit data from Postgres; reports & audit UI               |
 | admin / identity / org| STUBBED (users/audit list only)          | Account requests, org CRUD, role assignment, profile photos         |
 
@@ -61,9 +61,10 @@ runtime**.
 | Postgres + Drizzle             | Full schema (19 tables/7 enums), client, migration, seed | **Yes for identity + documents** — `DatabaseModule` provides the `DATABASE` token; identity and the document aggregate read/write Postgres. Attachment bytes/notifications not yet migrated |
 | Object storage (MinIO/S3)      | `StoragePort` + `objectKey` columns + key computation  | **Behind a port** — bytes in an in-memory `StoragePort` adapter; MinIO adapter is a drop-in |
 | BullMQ / Redis                 | `outbox-queue.ts` (queue + worker factories)           | **Yes** — the worker runs a relay + BullMQ consumer against Redis; tested in CI's integration job |
-| Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published. Consumer's realtime fan-out deferred |
+| Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay + consumer** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published; the consumer fans out realtime notifications |
 | Antivirus scan                 | `scan_status` enum + `POST …/scan` endpoint            | **Manual only** — no scanner |
-| WebSockets / rate-limit        | Dependencies declared                                  | **No** — no gateway/module |
+| WebSockets                     | Socket.IO `NotificationsGateway` + Redis `RealtimeBridge` | **Yes** — authenticated per-user realtime delivery; worker publishes, each API instance relays |
+| Rate limiting                  | `ThrottlerModule`                                      | **Partial** — enforced on auth + account-request endpoints; not yet on all mutations |
 | Config validation              | `config/environment.ts` + `ConfigModule.forRoot`        | **Yes** — validated at boot, fails fast |
 | Structured logging + correlation IDs | `StructuredLogger`, `CorrelationIdMiddleware`     | **Yes** — global logger + per-request IDs |
 | JWT auth                       | `JwtModule` + `AuthGuard`                              | **Yes** (stateless)       |
@@ -288,9 +289,12 @@ module makes them durable, event-driven, and live.
       (`OutboxWriter`, since Phase 2). ✓
 - [x] (2h) BullMQ relay + worker in `worker.ts`: `OutboxRelay` leases `outbox_events` → queue → the
       worker consumes. _Done-when:_ the relay drains the outbox onto the queue and a worker consumes it
-      (tested against real Redis). ✓ — the consumer's realtime fan-out is the deferred piece.
-- [ ] (2h) Authenticated WebSocket/SSE gateway for realtime delivery. **Deferred**; the durable inbox
-      + relay/worker are in place, and the consumer is the plug-in point.
+      (tested against real Redis). ✓
+- [x] (2h) Authenticated WebSocket gateway for realtime delivery. ✓ — Socket.IO `NotificationsGateway`
+      authenticates the handshake with the same `dts_session` cookie as REST and joins a per-user
+      room; the worker's outbox consumer publishes to a Redis channel (`RealtimePublisher`) and each
+      API instance's `RealtimeBridge` relays it to that user's sockets. Proven end-to-end (authenticated
+      delivery, no cross-user leakage, unauthenticated socket rejected) against real Postgres + Redis.
 
 **Frontend**
 

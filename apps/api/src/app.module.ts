@@ -40,6 +40,8 @@ import { DatabaseModule } from './database/database.module.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { SessionService } from './modules/auth/session.service.js';
 import { UsersRepository } from './modules/users/users.repository.js';
+import { NotificationsGateway } from './modules/realtime/notifications.gateway.js';
+import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
 
 @Module({
   imports: [
@@ -98,6 +100,10 @@ import { UsersRepository } from './modules/users/users.repository.js';
     AuthService,
     SessionService,
     ReportExportService,
+    // Realtime notification delivery: the gateway owns the authenticated sockets and per-user
+    // emit, the bridge subscribes to Redis and relays events raised in the worker process.
+    NotificationsGateway,
+    RealtimeBridge,
     AuthGuard,
     CsrfGuard,
     // Abstract classes as tokens: unit suites override these with in-memory writers, the
