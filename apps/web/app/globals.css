@@ -999,3 +999,103 @@ button.icon {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Attachments (detail panel) */
+.attachments {
+  margin-top: 22px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.attachments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.attachments-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.attach-upload {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green2);
+  cursor: pointer;
+}
+.attach-upload.busy {
+  color: var(--muted);
+  cursor: default;
+}
+.attach-upload input {
+  display: none;
+}
+.attach-empty {
+  font-size: 14px;
+  margin: 4px 0;
+}
+.attach-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.attach-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.attach-version {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+.attach-meta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.attach-meta strong {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attach-meta small {
+  color: var(--muted);
+  font-size: 12px;
+}
+button.compact {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+.scan-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.scan-clean {
+  background: var(--pale);
+  color: var(--green);
+}
+.scan-pending,
+.scan-scanning {
+  background: #f3ecd6;
+  color: #7a5c17;
+}
+.scan-infected,
+.scan-error {
+  background: #f6dede;
+  color: var(--danger);
+}
