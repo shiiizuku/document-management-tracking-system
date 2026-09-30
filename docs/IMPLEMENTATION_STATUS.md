@@ -382,8 +382,10 @@ Pull from this list whenever a slice above reaches "verify."
 - [~] (2h) `ConfigModule` env validation across all services + `ThrottlerModule` rate limiting on
       auth and mutations. _Partial:_ env validated at boot; throttler enforced on auth + account-request
       endpoints. _Remaining:_ extend rate limits to the mutation endpoints.
-- [ ] (2h) `GET /health/ready` probes DB + Redis + object storage. _Done-when:_ readiness reflects
-      every critical dependency.
+- [x] (2h) Readiness probes every critical dependency, split by process so each probes its own
+      request path: the API's `GET /health/ready` (and `/ready`) probes **Postgres + object storage**,
+      and the worker's `/ready` probes **Postgres + Redis**. Each probe runs under a 2s timeout and
+      fails closed (503) with a safe envelope. ✓
 
 **Test / evidence**
 

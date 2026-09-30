@@ -30,4 +30,36 @@ describe('worker runtime', () => {
     expect(readiness.status).toBe(200);
     await expect(readiness.json()).resolves.toEqual({ status: 'ready' });
   });
+
+  it('reports readiness checks and 200 when every dependency is up', async () => {
+    server = await startWorkerHealthServer({
+      port: 0,
+      host: '127.0.0.1',
+      readiness: () => Promise.resolve({ database: 'up', redis: 'up' }),
+    });
+    const { port } = listenAddress(server);
+
+    const readiness = await fetch(`http://127.0.0.1:${port}/ready`);
+    expect(readiness.status).toBe(200);
+    await expect(readiness.json()).resolves.toEqual({
+      status: 'ready',
+      checks: { database: 'up', redis: 'up' },
+    });
+  });
+
+  it('fails readiness with 503 when a dependency is down', async () => {
+    server = await startWorkerHealthServer({
+      port: 0,
+      host: '127.0.0.1',
+      readiness: () => Promise.resolve({ database: 'up', redis: 'down' }),
+    });
+    const { port } = listenAddress(server);
+
+    const readiness = await fetch(`http://127.0.0.1:${port}/ready`);
+    expect(readiness.status).toBe(503);
+    await expect(readiness.json()).resolves.toEqual({
+      status: 'not-ready',
+      checks: { database: 'up', redis: 'down' },
+    });
+  });
 });

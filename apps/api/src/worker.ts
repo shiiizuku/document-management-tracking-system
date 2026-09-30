@@ -1,9 +1,11 @@
 import 'reflect-metadata';
 import { config } from 'dotenv';
+import { sql } from 'drizzle-orm';
+import { Redis } from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 import { validateEnvironment } from './config/environment.js';
 import { StructuredLogger } from './common/structured-logger.js';
-import { startWorkerHealthServer } from './worker-runtime.js';
+import { startWorkerHealthServer, type WorkerCheckState } from './worker-runtime.js';
 import { createDatabase } from './database/client.js';
 import { createOutboxQueue, createOutboxWorker } from './modules/jobs/outbox-queue.js';
 import { OutboxRelay } from './modules/jobs/outbox-relay.js';
@@ -37,6 +39,14 @@ const scanLogger = {
   warn: (message: string) => logger.warn(message, 'ScanConsumer'),
 };
 
+// A small connection dedicated to the readiness ping, kept separate from BullMQ's own
+// connections so a probe never contends with queue traffic. `lazyConnect` defers the socket
+// until the first ping; one retry per request means a down Redis fails fast instead of hanging.
+const redisProbeClient = new Redis(environment.REDIS_URL, {
+  maxRetriesPerRequest: 1,
+  lazyConnect: true,
+});
+
 // Consumer of published domain events. An uploaded attachment is scanned; other events (realtime
 // fan-out, email) plug in here — that gateway is deferred, so for now they are logged. The durable
 // notification inbox is written in the domain transaction, so it does not depend on this worker.
@@ -61,7 +71,37 @@ const relayInterval = setInterval(() => {
   void relay.drain().catch((error: unknown) => logger.error(error, 'OutboxRelay'));
 }, 1_000);
 
-const server = await startWorkerHealthServer({ port: environment.WORKER_HEALTH_PORT });
+// Readiness reflects the worker's own critical path: it can only drain the outbox if both
+// Postgres (the source of events) and Redis (the queue) answer, pinged via the dedicated
+// probe connection above.
+const PROBE_TIMEOUT_MS = 2_000;
+const probe = async (check: () => Promise<unknown>): Promise<WorkerCheckState> => {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      check(),
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('probe timed out')), PROBE_TIMEOUT_MS);
+      }),
+    ]);
+    return 'up';
+  } catch {
+    return 'down';
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
+
+const server = await startWorkerHealthServer({
+  port: environment.WORKER_HEALTH_PORT,
+  readiness: async () => {
+    const [database, redis] = await Promise.all([
+      probe(() => db.execute(sql`select 1`)),
+      probe(() => redisProbeClient.ping()),
+    ]);
+    return { database, redis };
+  },
+});
 
 let shuttingDown = false;
 const shutdown = (): void => {
@@ -72,6 +112,7 @@ const shutdown = (): void => {
     try {
       await worker.close();
       await queue.close();
+      redisProbeClient.disconnect();
       await pool.end();
     } catch (error) {
       logger.error(error, 'WorkerShutdown');
