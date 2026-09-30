@@ -51,6 +51,7 @@ export interface DocumentListItem {
   direction: string;
   sender: string | null;
   company: string | null;
+  confidential: boolean;
   divisionId: string;
   sectionId: string | null;
   createdAt: string;
@@ -97,3 +98,32 @@ export const fetchDocuments = (
 /** Total number of pages for a result set, at least 1 so the pager always has a current page. */
 export const pageCount = (total: number, pageSize: number = DEFAULT_PAGE_SIZE): number =>
   Math.max(1, Math.ceil(total / pageSize));
+
+export interface MetadataPatch {
+  expectedVersion: number;
+  title?: string;
+  type?: string;
+  description?: string;
+  priority?: string;
+  sender?: string;
+  company?: string;
+  referenceNumber?: string;
+  confidential?: boolean;
+}
+
+export interface MetadataRevision {
+  id: string;
+  actorId: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export const updateMetadata = (id: string, patch: MetadataPatch): Promise<DocumentListItem> =>
+  api<DocumentListItem>(`/documents/${id}/metadata`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+
+export const fetchMetadataRevisions = (id: string): Promise<MetadataRevision[]> =>
+  api<MetadataRevision[]>(`/documents/${id}/metadata-revisions`);
