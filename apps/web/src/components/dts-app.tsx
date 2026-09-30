@@ -10,6 +10,7 @@ import {
   type DocumentFilters,
 } from '../lib/documents';
 import { fetchDivisions, fetchSections, type Division, type Section } from '../lib/organization';
+import { AttachmentsSection } from './attachments-section';
 import { useNotifications } from '../hooks/use-notifications';
 import { NotificationsPanel } from './notifications-panel';
 import { Pagination } from './pagination';
@@ -484,6 +485,14 @@ export function DtsApp() {
                     </button>
                   ))}
                 </div>
+                <AttachmentsSection
+                  documentId={selected.id}
+                  canUpload={!['RELEASED', 'ARCHIVED'].includes(selected.status)}
+                  onUploaded={() => {
+                    void loadDetail(selected.id);
+                    void refreshDocuments();
+                  }}
+                />
                 <div className="timeline">
                   <h3>Timeline</h3>
                   {selected.timeline.length === 0 ? (
