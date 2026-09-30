@@ -3,8 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
+import {
+  DEFAULT_FILTERS,
+  DEFAULT_PAGE_SIZE,
+  fetchDocuments,
+  type DocumentFilters,
+} from '../lib/documents';
 import { useNotifications } from '../hooks/use-notifications';
 import { NotificationsPanel } from './notifications-panel';
+import { Pagination } from './pagination';
+import { RegistryControls } from './registry-controls';
 import { StatusBadge } from './status-badge';
 
 type User = {
@@ -61,32 +69,46 @@ export function DtsApp() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<Detail | null>(null);
-  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<DocumentFilters>(DEFAULT_FILTERS);
+  const [query, setQuery] = useState<DocumentFilters>(DEFAULT_FILTERS);
+  const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
   const notifications = useNotifications(user !== null);
 
-  const refreshDocuments = useCallback(async (term = '') => {
-    const result = await api<{ items: DocumentItem[]; total: number }>(
-      `/documents?pageSize=50&search=${encodeURIComponent(term)}`,
-    );
+  const refreshDocuments = useCallback(async () => {
+    const result = await fetchDocuments(query, page);
     setDocuments(result.items);
     setTotal(result.total);
-  }, []);
+  }, [query, page]);
   const loadDetail = useCallback(async (id: string) => {
     setSelected(await api<Detail>(`/documents/${id}`));
   }, []);
 
+  // Selects/sort apply immediately; free-text search waits for submit so it does not refetch on
+  // every keystroke. `query` is what is actually fetched; `filters` is the live control state.
+  const applyFilters = (patch: Partial<DocumentFilters>) => {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    if (!('search' in patch)) {
+      setQuery(next);
+      setPage(1);
+    }
+  };
+
   useEffect(() => {
     void api<User>('/auth/me')
-      .then(async (me) => {
-        setUser(me);
-        await refreshDocuments();
-      })
+      .then((me) => setUser(me))
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
-  }, [refreshDocuments]);
+  }, []);
+
+  // Refetch whenever the signed-in user, the applied query, or the page changes.
+  useEffect(() => {
+    if (!user) return;
+    void refreshDocuments().catch(() => undefined);
+  }, [user, refreshDocuments]);
 
   const metrics = useMemo(
     () => ({
@@ -107,7 +129,6 @@ export function DtsApp() {
         body: JSON.stringify({ email: form.get('email'), password: form.get('password') }),
       });
       setUser(me);
-      await refreshDocuments();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Login failed');
     }
@@ -136,7 +157,7 @@ export function DtsApp() {
         }),
       });
       setShowCreate(false);
-      await refreshDocuments(search);
+      await refreshDocuments();
       await loadDetail(created.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to create document');
@@ -158,7 +179,7 @@ export function DtsApp() {
         method: 'POST',
         body: JSON.stringify({ expectedVersion: selected.version, remarks, releaseMethod }),
       });
-      await Promise.all([loadDetail(selected.id), refreshDocuments(search)]);
+      await Promise.all([loadDetail(selected.id), refreshDocuments()]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Action failed');
     }
@@ -328,21 +349,20 @@ export function DtsApp() {
                   Documents <span>{total}</span>
                 </h2>
               </div>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void refreshDocuments(search);
-                }}
-              >
-                <input
-                  aria-label="Search documents"
-                  placeholder="Search title, number, sender…"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-                <button type="submit">Search</button>
-              </form>
             </div>
+            <RegistryControls
+              filters={filters}
+              onChange={applyFilters}
+              onSearchSubmit={() => {
+                setQuery(filters);
+                setPage(1);
+              }}
+              onClear={() => {
+                setFilters(DEFAULT_FILTERS);
+                setQuery(DEFAULT_FILTERS);
+                setPage(1);
+              }}
+            />
             <div className="table-wrap">
               <table>
                 <thead>
@@ -391,6 +411,12 @@ export function DtsApp() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              page={page}
+              total={total}
+              pageSize={DEFAULT_PAGE_SIZE}
+              onPageChange={setPage}
+            />
           </div>
           <aside className="detail-panel">
             {selected ? (
