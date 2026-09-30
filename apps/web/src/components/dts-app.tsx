@@ -11,6 +11,7 @@ import {
 } from '../lib/documents';
 import { fetchDivisions, fetchSections, type Division, type Section } from '../lib/organization';
 import { AttachmentsSection } from './attachments-section';
+import { MetadataEditModal } from './metadata-edit-modal';
 import { ReportsView } from './reports-view';
 import { useNotifications } from '../hooks/use-notifications';
 import { NotificationsPanel } from './notifications-panel';
@@ -36,6 +37,7 @@ type DocumentItem = {
   direction: string;
   sender: string | null;
   company: string | null;
+  confidential: boolean;
   divisionId: string;
   sectionId: string | null;
   createdAt: string;
@@ -76,6 +78,7 @@ export function DtsApp() {
   const [query, setQuery] = useState<DocumentFilters>(DEFAULT_FILTERS);
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [view, setView] = useState<'workspace' | 'reports'>('workspace');
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -475,7 +478,16 @@ export function DtsApp() {
                       <p className="eyebrow">{selected.trackingNumber}</p>
                       <button onClick={() => setSelected(null)}>×</button>
                       <h2>{selected.title}</h2>
-                      <StatusBadge status={selected.status} />
+                      <div className="detail-head-row">
+                        <StatusBadge status={selected.status} />
+                        <button
+                          type="button"
+                          className="secondary compact"
+                          onClick={() => setShowEdit(true)}
+                        >
+                          Edit metadata
+                        </button>
+                      </div>
                     </div>
                     <dl>
                       <div>
@@ -669,6 +681,28 @@ export function DtsApp() {
           onOpenDocument={(id) => {
             setShowNotifications(false);
             void loadDetail(id);
+          }}
+        />
+      )}
+      {showEdit && selected && (
+        <MetadataEditModal
+          document={{
+            id: selected.id,
+            version: selected.version,
+            title: selected.title,
+            type: selected.type,
+            description: selected.description,
+            priority: selected.priority,
+            sender: selected.sender,
+            company: selected.company,
+            referenceNumber: selected.referenceNumber,
+            confidential: selected.confidential,
+          }}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => {
+            setShowEdit(false);
+            void loadDetail(selected.id);
+            void refreshDocuments();
           }}
         />
       )}
