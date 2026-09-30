@@ -1,6 +1,6 @@
 # Implementation status & build backlog
 
-_Last audited: 2026-09-29._
+_Last audited: 2026-09-30._
 
 This document is both a **status report** (what is real today) and a **working backlog**
 (what to build next), sized for short daily sessions.
@@ -28,18 +28,29 @@ This document is both a **status report** (what is real today) and a **working b
 
 ## Current reality (audited)
 
-The old in-process, `Map`-backed application (`DtsApplicationService`) has been **retired**.
-Slice 0's persistence spine is real for **identity** (`UsersRepository`, `AuthService`/`AuthGuard`,
-`GET /ready` probing Postgres) and, as of Phase 2, for the **document registry**: the document
-aggregate lives in `modules/documents/documents.repository.ts` + `documents.service.ts` — create with
-atomic tracking/reference allocation, list/search with SQL authorization predicates, metadata edit
-with optimistic concurrency + revision history, plus workflow transitions and assignment persisted in
-one transaction with their `workflow_events`/`audit_events`/`outbox_events`. **Attachment bytes and
-file-version metadata** still live in an in-memory `AttachmentStore` (the document row already points
-at the current/signed version by id) until Phase 4; **notifications** are still the in-memory prototype
-(Phase 5); **reports** now read persisted documents but their own tables land in Phase 6. The
-BullMQ/Redis/object-storage/WebSocket dependencies exist in the repo but are **not wired into the
-runtime**.
+The old in-process, `Map`-backed application (`DtsApplicationService`) has been **retired**. Phases
+0–6 are backend-complete and persisted to Postgres:
+
+- **Identity & org** — `UsersRepository`, `AuthService`/`AuthGuard`, plus the `organization` module
+  (`DivisionsRepository`/`SectionsRepository` + service + controller), the `identity` module
+  (account-request submit/approve, users, profile photos), and `admin.controller.ts`.
+- **Document registry** — the aggregate in `modules/documents/` (create with atomic
+  tracking/reference allocation, SQL search with authorization predicates, metadata edit with
+  revision history, workflow transitions, assignments, routing, sharing, work queue), with
+  row-level optimistic concurrency (`WHERE version = ?`) and `workflow_events`/`audit_events`/
+  `outbox_events` written in one transaction.
+- **Files** — `file_records`/`file_versions` + `signature_events`/`release_events` persisted, behind
+  a `StoragePort`; download fails closed unless the version is `CLEAN`.
+- **Notifications & outbox** — durable inbox (`NotificationsRepository`), transactional `OutboxWriter`,
+  and a BullMQ relay + worker draining the outbox (tested against real Redis).
+- **Reports & audit** — monthly report + XLSX/PDF export read scoped Postgres documents;
+  `audit_events` are persisted and queryable via `GET admin/audit-events` (actor/action/date filters).
+
+**Still on stand-ins:** there is **no ClamAV scan worker** (only a manual `POST …/scan`) and **no
+realtime WS/SSE gateway**. `docker-compose.yml` defines postgres, redis, minio (built from source),
+and clamav; the app now writes attachment bytes to **MinIO** through the `StoragePort`, but is not
+yet wired to ClamAV. The **frontend is essentially unbuilt** (`apps/web/src` has only `dts-app.tsx`
++ `status-badge.tsx`).
 
 ### Module verdict
 
@@ -47,23 +58,24 @@ runtime**.
 | --------------------- | ---------------------------------------- | ------------------------------------------------------------------- |
 | workflow              | **DONE** (pure FSM, tested)              | Persist transitions to `workflow_events`; transactional version bump |
 | authorization         | **DONE** (pure RBAC/scope, tested)       | Enforce over _persisted_ users/divisions/sections                   |
-| auth / session        | STUBBED (in-memory users)                | Users from Postgres; keep JWT + bcrypt                              |
-| documents / search    | **Postgres-backed** (Phase 2–3)          | Routing/sharing/work-queue done; remaining: soft-delete endpoint, `signature_events` (Phase 4), `EXPLAIN` indexes |
-| files / versions      | **Postgres metadata + storage port** (Phase 4) | Remaining: MinIO adapter, ClamAV scan worker (BullMQ/Redis), files UI |
+| auth / session        | **DONE** (Postgres users, JWT + bcrypt)  | —                                                                   |
+| documents / search    | **Postgres-backed** (Phase 2–3)          | Remaining: soft-delete/restore endpoint, `EXPLAIN` indexes, documents UI |
+| files / versions      | **Postgres metadata + MinIO storage** (Phase 4) | Remaining: ClamAV scan worker, files UI                        |
 | notifications         | **Postgres in-tx + outbox relay/worker** (Phase 5) | Remaining: realtime WS fan-out, inbox UI                |
-| reports / print       | STUBBED data / **real** XLSX+PDF bytes   | Report + audit data from Postgres; reports & audit UI               |
-| admin / identity / org| STUBBED (users/audit list only)          | Account requests, org CRUD, role assignment, profile photos         |
+| reports / print       | **Postgres data + real XLSX/PDF** (Phase 6) | Remaining: reports & audit UI                                    |
+| admin / identity / org| **DONE** (account requests, org CRUD, roles, audit query, profile photos) | Remaining: admin & org UI          |
 
 ### Infrastructure verdict
 
 | Capability                     | Defined in code                                        | Connected to running app? |
 | ------------------------------ | ------------------------------------------------------ | ------------------------- |
 | Postgres + Drizzle             | Full schema (19 tables/7 enums), client, migration, seed | **Yes for identity + documents** — `DatabaseModule` provides the `DATABASE` token; identity and the document aggregate read/write Postgres. Attachment bytes/notifications not yet migrated |
-| Object storage (MinIO/S3)      | `StoragePort` + `objectKey` columns + key computation  | **Behind a port** — bytes in an in-memory `StoragePort` adapter; MinIO adapter is a drop-in |
+| Object storage (MinIO/S3)      | `StoragePort` + `MinioStorageAdapter` + `objectKey` columns | **Yes** — the running app writes bytes to MinIO (`minio` SDK); tests override the port with the in-memory adapter. _(Local caveat: the currently-running compose container is the license-gated AIStor image and denies S3 — `docker compose up --build` picks up the vendored AGPL build.)_ |
 | BullMQ / Redis                 | `outbox-queue.ts` (queue + worker factories)           | **Yes** — the worker runs a relay + BullMQ consumer against Redis; tested in CI's integration job |
 | Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published. Consumer's realtime fan-out deferred |
-| Antivirus scan                 | `scan_status` enum + `POST …/scan` endpoint            | **Manual only** — no scanner |
-| WebSockets / rate-limit        | Dependencies declared                                  | **No** — no gateway/module |
+| Antivirus scan                 | `scan_status` enum + `POST …/scan` endpoint; clamav in compose | **Manual only** — no scan worker wired to ClamAV yet |
+| WebSockets                     | Dependencies declared                                  | **No** — no gateway/module |
+| Rate limiting                  | `ThrottlerModule`                                      | **Partial** — enforced on auth + account-request endpoints; not yet on all mutations |
 | Config validation              | `config/environment.ts` + `ConfigModule.forRoot`        | **Yes** — validated at boot, fails fast |
 | Structured logging + correlation IDs | `StructuredLogger`, `CorrelationIdMiddleware`     | **Yes** — global logger + per-request IDs |
 | JWT auth                       | `JwtModule` + `AuthGuard`                              | **Yes** (stateless)       |
@@ -92,15 +104,17 @@ has UI). Everything after this reuses the module + repository shape you establis
 
 **Connections**
 
-- [ ] (2h) Bring up Postgres from `compose.yaml`, copy `.env.example` → `.env`, run `db:migrate`
-      then `db:seed`. _Done-when:_ `docker compose up db` + migrate + seed + app login all pass locally.
+- [x] (2h) Bring up Postgres from `docker-compose.yml` (postgres/redis/minio/clamav all defined),
+      copy `.env.example` → `.env`, run `db:migrate` then `db:seed`. _Done-when:_ `docker compose up db`
+      + migrate + seed + app login all pass locally.
 - [x] (2h) Make `GET /health/ready` actually probe the DB (`SELECT 1`) and fail when it is down.
       _Done-when:_ readiness flips unhealthy when Postgres is stopped.
 
 **Test**
 
-- [ ] (2h) Add the first DB-backed integration test (login against real Postgres) and a Postgres
-      service to CI. _Done-when:_ CI provisions Postgres and the test is green.
+- [x] (2h) Add the first DB-backed integration test (login against real Postgres) and a Postgres
+      service to CI. _Done-when:_ CI provisions Postgres and the test is green. ✓ — CI's `integration
+      (postgres)` job provisions postgres + redis.
 
 **Audit / verify**
 
@@ -140,15 +154,15 @@ Depends on Slice 0's `UsersRepository`.
 
 **Backend**
 
-- [ ] (2h) `DivisionsRepository` + `SectionsRepository` over `divisions`/`sections`; remove the
+- [x] (2h) `DivisionsRepository` + `SectionsRepository` over `divisions`/`sections`; remove the
       hard-coded `division-*` / `section-*` heuristics in `createDocument`. _Done-when:_ org units
-      resolve from Postgres.
-- [ ] (2h) Account-request submission: `POST /auth/account-requests` (unauthenticated) writing a
-      `PENDING` row to `account_requests`. _Done-when:_ a request row persists.
-- [ ] (2h) Account-request approve/reject (capability-gated) that creates a `users` row on approve.
-      _Done-when:_ an approved request yields a login-capable account.
-- [ ] (2h) Org admin endpoints: create/deactivate user, assign role, create division/section
-      (the `GET /users` list already exists). _Done-when:_ an admin can manage the org over the API.
+      resolve from Postgres. ✓ (`organization` module)
+- [x] (2h) Account-request submission: `POST /auth/account-requests` (unauthenticated) writing a
+      `PENDING` row to `account_requests`. _Done-when:_ a request row persists. ✓ (`identity/account-requests.controller.ts`)
+- [x] (2h) Account-request approve/reject (capability-gated) that creates a `users` row on approve.
+      _Done-when:_ an approved request yields a login-capable account. ✓
+- [x] (2h) Org admin endpoints: create/deactivate user, assign role, create division/section
+      (the `GET /users` list already exists). _Done-when:_ an admin can manage the org over the API. ✓ (`admin.controller.ts`)
 
 **Frontend**
 
@@ -161,8 +175,8 @@ Depends on Slice 0's `UsersRepository`.
 
 **Connections**
 
-- [ ] (2h) Seed real divisions/sections/roles; confirm the app no longer depends on any in-memory
-      identity. _Done-when:_ identity is fully Postgres-backed end to end.
+- [x] (2h) Seed real divisions/sections/roles; confirm the app no longer depends on any in-memory
+      identity. _Done-when:_ identity is fully Postgres-backed end to end. ✓
 
 **Test**
 
@@ -213,8 +227,9 @@ storage and fills the document-management UI gaps.
 
 **Connections**
 
-- [ ] (2h) Enforce optimistic concurrency at the row level (`WHERE version = ?`), not in a Map.
-      _Done-when:_ a stale action returns 409 from the database layer.
+- [x] (2h) Enforce optimistic concurrency at the row level (`WHERE version = ?`), not in a Map.
+      _Done-when:_ a stale action returns 409 from the database layer. ✓ (`documents.repository.ts`,
+      `eq(documents.version, expectedVersion)` guards)
 
 **Test**
 
@@ -236,16 +251,18 @@ behind it.
 
 **Backend**
 
-- [~] (2h) Introduce a storage abstraction with server-generated keys and no overwrite. **Done** as
-      `StoragePort` + an in-memory adapter (`storage.port.ts`); the **MinIO/S3 adapter is the pending
-      drop-in** — the use cases already go through the port.
+- [x] (2h) Introduce a storage abstraction with server-generated keys and no overwrite, plus the
+      real MinIO/S3 adapter. **Done** — `StoragePort` + `MinioStorageAdapter` (`minio-storage.adapter.ts`,
+      bucket auto-create, `put` refuses overwrite via `statObject`); the running app binds MinIO while
+      unit/integration suites override the port with the in-memory adapter. ✓
 - [x] (2h) Persist `file_records` + `file_versions` to Postgres with immutability enforced
       (`file-versions.repository.ts`; unique `(file_record_id, version_number)`, scan-status the only
       mutable field). _Done-when:_ versions are durable and cannot be mutated. ✓
 - [x] (2h) Persist `signature_events` + `release_events`; the clean-and-signed outgoing-release
       invariant is evaluated from the persisted version + document row. ✓
-- [~] (2h) Download fails closed unless the version's scan is `CLEAN` — **done**; streamed/presigned
-      access lands with the MinIO adapter.
+- [x] (2h) Download fails closed unless the version's scan is `CLEAN` — **done**; bytes are now
+      served from MinIO through the `StoragePort`. _(Presigned-URL streaming is a later optional
+      optimization; the current path reads through the API.)_
 
 **Frontend**
 
@@ -258,8 +275,9 @@ behind it.
 
 **Connections**
 
-- [ ] (2h) Add MinIO + ClamAV services to `compose.yaml` and wire their env vars. _Done-when:_ both
-      run locally alongside the app.
+- [x] (2h) Add MinIO + ClamAV services to `docker-compose.yml` and wire their env vars. _Done-when:_
+      both run locally alongside the app. ✓ (minio built from source + clamav services defined; the
+      app's MinIO adapter binding is the remaining backend piece above)
 - [ ] (2h) Scan pipeline: the worker consumes an upload event, runs ClamAV, and records the result
       (replacing the manual `POST …/scan`). _Done-when:_ uploads auto-transition to CLEAN/INFECTED.
 
@@ -303,8 +321,9 @@ module makes them durable, event-driven, and live.
 
 **Connections**
 
-- [ ] (2h) Add Redis to `compose.yaml`, wire the BullMQ connection, and run the worker via
-      `start:worker`. _Done-when:_ outbox → queue → push works end to end locally.
+- [x] (2h) Add Redis to `docker-compose.yml`, wire the BullMQ connection, and run the worker via
+      `start:worker`. _Done-when:_ outbox → queue → push works end to end locally. ✓ (redis + worker
+      services defined; relay/worker tested against real Redis in CI)
 
 **Test**
 
@@ -321,10 +340,11 @@ module makes them durable, event-driven, and live.
 
 **Backend**
 
-- [ ] (2h) Persist `audit_events` to Postgres and add a query endpoint with filters
-      (actor/date/outcome). _Done-when:_ the audit log is durable and filterable.
-- [ ] (2h) Compute the monthly report and routing slip from Postgres data. _Done-when:_ reports read
-      persisted documents.
+- [x] (2h) Persist `audit_events` to Postgres and add a query endpoint with filters
+      (actor/date/outcome). _Done-when:_ the audit log is durable and filterable. ✓ (`audit.writer.ts`
+      + `GET admin/audit-events`)
+- [x] (2h) Compute the monthly report and routing slip from Postgres data. _Done-when:_ reports read
+      persisted documents. ✓ (`monthly-report.service.ts` over scoped Postgres documents)
 
 **Frontend**
 
@@ -353,8 +373,9 @@ Pull from this list whenever a slice above reaches "verify."
 
 **Backend / infra**
 
-- [ ] (2h) `ConfigModule` env validation across all services + `ThrottlerModule` rate limiting on
-      auth and mutations. _Done-when:_ limits are enforced and env is validated.
+- [~] (2h) `ConfigModule` env validation across all services + `ThrottlerModule` rate limiting on
+      auth and mutations. _Partial:_ env validated at boot; throttler enforced on auth + account-request
+      endpoints. _Remaining:_ extend rate limits to the mutation endpoints.
 - [ ] (2h) `GET /health/ready` probes DB + Redis + object storage. _Done-when:_ readiness reflects
       every critical dependency.
 
