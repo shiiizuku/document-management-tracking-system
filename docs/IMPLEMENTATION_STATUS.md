@@ -46,11 +46,11 @@ The old in-process, `Map`-backed application (`DtsApplicationService`) has been 
 - **Reports & audit** — monthly report + XLSX/PDF export read scoped Postgres documents;
   `audit_events` are persisted and queryable via `GET admin/audit-events` (actor/action/date filters).
 
-**Still on stand-ins:** there is **no ClamAV scan worker** (only a manual `POST …/scan`) and **no
-realtime WS/SSE gateway**. `docker-compose.yml` defines postgres, redis, minio (built from source),
-and clamav; the app now writes attachment bytes to **MinIO** through the `StoragePort`, but is not
-yet wired to ClamAV. The **frontend is essentially unbuilt** (`apps/web/src` has only `dts-app.tsx`
-+ `status-badge.tsx`).
+**Still on stand-ins:** there is **no realtime WS/SSE gateway**. Otherwise the runtime is wired:
+`docker-compose.yml` defines postgres, redis, minio (built from source), and clamav; the app writes
+attachment bytes to **MinIO** through the `StoragePort`, and the worker **auto-scans** each upload
+through **ClamAV** and records the verdict. The **frontend is essentially unbuilt** (`apps/web/src`
+has only `dts-app.tsx` + `status-badge.tsx`).
 
 ### Module verdict
 
@@ -60,7 +60,7 @@ yet wired to ClamAV. The **frontend is essentially unbuilt** (`apps/web/src` has
 | authorization         | **DONE** (pure RBAC/scope, tested)       | Enforce over _persisted_ users/divisions/sections                   |
 | auth / session        | **DONE** (Postgres users, JWT + bcrypt)  | —                                                                   |
 | documents / search    | **Postgres-backed** (Phase 2–3)          | Remaining: soft-delete/restore endpoint, `EXPLAIN` indexes, documents UI |
-| files / versions      | **Postgres metadata + MinIO storage** (Phase 4) | Remaining: ClamAV scan worker, files UI                        |
+| files / versions      | **Postgres metadata + MinIO storage + ClamAV auto-scan** (Phase 4) | Remaining: files UI                         |
 | notifications         | **Postgres in-tx + outbox relay/worker** (Phase 5) | Remaining: realtime WS fan-out, inbox UI                |
 | reports / print       | **Postgres data + real XLSX/PDF** (Phase 6) | Remaining: reports & audit UI                                    |
 | admin / identity / org| **DONE** (account requests, org CRUD, roles, audit query, profile photos) | Remaining: admin & org UI          |
@@ -73,7 +73,7 @@ yet wired to ClamAV. The **frontend is essentially unbuilt** (`apps/web/src` has
 | Object storage (MinIO/S3)      | `StoragePort` + `MinioStorageAdapter` + `objectKey` columns | **Yes** — the running app writes bytes to MinIO (`minio` SDK); tests override the port with the in-memory adapter. _(Local caveat: the currently-running compose container is the license-gated AIStor image and denies S3 — `docker compose up --build` picks up the vendored AGPL build.)_ |
 | BullMQ / Redis                 | `outbox-queue.ts` (queue + worker factories)           | **Yes** — the worker runs a relay + BullMQ consumer against Redis; tested in CI's integration job |
 | Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published. Consumer's realtime fan-out deferred |
-| Antivirus scan                 | `scan_status` enum + `POST …/scan` endpoint; clamav in compose | **Manual only** — no scan worker wired to ClamAV yet |
+| Antivirus scan                 | `ClamAvScanner` (INSTREAM) + scan consumer + `POST …/scan` override | **Yes** — the worker scans each upload via clamd and records the verdict; manual endpoint remains for re-scans |
 | WebSockets                     | Dependencies declared                                  | **No** — no gateway/module |
 | Rate limiting                  | `ThrottlerModule`                                      | **Partial** — enforced on auth + account-request endpoints; not yet on all mutations |
 | Config validation              | `config/environment.ts` + `ConfigModule.forRoot`        | **Yes** — validated at boot, fails fast |
@@ -278,8 +278,12 @@ behind it.
 - [x] (2h) Add MinIO + ClamAV services to `docker-compose.yml` and wire their env vars. _Done-when:_
       both run locally alongside the app. ✓ (minio built from source + clamav services defined; the
       app's MinIO adapter binding is the remaining backend piece above)
-- [ ] (2h) Scan pipeline: the worker consumes an upload event, runs ClamAV, and records the result
-      (replacing the manual `POST …/scan`). _Done-when:_ uploads auto-transition to CLEAN/INFECTED.
+- [x] (2h) Scan pipeline: the worker consumes an upload event, runs ClamAV, and records the result
+      (the manual `POST …/scan` stays as an override). _Done-when:_ uploads auto-transition to
+      CLEAN/INFECTED. ✓ — `upload` enqueues an `attachment.uploaded` outbox event; the worker's
+      `scanUploadedVersion` streams the bytes to clamd (`ClamAvScanner`, INSTREAM) and records the
+      verdict. Scanner verified against live clamd (EICAR→INFECTED, benign→CLEAN). _(Auto-scan
+      integration test with EICAR-in-CI remains under the M3 Test box.)_
 
 **Test**
 
