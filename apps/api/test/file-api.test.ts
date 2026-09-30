@@ -17,6 +17,7 @@ import { InMemoryDocumentsRepository } from './in-memory-documents.repository.js
 import { InMemoryFileVersionsRepository } from './in-memory-file-versions.repository.js';
 import { InMemoryOutboxWriter } from './in-memory-outbox.writer.js';
 import { InMemoryUsersRepository } from './in-memory-users.repository.js';
+import { InMemoryStorageAdapter, StoragePort } from '../src/modules/files/storage.port.js';
 import { fakeTransactionalDatabase } from './test-database.js';
 
 const sessionCookie = (response: {
@@ -53,6 +54,8 @@ describe('REST /api/v1 document attachments', () => {
       .useClass(InMemoryFileVersionsRepository)
       .overrideProvider(OutboxWriter)
       .useClass(InMemoryOutboxWriter)
+      .overrideProvider(StoragePort)
+      .useClass(InMemoryStorageAdapter)
       .overrideProvider(DATABASE)
       .useValue(fakeTransactionalDatabase)
       .compile();

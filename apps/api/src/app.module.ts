@@ -19,7 +19,8 @@ import { DocumentsService } from './modules/documents/documents.service.js';
 import { AttachmentsService } from './modules/files/attachments.service.js';
 import { FileVersionsRepository } from './modules/files/file-versions.repository.js';
 import { FilesController } from './modules/files/files.controller.js';
-import { InMemoryStorageAdapter, StoragePort } from './modules/files/storage.port.js';
+import { MinioStorageAdapter } from './modules/files/minio-storage.adapter.js';
+import { StoragePort } from './modules/files/storage.port.js';
 import { HealthController } from './modules/health/health.controller.js';
 import { AccountRequestsController } from './modules/identity/account-requests.controller.js';
 import { AccountRequestsRepository } from './modules/identity/account-requests.repository.js';
@@ -86,9 +87,9 @@ import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
     DocumentsService,
     FileVersionsRepository,
     AttachmentsService,
-    // Attachment bytes live behind the storage port; the in-memory adapter is the current
-    // binding until the MinIO adapter lands (Phase 4 infra).
-    { provide: StoragePort, useClass: InMemoryStorageAdapter },
+    // Attachment bytes live behind the storage port. The running app writes to MinIO; unit and
+    // integration suites override this provider with the in-memory adapter (`storage.port.ts`).
+    { provide: StoragePort, useClass: MinioStorageAdapter },
     NotificationsRepository,
     UsersRepository,
     AccountRequestsRepository,

@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import {
   assignDocumentSchema,
@@ -155,5 +166,25 @@ export class DocumentsController {
     @Body(new ZodValidationPipe(shareDocumentSchema)) input: ShareDocumentInput,
   ) {
     return this.documents.share(actor, id, input.userId).then((data) => ({ data }));
+  }
+
+  // Logical deletion carries `expectedVersion` in the body (same optimistic-concurrency guard as
+  // the other mutations), so `workflowCommandSchema` is reused for its `expectedVersion` field.
+  @Delete(':id')
+  remove(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(workflowCommandSchema)) input: { expectedVersion: number },
+  ) {
+    return this.documents.softDelete(actor, id, input.expectedVersion).then((data) => ({ data }));
+  }
+
+  @Post(':id/restore')
+  restore(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(workflowCommandSchema)) input: { expectedVersion: number },
+  ) {
+    return this.documents.restore(actor, id, input.expectedVersion).then((data) => ({ data }));
   }
 }

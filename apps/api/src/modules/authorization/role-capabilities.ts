@@ -23,6 +23,10 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly string[]>> = {
     'DOCUMENT_PREPARE_RELEASE',
     'DOCUMENT_RELEASE',
     'DOCUMENT_ARCHIVE',
+    // Logical deletion and its reversal are paired and administrator-only (policy register P-11,
+    // provisional): the records office has not yet delegated deletion, so it stays with the admin
+    // role alongside restore until P-11 fixes an owner.
+    'DOCUMENT_DELETE',
     'DOCUMENT_RESTORE',
     'DOCUMENT_ASSIGN',
     'REPORT_VIEW',
