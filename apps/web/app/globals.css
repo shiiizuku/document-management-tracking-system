@@ -1099,3 +1099,41 @@ button.compact {
   background: #f6dede;
   color: var(--danger);
 }
+
+/* Reports view */
+.reports-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.reports-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.reports-toolbar .control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.reports-toolbar .control select {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 14px;
+  min-width: 130px;
+}
+.reports-downloads {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
