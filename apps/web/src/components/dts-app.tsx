@@ -9,6 +9,7 @@ import {
   fetchDocuments,
   type DocumentFilters,
 } from '../lib/documents';
+import { fetchDivisions, fetchSections, type Division, type Section } from '../lib/organization';
 import { useNotifications } from '../hooks/use-notifications';
 import { NotificationsPanel } from './notifications-panel';
 import { Pagination } from './pagination';
@@ -74,8 +75,35 @@ export function DtsApp() {
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
+  const [createDivisionId, setCreateDivisionId] = useState('');
+  const [createSectionId, setCreateSectionId] = useState('');
 
   const notifications = useNotifications(user !== null);
+
+  // Load the divisions the actor may register into when the modal opens, defaulting to their own.
+  useEffect(() => {
+    if (!showCreate) return;
+    void fetchDivisions()
+      .then((rows) => {
+        setDivisions(rows);
+        setCreateDivisionId((current) => current || user?.divisionId || rows[0]?.id || '');
+      })
+      .catch(() => undefined);
+  }, [showCreate, user]);
+
+  // Load the sections of the chosen division; a division change resets the section.
+  useEffect(() => {
+    if (!createDivisionId) {
+      setSections([]);
+      return;
+    }
+    void fetchSections(createDivisionId)
+      .then(setSections)
+      .catch(() => setSections([]));
+    setCreateSectionId('');
+  }, [createDivisionId]);
 
   const refreshDocuments = useCallback(async () => {
     const result = await fetchDocuments(query, page);
@@ -152,8 +180,8 @@ export function DtsApp() {
           sender: direction === 'INCOMING' ? form.get('sender') : undefined,
           company: form.get('company') || undefined,
           referenceNumber: form.get('referenceNumber') || undefined,
-          divisionId: user?.divisionId ?? 'division-records',
-          sectionId: user?.divisionId === 'division-pilot' ? 'section-pilot' : 'section-intake',
+          divisionId: createDivisionId,
+          sectionId: createSectionId || undefined,
         }),
       });
       setShowCreate(false);
@@ -532,6 +560,40 @@ export function DtsApp() {
                   <option value="FOI_REQUEST">FOI request</option>
                   <option value="SPECIAL_ORDER">Special order</option>
                   <option value="LETTER">Letter</option>
+                </select>
+              </label>
+              <label>
+                Division
+                <select
+                  value={createDivisionId}
+                  onChange={(event) => setCreateDivisionId(event.target.value)}
+                  required
+                >
+                  <option value="" disabled>
+                    Select a division…
+                  </option>
+                  {divisions.map((division) => (
+                    <option key={division.id} value={division.id}>
+                      {division.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Section
+                <select
+                  value={createSectionId}
+                  onChange={(event) => setCreateSectionId(event.target.value)}
+                  disabled={sections.length === 0}
+                >
+                  <option value="">
+                    {sections.length === 0 ? 'No sections' : 'Division-level (no section)'}
+                  </option>
+                  {sections.map((section) => (
+                    <option key={section.id} value={section.id}>
+                      {section.name}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label>
