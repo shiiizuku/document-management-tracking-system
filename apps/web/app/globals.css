@@ -914,3 +914,88 @@ button.icon {
 .notif-read:hover {
   text-decoration: underline;
 }
+
+/* Registry filter controls */
+.registry-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.registry-controls > input {
+  flex: 1 1 220px;
+  min-width: 180px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+.registry-controls .control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.registry-controls .control select {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 14px;
+}
+.control-order {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 15px;
+  line-height: 1;
+}
+.control-clear {
+  border: none;
+  background: transparent;
+  color: var(--green2);
+  font-weight: 600;
+  font-size: 13px;
+}
+.control-clear:hover {
+  text-decoration: underline;
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.pagination-range {
+  color: var(--muted);
+  font-size: 13px;
+}
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pagination-page {
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 96px;
+  text-align: center;
+}
+.pagination button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -3,8 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
+import {
+  DEFAULT_FILTERS,
+  DEFAULT_PAGE_SIZE,
+  fetchDocuments,
+  type DocumentFilters,
+} from '../lib/documents';
+import { fetchDivisions, fetchSections, type Division, type Section } from '../lib/organization';
 import { useNotifications } from '../hooks/use-notifications';
 import { NotificationsPanel } from './notifications-panel';
+import { Pagination } from './pagination';
+import { RegistryControls } from './registry-controls';
 import { StatusBadge } from './status-badge';
 
 type User = {
@@ -61,32 +70,73 @@ export function DtsApp() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<Detail | null>(null);
-  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<DocumentFilters>(DEFAULT_FILTERS);
+  const [query, setQuery] = useState<DocumentFilters>(DEFAULT_FILTERS);
+  const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
+  const [createDivisionId, setCreateDivisionId] = useState('');
+  const [createSectionId, setCreateSectionId] = useState('');
 
   const notifications = useNotifications(user !== null);
 
-  const refreshDocuments = useCallback(async (term = '') => {
-    const result = await api<{ items: DocumentItem[]; total: number }>(
-      `/documents?pageSize=50&search=${encodeURIComponent(term)}`,
-    );
+  // Load the divisions the actor may register into when the modal opens, defaulting to their own.
+  useEffect(() => {
+    if (!showCreate) return;
+    void fetchDivisions()
+      .then((rows) => {
+        setDivisions(rows);
+        setCreateDivisionId((current) => current || user?.divisionId || rows[0]?.id || '');
+      })
+      .catch(() => undefined);
+  }, [showCreate, user]);
+
+  // Load the sections of the chosen division; a division change resets the section.
+  useEffect(() => {
+    if (!createDivisionId) {
+      setSections([]);
+      return;
+    }
+    void fetchSections(createDivisionId)
+      .then(setSections)
+      .catch(() => setSections([]));
+    setCreateSectionId('');
+  }, [createDivisionId]);
+
+  const refreshDocuments = useCallback(async () => {
+    const result = await fetchDocuments(query, page);
     setDocuments(result.items);
     setTotal(result.total);
-  }, []);
+  }, [query, page]);
   const loadDetail = useCallback(async (id: string) => {
     setSelected(await api<Detail>(`/documents/${id}`));
   }, []);
 
+  // Selects/sort apply immediately; free-text search waits for submit so it does not refetch on
+  // every keystroke. `query` is what is actually fetched; `filters` is the live control state.
+  const applyFilters = (patch: Partial<DocumentFilters>) => {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    if (!('search' in patch)) {
+      setQuery(next);
+      setPage(1);
+    }
+  };
+
   useEffect(() => {
     void api<User>('/auth/me')
-      .then(async (me) => {
-        setUser(me);
-        await refreshDocuments();
-      })
+      .then((me) => setUser(me))
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
-  }, [refreshDocuments]);
+  }, []);
+
+  // Refetch whenever the signed-in user, the applied query, or the page changes.
+  useEffect(() => {
+    if (!user) return;
+    void refreshDocuments().catch(() => undefined);
+  }, [user, refreshDocuments]);
 
   const metrics = useMemo(
     () => ({
@@ -107,7 +157,6 @@ export function DtsApp() {
         body: JSON.stringify({ email: form.get('email'), password: form.get('password') }),
       });
       setUser(me);
-      await refreshDocuments();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Login failed');
     }
@@ -131,12 +180,12 @@ export function DtsApp() {
           sender: direction === 'INCOMING' ? form.get('sender') : undefined,
           company: form.get('company') || undefined,
           referenceNumber: form.get('referenceNumber') || undefined,
-          divisionId: user?.divisionId ?? 'division-records',
-          sectionId: user?.divisionId === 'division-pilot' ? 'section-pilot' : 'section-intake',
+          divisionId: createDivisionId,
+          sectionId: createSectionId || undefined,
         }),
       });
       setShowCreate(false);
-      await refreshDocuments(search);
+      await refreshDocuments();
       await loadDetail(created.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to create document');
@@ -158,7 +207,7 @@ export function DtsApp() {
         method: 'POST',
         body: JSON.stringify({ expectedVersion: selected.version, remarks, releaseMethod }),
       });
-      await Promise.all([loadDetail(selected.id), refreshDocuments(search)]);
+      await Promise.all([loadDetail(selected.id), refreshDocuments()]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Action failed');
     }
@@ -328,21 +377,20 @@ export function DtsApp() {
                   Documents <span>{total}</span>
                 </h2>
               </div>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void refreshDocuments(search);
-                }}
-              >
-                <input
-                  aria-label="Search documents"
-                  placeholder="Search title, number, sender…"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-                <button type="submit">Search</button>
-              </form>
             </div>
+            <RegistryControls
+              filters={filters}
+              onChange={applyFilters}
+              onSearchSubmit={() => {
+                setQuery(filters);
+                setPage(1);
+              }}
+              onClear={() => {
+                setFilters(DEFAULT_FILTERS);
+                setQuery(DEFAULT_FILTERS);
+                setPage(1);
+              }}
+            />
             <div className="table-wrap">
               <table>
                 <thead>
@@ -391,6 +439,12 @@ export function DtsApp() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              page={page}
+              total={total}
+              pageSize={DEFAULT_PAGE_SIZE}
+              onPageChange={setPage}
+            />
           </div>
           <aside className="detail-panel">
             {selected ? (
@@ -506,6 +560,40 @@ export function DtsApp() {
                   <option value="FOI_REQUEST">FOI request</option>
                   <option value="SPECIAL_ORDER">Special order</option>
                   <option value="LETTER">Letter</option>
+                </select>
+              </label>
+              <label>
+                Division
+                <select
+                  value={createDivisionId}
+                  onChange={(event) => setCreateDivisionId(event.target.value)}
+                  required
+                >
+                  <option value="" disabled>
+                    Select a division…
+                  </option>
+                  {divisions.map((division) => (
+                    <option key={division.id} value={division.id}>
+                      {division.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Section
+                <select
+                  value={createSectionId}
+                  onChange={(event) => setCreateSectionId(event.target.value)}
+                  disabled={sections.length === 0}
+                >
+                  <option value="">
+                    {sections.length === 0 ? 'No sections' : 'Division-level (no section)'}
+                  </option>
+                  {sections.map((section) => (
+                    <option key={section.id} value={section.id}>
+                      {section.name}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label>
