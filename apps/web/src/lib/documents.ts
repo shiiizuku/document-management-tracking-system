@@ -127,3 +127,14 @@ export const updateMetadata = (id: string, patch: MetadataPatch): Promise<Docume
 
 export const fetchMetadataRevisions = (id: string): Promise<MetadataRevision[]> =>
   api<MetadataRevision[]>(`/documents/${id}/metadata-revisions`);
+
+export interface RouteInput {
+  expectedVersion: number;
+  toDivisionId: string;
+  toSectionId?: string;
+  remarks?: string;
+}
+
+/** Forwards a document to another division/section; returns the refreshed document detail. */
+export const routeDocument = (id: string, input: RouteInput): Promise<unknown> =>
+  api(`/documents/${id}/routes`, { method: 'POST', body: JSON.stringify(input) });

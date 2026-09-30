@@ -1190,3 +1190,9 @@ button.compact {
 .revision-fields b {
   text-transform: capitalize;
 }
+
+/* Detail header actions */
+.detail-head-actions {
+  display: flex;
+  gap: 8px;
+}
