@@ -25,6 +25,23 @@ describe('reading registry filters from the URL', () => {
     expect(filters.direction).toBe('');
   });
 
+  /*
+   * Divisions are rows, not an enum, so the division filter is checked for shape. The dashboard
+   * chart links through with this parameter, so a mangled one has to fail closed rather than
+   * reach the API.
+   */
+  it('keeps a division filter that looks like an id', () => {
+    const id = '3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+    expect(parseDocumentFilters(params(`divisionId=${id}`)).divisionId).toBe(id);
+  });
+
+  it.each([
+    ['a non-uuid', 'divisionId=all'],
+    ['an injection attempt', "divisionId=1'%20or%20'1'='1"],
+  ])('drops %s in the division filter', (_label, query) => {
+    expect(parseDocumentFilters(params(query)).divisionId).toBe('');
+  });
+
   it('falls back to the default sort rather than to no sort at all', () => {
     const filters = parseDocumentFilters(params('sort=whatever&order=sideways'));
     expect(filters.sort).toBe(DEFAULT_DOCUMENT_FILTERS.sort);
@@ -73,6 +90,7 @@ describe('writing registry filters to the URL', () => {
       priority: 'HIGH',
       type: 'SPECIAL_ORDER',
       direction: 'OUTGOING',
+      divisionId: '3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
       sort: 'status',
       order: 'asc',
     } as const;
@@ -94,9 +112,12 @@ describe('hasActiveDocumentFilters', () => {
     expect(hasActiveDocumentFilters({ ...DEFAULT_DOCUMENT_FILTERS, search: '   ' })).toBe(false);
   });
 
-  it.each(['status', 'priority', 'type', 'direction'] as const)('notices a %s filter', (field) => {
-    expect(hasActiveDocumentFilters({ ...DEFAULT_DOCUMENT_FILTERS, [field]: 'X' })).toBe(true);
-  });
+  it.each(['status', 'priority', 'type', 'direction', 'divisionId'] as const)(
+    'notices a %s filter',
+    (field) => {
+      expect(hasActiveDocumentFilters({ ...DEFAULT_DOCUMENT_FILTERS, [field]: 'X' })).toBe(true);
+    },
+  );
 });
 
 describe('documentsQueryString', () => {

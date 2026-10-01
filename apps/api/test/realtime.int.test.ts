@@ -22,7 +22,7 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for integration tests');
 if (process.env.ALLOW_DATABASE_RESET !== 'true')
   throw new Error('ALLOW_DATABASE_RESET=true is required for the destructive realtime int test');
-const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
+const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6380';
 
 const PASSWORD = 'RealtimePass123!';
 const DIV = '00000000-0000-4000-9000-0000000000e0';

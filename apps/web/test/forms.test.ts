@@ -77,8 +77,8 @@ describe('safeNextPath', () => {
   });
 
   it('falls back when there is no destination', () => {
-    expect(safeNextPath(null)).toBe('/documents');
-    expect(safeNextPath('')).toBe('/documents');
+    expect(safeNextPath(null)).toBe('/dashboard');
+    expect(safeNextPath('')).toBe('/dashboard');
   });
 
   /*
@@ -93,6 +93,6 @@ describe('safeNextPath', () => {
     ['an embedded scheme', '/javascript:alert(1)'],
     ['a bare host', 'elsewhere.example'],
   ])('refuses %s', (_label, candidate) => {
-    expect(safeNextPath(candidate)).toBe('/documents');
+    expect(safeNextPath(candidate)).toBe('/dashboard');
   });
 });

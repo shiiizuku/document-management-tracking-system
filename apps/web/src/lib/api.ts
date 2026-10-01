@@ -7,7 +7,7 @@
  * `upload()` or `download()` and handle `ApiError`; they never see a header, an envelope or an
  * object URL. Tests replace this module and nothing else.
  */
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4001/api/v1';
 
 /** Methods the server treats as state-changing, and so require the CSRF header. */
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

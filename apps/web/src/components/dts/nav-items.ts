@@ -1,4 +1,4 @@
-import { FileSpreadsheet, FileText, type LucideIcon } from 'lucide-react';
+import { FileSpreadsheet, FileText, Inbox, LayoutDashboard, type LucideIcon } from 'lucide-react';
 import type { Capability } from '@dts/contracts';
 
 /**
@@ -21,9 +21,11 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: readonly NavItem[] = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/documents', label: 'Documents', icon: FileText },
+  { href: '/my-work', label: 'My work', icon: Inbox },
   { href: '/reports', label: 'Reports', icon: FileSpreadsheet, capability: 'REPORT_VIEW' },
-  // F2 adds /dashboard, /my-work, /audit and the /admin group here, each with its capability.
+  // F2 adds /audit and the /admin group here, each with its capability.
 ];
 
 /**

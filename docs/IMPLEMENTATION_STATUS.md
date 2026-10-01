@@ -431,11 +431,11 @@ unticked _Frontend_ boxes in M1–M5: build those surfaces here, not in `DtsApp`
 
 **F2 — New surfaces**
 
-- [ ] (2h) Backend: pending-by-division (scoped by `documentScopeFor`) + scoped recent-activity feed.
+- [x] (2h) Backend: pending-by-division (scoped by `documentScopeFor`) + scoped recent-activity feed.
       _Done-when:_ the division counts reconcile with the filtered list in an integration test.
-- [ ] (2h) `/dashboard` on `GET /dashboard/summary` + the new data (status totals, overdue, division
+- [x] (2h) `/dashboard` on `GET /dashboard/summary` + the new data (status totals, overdue, division
       chart, activity). _Done-when:_ the tiles no longer count the loaded page client-side.
-- [ ] (2h) `/my-work` over `GET /documents/assigned`. _Done-when:_ an assignee sees their queue.
+- [x] (2h) `/my-work` over `GET /documents/assigned`. _Done-when:_ an assignee sees their queue.
 - [ ] (2h) `/audit` viewer with user/action/date filters in the URL. _Done-when:_ the audit log is
       browsable and filterable.
 - [ ] (2h) `/admin/requests`: pending queue, approve (role/division/section) and reject.

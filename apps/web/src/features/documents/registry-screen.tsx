@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/dts/empty-state';
 import { FilterBar } from '@/components/dts/filter-bar';
 import { PageHeader } from '@/components/dts/page-header';
 import { PriorityLabel, StatusBadge, documentTypeLabel } from '@/components/dts/status-badge';
+import { useDivisions } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { CreateDocumentDialog } from './create-document-dialog';
 import {
@@ -29,7 +30,7 @@ import {
   parsePage,
 } from './url-state';
 
-const FILTER_SELECTS = [
+const STATIC_FILTER_SELECTS = [
   {
     id: 'status',
     label: 'Status',
@@ -139,6 +140,25 @@ export function RegistryScreen() {
   const page = parsePage(searchParams);
   const documents = useDocuments(filters, page);
 
+  /*
+   * The division list is a table, not an enum, so this select is built at render time. It exists
+   * mainly because the dashboard's chart links straight to `?divisionId=…`: without a visible
+   * control, the user would arrive at a filtered registry with no indication of what narrowed it.
+   */
+  const divisions = useDivisions();
+  const filterSelects = [
+    ...STATIC_FILTER_SELECTS,
+    {
+      id: 'divisionId',
+      label: 'Division',
+      anyLabel: 'Any division',
+      options: (divisions.data ?? []).map((division) => ({
+        value: division.id,
+        label: division.name,
+      })),
+    },
+  ];
+
   // The draft follows the URL rather than owning it, so arriving at a filtered link — or pressing
   // Back — shows the search term that is actually applied.
   const [searchDraft, setSearchDraft] = useState(filters.search);
@@ -174,7 +194,7 @@ export function RegistryScreen() {
           onChange: setSearchDraft,
           onSubmit: () => applyFilters({ search: searchDraft }),
         }}
-        selects={FILTER_SELECTS}
+        selects={filterSelects}
         // Only the dropdown filters: sort and order are the table's business, and search has its
         // own slot above.
         values={{
@@ -182,6 +202,7 @@ export function RegistryScreen() {
           priority: filters.priority,
           type: filters.type,
           direction: filters.direction,
+          divisionId: filters.divisionId,
         }}
         onSelectChange={(id, value) => applyFilters({ [id]: value })}
         onClear={() => router.push('/documents', { scroll: false })}

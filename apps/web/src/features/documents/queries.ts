@@ -39,6 +39,8 @@ export interface DocumentFilters {
   priority: string;
   type: string;
   direction: string;
+  /** A division id, as the dashboard's chart links through with. '' means every division. */
+  divisionId: string;
   sort: DocumentSortField;
   order: 'asc' | 'desc';
 }
@@ -49,6 +51,7 @@ export const DEFAULT_DOCUMENT_FILTERS: DocumentFilters = {
   priority: '',
   type: '',
   direction: '',
+  divisionId: '',
   sort: 'createdAt',
   order: 'desc',
 };
@@ -158,6 +161,7 @@ export const documentsQueryString = (
   if (filters.priority) params.set('priority', filters.priority);
   if (filters.type) params.set('type', filters.type);
   if (filters.direction) params.set('direction', filters.direction);
+  if (filters.divisionId) params.set('divisionId', filters.divisionId);
   params.set('sort', filters.sort);
   params.set('order', filters.order);
   params.set('page', String(page));

@@ -37,6 +37,7 @@ const serve = (page: { items: unknown[]; total: number } | Error) => {
         ? Promise.reject(page)
         : Promise.resolve({ ...page, page: 1, pageSize: 20 });
     }
+    // `/divisions`, which fills the division select. An array, like the API sends.
     return Promise.resolve([]);
   });
 };
@@ -169,6 +170,7 @@ describe('RegistryScreen', () => {
   it('offers registration only to a user who may register', async () => {
     apiMock.mockImplementation((path: string) => {
       if (path === '/auth/me') return Promise.resolve(sessionUser({ capabilities: [] }));
+      if (path === '/divisions') return Promise.resolve([]);
       return Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 });
     });
     renderWithQuery(<RegistryScreen />);

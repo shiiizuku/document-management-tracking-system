@@ -13,7 +13,7 @@ async function bootstrap(): Promise<void> {
   app.use(cookieParser());
   app.use(helmet());
   app.enableCors({
-    origin: (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(','),
+    origin: (process.env.WEB_ORIGIN ?? 'http://localhost:3001').split(','),
     credentials: true,
   });
   const openApi = SwaggerModule.createDocument(
