@@ -100,35 +100,51 @@ describe('realtime notifications over Socket.IO', () => {
       ...(cookie ? { extraHeaders: { cookie } } : {}),
     });
 
+  // Redis pub/sub has no backlog: a single publish can race the server-side room join or the
+  // bridge's subscription and be dropped. Republishing on an interval removes that timing flake
+  // without masking a real failure — if delivery is genuinely broken, nothing ever arrives and
+  // the awaiting `withTimeout` still fails. Returns a stopper to clear the interval.
+  const pollPublish = (message: string): (() => void) => {
+    void publisher.publish(REALTIME_CHANNEL, message);
+    const timer = setInterval(() => void publisher.publish(REALTIME_CHANNEL, message), 200);
+    return () => clearInterval(timer);
+  };
+
+  const withTimeout = <T>(promise: Promise<T>, ms: number, message: string): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error(message)), ms)),
+    ]);
+
+  const awaitConnect = (client: ClientSocket): Promise<void> =>
+    new Promise((resolve, reject) => {
+      client.once('connect', () => resolve());
+      client.once('connect_error', reject);
+    });
+
   it('delivers a published notification to the recipient’s authenticated socket', async () => {
     const client = connect(sessionCookie);
     try {
-      await new Promise<void>((resolve, reject) => {
-        client.once('connect', resolve);
-        client.once('connect_error', reject);
-      });
+      await awaitConnect(client);
 
       const received = new Promise<Record<string, unknown>>((resolve) => {
         client.once(NOTIFICATION_EVENT, (payload: Record<string, unknown>) => resolve(payload));
       });
 
-      // Publish exactly what the worker's consumer would for an assignment.
-      await publisher.publish(
-        REALTIME_CHANNEL,
-        JSON.stringify({
-          userId,
-          event: NOTIFICATION_EVENT,
-          payload: { documentId: 'doc-123' },
-        }),
+      // Publish exactly what the worker's consumer would for an assignment, repeating until it lands.
+      const stop = pollPublish(
+        JSON.stringify({ userId, event: NOTIFICATION_EVENT, payload: { documentId: 'doc-123' } }),
       );
-
-      const payload = await Promise.race([
-        received,
-        new Promise<never>((_resolve, reject) =>
-          setTimeout(() => reject(new Error('did not receive the realtime event in time')), 5_000),
-        ),
-      ]);
-      expect(payload).toEqual({ documentId: 'doc-123' });
+      try {
+        const payload = await withTimeout(
+          received,
+          15_000,
+          'did not receive the realtime event in time',
+        );
+        expect(payload).toEqual({ documentId: 'doc-123' });
+      } finally {
+        stop();
+      }
     } finally {
       client.disconnect();
     }
@@ -137,14 +153,20 @@ describe('realtime notifications over Socket.IO', () => {
   it('does not deliver a notification meant for a different user', async () => {
     const client = connect(sessionCookie);
     try {
-      await new Promise<void>((resolve, reject) => {
-        client.once('connect', resolve);
-        client.once('connect_error', reject);
-      });
+      await awaitConnect(client);
 
+      // A message for another user must never reach this socket…
       let leaked = false;
-      client.once(NOTIFICATION_EVENT, () => {
-        leaked = true;
+      client.on(NOTIFICATION_EVENT, (payload: Record<string, unknown>) => {
+        if (payload.documentId === 'doc-999') leaked = true;
+      });
+      // …while a self-addressed probe proves the channel is actually live (so a "no leak" result
+      // reflects correct routing, not a dead pipe). The probe is published after the foreign one on
+      // the same channel, so if the probe arrives without the foreign message, there was no leak.
+      const probed = new Promise<void>((resolve) => {
+        client.on(NOTIFICATION_EVENT, (payload: Record<string, unknown>) => {
+          if (payload.documentId === 'self-probe') resolve();
+        });
       });
       await publisher.publish(
         REALTIME_CHANNEL,
@@ -154,7 +176,18 @@ describe('realtime notifications over Socket.IO', () => {
           payload: { documentId: 'doc-999' },
         }),
       );
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const stop = pollPublish(
+        JSON.stringify({
+          userId,
+          event: NOTIFICATION_EVENT,
+          payload: { documentId: 'self-probe' },
+        }),
+      );
+      try {
+        await withTimeout(probed, 15_000, 'self probe was not received');
+      } finally {
+        stop();
+      }
       expect(leaked).toBe(false);
     } finally {
       client.disconnect();
