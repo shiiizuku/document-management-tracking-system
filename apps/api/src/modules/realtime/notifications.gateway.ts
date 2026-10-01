@@ -5,7 +5,7 @@ import { AuthService } from '../auth/auth.service.js';
 import { SessionService, SESSION_COOKIE } from '../auth/session.service.js';
 import { roomForUser } from './realtime.contract.js';
 
-const webOrigins = (process.env.WEB_ORIGIN ?? 'http://localhost:3000')
+const webOrigins = (process.env.WEB_ORIGIN ?? 'http://localhost:3001')
   .split(',')
   .map((origin) => origin.trim());
 

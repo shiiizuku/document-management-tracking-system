@@ -1,3 +1,10 @@
+# Every port published to the host is offset from its service's usual one (Postgres 5433 not 5432,
+# Redis 6380, MinIO 9002/9003, ClamAV 3311, the API 4001, the web app 3001) so this stack can run
+# beside another project on the same machine without a fight over a port. Inside the compose
+# network the services still talk on their standard ports, so only the left-hand side moves.
+#
+# Each is overridable through the `*_HOST_PORT` variables below. `.env.example` points the
+# host-run dev servers (`npm run dev`) at these same published ports.
 name: dts
 services:
   postgres:
@@ -6,7 +13,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-dts}
       POSTGRES_USER: ${POSTGRES_USER:-dts}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dts}
-    ports: ['${POSTGRES_HOST_PORT:-5432}:5432']
+    ports: ['${POSTGRES_HOST_PORT:-5433}:5432']
     volumes: ['postgres_data:/var/lib/postgresql/data']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-dts} -d ${POSTGRES_DB:-dts}']
@@ -17,7 +24,7 @@ services:
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
-    ports: ['${REDIS_HOST_PORT:-6379}:6379']
+    ports: ['${REDIS_HOST_PORT:-6380}:6379']
     volumes: ['redis_data:/data']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
@@ -39,7 +46,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-dts-local}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-dts-local1}
-    ports: ['${MINIO_HOST_PORT:-9000}:9000', '${MINIO_CONSOLE_HOST_PORT:-9001}:9001']
+    ports: ['${MINIO_HOST_PORT:-9002}:9000', '${MINIO_CONSOLE_HOST_PORT:-9003}:9001']
     volumes: ['minio_data:/data']
     healthcheck:
       test: ['CMD-SHELL', 'curl -fsS http://localhost:9000/minio/health/live || exit 1']
@@ -49,7 +56,7 @@ services:
 
   clamav:
     image: clamav/clamav:stable
-    ports: ['${CLAMAV_HOST_PORT:-3310}:3310']
+    ports: ['${CLAMAV_HOST_PORT:-3311}:3310']
     volumes: ['clamav_data:/var/lib/clamav']
     healthcheck:
       test: ['CMD', '/usr/local/bin/clamdcheck.sh']
@@ -81,7 +88,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: 4000
-      WEB_ORIGIN: http://localhost:${WEB_HOST_PORT:-3000}
+      WEB_ORIGIN: http://localhost:${WEB_HOST_PORT:-3001}
       DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
@@ -92,7 +99,7 @@ services:
       CLAMAV_PORT: 3310
       SESSION_SECRET: ${SESSION_SECRET:-local-development-session-secret-change-before-pilot}
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-26214400}
-    ports: ['${API_HOST_PORT:-4000}:4000']
+    ports: ['${API_HOST_PORT:-4001}:4000']
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -138,10 +145,10 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4000}/api/v1
+        NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4001}/api/v1
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4000}/api/v1
-    ports: ['${WEB_HOST_PORT:-3000}:3000']
+      NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4001}/api/v1
+    ports: ['${WEB_HOST_PORT:-3001}:3000']
     depends_on:
       api: { condition: service_healthy }
     healthcheck:

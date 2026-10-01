@@ -24,7 +24,7 @@ const socketOrigin = (): string => {
   try {
     return new URL(API_URL).origin;
   } catch {
-    return 'http://localhost:4000';
+    return 'http://localhost:4001';
   }
 };
 
