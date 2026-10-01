@@ -41,6 +41,18 @@ const seedUsers = (): UserRow[] => [
     sectionId: 'section-pilot',
     canAccessConfidential: false,
   }),
+  // The only seeded holder of DOCUMENT_DELETE / DOCUMENT_RESTORE and the admin capabilities, so
+  // the REST suites can exercise the administrator-only routes rather than only their refusals.
+  seedUser({
+    id: '00000000-0000-4000-8000-000000000004',
+    email: 'admin@dts.local',
+    displayName: 'System Administrator',
+    passwordHash: hashSync('Admin@12345!', 4),
+    role: 'ADMINISTRATOR',
+    divisionId: 'division-records',
+    sectionId: null,
+    canAccessConfidential: true,
+  }),
   seedUser({
     id: '00000000-0000-4000-8000-000000000003',
     email: 'viewer@dts.local',

@@ -304,6 +304,83 @@ describe('REST /api/v1 document attachments', () => {
       .expect(404);
   });
 
+  it('serves a clean version inline for preview, locked down and separately audited', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const document = await createOutgoing(cookie);
+    const uploaded = await uploadFile(
+      cookie,
+      document.id,
+      PDF,
+      'plan.pdf',
+      'application/pdf',
+    ).expect(201);
+    const versionId = dataOf<{ id: string }>(uploaded).id;
+
+    // Same fail-closed rule as the download: a pending scan cannot be read around by asking for
+    // the preview instead.
+    const blocked = await request(server())
+      .get(`/api/v1/documents/${document.id}/attachments/${versionId}/content`)
+      .set('Cookie', cookie)
+      .expect(409);
+    expect(blocked.body.error.code).toBe('FILE_NOT_CLEAN');
+
+    await request(server())
+      .post(`/api/v1/documents/${document.id}/attachments/${versionId}/scan`)
+      .set('Cookie', cookie)
+      .send({ status: 'CLEAN' })
+      .expect(201);
+
+    const preview = await request(server())
+      .get(`/api/v1/documents/${document.id}/attachments/${versionId}/content`)
+      .set('Cookie', cookie)
+      .responseType('blob')
+      .expect(200);
+    expect(preview.headers['content-type']).toContain('application/pdf');
+    expect(preview.headers['content-disposition']).toContain('inline');
+    expect(preview.headers['content-disposition']).toContain('plan.pdf');
+    expect(preview.headers['x-content-type-options']).toBe('nosniff');
+    expect(preview.headers['cache-control']).toBe('private, no-store');
+    // The bytes may render themselves and do nothing else.
+    expect(preview.headers['content-security-policy']).toContain("default-src 'none'");
+    expect(preview.headers['content-security-policy']).toContain('sandbox');
+    expect((preview.body as Buffer).equals(PDF)).toBe(true);
+
+    const audit = app.get(AuditWriter);
+    if (!(audit instanceof InMemoryAuditWriter))
+      throw new Error('expected the in-memory audit writer to be wired in');
+    const previewed = audit.entries.filter((entry) => entry.action === 'attachment.previewed');
+    expect(previewed).toHaveLength(1);
+    expect(previewed[0]?.summary).toMatchObject({ versionId, mediaType: 'application/pdf' });
+    // A preview is not a download: the two must stay distinguishable in the trail.
+    expect(audit.entries.filter((entry) => entry.action === 'attachment.downloaded')).toHaveLength(
+      0,
+    );
+  });
+
+  it('refuses a preview of a version outside the scope the document read allows', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const document = await createOutgoing(cookie, { confidential: true });
+    const uploaded = await uploadFile(
+      cookie,
+      document.id,
+      PDF,
+      'plan.pdf',
+      'application/pdf',
+    ).expect(201);
+    const versionId = dataOf<{ id: string }>(uploaded).id;
+    await request(server())
+      .post(`/api/v1/documents/${document.id}/attachments/${versionId}/scan`)
+      .set('Cookie', cookie)
+      .send({ status: 'CLEAN' })
+      .expect(201);
+
+    const staffCookie = await login('staff@dts.local', 'Staff@12345!');
+    await request(server())
+      .get(`/api/v1/documents/${document.id}/attachments/${versionId}/content`)
+      .set('Cookie', staffCookie)
+      .expect(404);
+  });
+
   it('forbids a viewer from uploading attachments', async () => {
     const staffCookie = await login('staff@dts.local', 'Staff@12345!');
     const document = await createOutgoing(staffCookie, {

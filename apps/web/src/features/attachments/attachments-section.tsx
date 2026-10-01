@@ -7,9 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/dts/empty-state';
+import { AttachmentPreviewDialog } from './preview-dialog';
 import {
   formatBytes,
   isDownloadable,
+  isPreviewable,
   scanBadge,
   useAttachments,
   useDownloadAttachment,
@@ -156,9 +158,12 @@ function VersionRow({
       </Badge>
 
       {/*
-        No button at all until the scan clears, rather than a disabled one: the badge beside it
+        No buttons at all until the scan clears, rather than disabled ones: the badge beside them
         already says why, and a permanently disabled control invites repeated clicking.
       */}
+      {isPreviewable(version) ? (
+        <AttachmentPreviewDialog documentId={documentId} version={version} />
+      ) : null}
       {downloadable ? (
         <Button
           type="button"

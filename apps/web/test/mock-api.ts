@@ -25,9 +25,20 @@ export const calledPath = (
 /**
  * The parsed JSON body of the first request to `path`. Returns `{}` when there was none, so a
  * test asserting on a field fails on that field rather than on a thrown type error.
+ *
+ * `method` narrows it when a path carries more than one verb — `/divisions` is both the list read
+ * and the create write, and without it a test asserting on the created division reads the list
+ * request's absent body instead.
  */
-export const requestBody = (mock: RecordedCalls, path: string): Record<string, unknown> => {
-  const call = mock.mock.calls.find((entry) => entry[0] === path);
+export const requestBody = (
+  mock: RecordedCalls,
+  path: string,
+  method?: string,
+): Record<string, unknown> => {
+  const call = mock.mock.calls.find(
+    (entry) =>
+      entry[0] === path && (method === undefined || usedMethod(entry[1]) === method.toUpperCase()),
+  );
   const init = call?.[1];
   if (typeof init !== 'object' || init === null) return {};
   const body = (init as { body?: unknown }).body;
@@ -48,3 +59,19 @@ export const invalidatedKeys = (spy: RecordedCalls): string[] =>
         : undefined;
     return JSON.stringify(queryKey);
   });
+
+/**
+ * Whether the mock was called with a given method on a given path.
+ *
+ * Needed because a path alone is ambiguous: `/users` is both the list request and the create
+ * request, so "did it create a user" cannot be asked by path.
+ */
+export const calledWith = (mock: RecordedCalls, method: string, path: string): boolean =>
+  mock.mock.calls.some((call) => call[0] === path && usedMethod(call[1]) === method.toUpperCase());
+
+/** The method a recorded `api()` call used, defaulting to GET as the transport itself does. */
+const usedMethod = (init: unknown): string => {
+  const method =
+    typeof init === 'object' && init !== null ? (init as { method?: unknown }).method : undefined;
+  return typeof method === 'string' ? method.toUpperCase() : 'GET';
+};

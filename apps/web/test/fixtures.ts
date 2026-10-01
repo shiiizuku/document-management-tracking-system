@@ -1,6 +1,9 @@
+import type { AccountRequest, AdminUser } from '../src/features/admin/queries';
 import type { AttachmentGroup, AttachmentVersion } from '../src/features/attachments/queries';
+import type { AuditEvent, AuditPage } from '../src/features/audit/queries';
 import type { DocumentDetail, DocumentListItem } from '../src/features/documents/queries';
 import type { Notification } from '../src/features/notifications/queries';
+import type { Division, Section } from '../src/features/org/queries';
 import type { MonthlyReport } from '../src/features/reports/queries';
 import type { SessionUser } from '../src/features/session/queries';
 
@@ -10,6 +13,16 @@ import type { SessionUser } from '../src/features/session/queries';
  * Partial objects cast into place would let a screen read a field no fixture sets, so a missing
  * field would surface as `undefined` in a passing test rather than as a type error here.
  */
+
+/**
+ * Organization ids as the API really serves them: UUIDs.
+ *
+ * Spelled out rather than left as readable slugs because several contract schemas declare these
+ * fields `z.uuid()` — an approval or a user edit built from `'division-1'` fails client-side
+ * validation, which makes a fixture problem look like a form bug.
+ */
+export const DIVISION_ID = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+export const SECTION_ID = '1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
 
 export const sessionUser = (overrides: Partial<SessionUser> = {}): SessionUser => ({
   id: 'user-1',
@@ -126,5 +139,75 @@ export const monthlyReport = (overrides: Partial<MonthlyReport> = {}): MonthlyRe
       confidential: false,
     },
   ],
+  ...overrides,
+});
+
+export const adminUser = (overrides: Partial<AdminUser> = {}): AdminUser => ({
+  id: 'user-2',
+  email: 'ana@dts.local',
+  displayName: 'Ana Dela Cruz',
+  role: 'STAFF_MEMBER',
+  divisionId: DIVISION_ID,
+  sectionId: SECTION_ID,
+  canAccessConfidential: false,
+  active: true,
+  locked: false,
+  lastLoginAt: '2026-09-29T07:30:00.000Z',
+  createdAt: '2026-08-01T00:00:00.000Z',
+  updatedAt: '2026-09-29T07:30:00.000Z',
+  ...overrides,
+});
+
+export const accountRequest = (overrides: Partial<AccountRequest> = {}): AccountRequest => ({
+  id: 'request-1',
+  email: 'applicant@dts.local',
+  displayName: 'Jose Rizal',
+  status: 'PENDING',
+  requestedDivisionId: DIVISION_ID,
+  requestedSectionId: null,
+  justification: 'Records intake duties for the Legal Division.',
+  reviewedById: null,
+  reviewedAt: null,
+  rejectionReason: null,
+  createdUserId: null,
+  createdAt: '2026-09-30T02:15:00.000Z',
+  ...overrides,
+});
+
+export const auditEvent = (overrides: Partial<AuditEvent> = {}): AuditEvent => ({
+  id: 'audit-1',
+  actorId: 'user-2',
+  action: 'document.workflow.accept',
+  targetType: 'document',
+  targetId: 'doc-1',
+  outcome: 'SUCCESS',
+  correlationId: '11111111-2222-4333-8444-555555555555',
+  sourceIp: '10.0.0.4',
+  summary: { fromStatus: 'PENDING', toStatus: 'IN_PROCESS' },
+  occurredAt: '2026-09-30T03:00:00.000Z',
+  ...overrides,
+});
+
+export const auditPage = (items: AuditEvent[], total = items.length): AuditPage => ({
+  items,
+  total,
+  limit: 50,
+  offset: 0,
+});
+
+export const division = (overrides: Partial<Division> = {}): Division => ({
+  id: DIVISION_ID,
+  code: 'REC',
+  name: 'Records Division',
+  active: true,
+  ...overrides,
+});
+
+export const section = (overrides: Partial<Section> = {}): Section => ({
+  id: SECTION_ID,
+  divisionId: DIVISION_ID,
+  code: 'INTAKE',
+  name: 'Intake',
+  active: true,
   ...overrides,
 });

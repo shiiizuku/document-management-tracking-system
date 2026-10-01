@@ -1,4 +1,5 @@
 import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DocumentDetailScreen } from '../src/features/documents/document-detail-screen';
 import type * as ApiModule from '../src/lib/api';
@@ -6,11 +7,11 @@ import { ApiError } from '../src/lib/api';
 import { documentDetail, sessionUser } from './fixtures';
 import { renderWithQuery } from './query-harness';
 
-const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
+const { apiMock, downloadMock } = vi.hoisted(() => ({ apiMock: vi.fn(), downloadMock: vi.fn() }));
 
 vi.mock('../src/lib/api', async () => {
   const actual = await vi.importActual<typeof ApiModule>('../src/lib/api');
-  return { ...actual, api: apiMock, download: vi.fn() };
+  return { ...actual, api: apiMock, download: downloadMock };
 });
 
 vi.mock('next/navigation', () => ({
@@ -142,5 +143,52 @@ describe('DocumentDetailScreen', () => {
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
 
     await waitFor(() => expect(screen.getByLabelText('Confidential')).toBeInTheDocument());
+  });
+
+  /*
+   * The routing slip is the dossier that travels stapled to the physical document, so it is offered
+   * to anyone who can read the record — including on a closed one, which is exactly the document
+   * whose printable copy people still need. The export is audited server-side.
+   */
+  it('downloads the routing slip, named after the tracking number', async () => {
+    downloadMock.mockResolvedValue('routing-slip-DTS-2026-000001.pdf');
+    serve(documentDetail());
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Routing slip/ })).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /Routing slip/ }));
+
+    await waitFor(() =>
+      expect(downloadMock).toHaveBeenCalledWith(
+        '/documents/doc-1/routing-slip.pdf',
+        'routing-slip-DTS-2026-000001.pdf',
+      ),
+    );
+  });
+
+  it('still offers the routing slip on a closed record', async () => {
+    serve(documentDetail({ status: 'RELEASED', allowedActions: [] }));
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Routing slip/ })).toBeInTheDocument(),
+    );
+  });
+
+  it('withholds the delete control from a user without the capability', async () => {
+    serve(documentDetail());
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
+  it('offers it to a user who holds DOCUMENT_DELETE', async () => {
+    serve(documentDetail(), sessionUser({ capabilities: ['DOCUMENT_DELETE'] }));
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument());
   });
 });

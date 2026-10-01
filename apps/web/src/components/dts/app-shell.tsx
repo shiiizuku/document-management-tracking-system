@@ -18,8 +18,8 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/s
 import { NotificationsSheet } from '@/features/notifications/notifications-sheet';
 import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
 import { useLogout, useSession, type SessionUser } from '@/features/session/queries';
-import { cn } from '@/lib/utils';
-import { isNavItemActive, visibleNavItems } from './nav-items';
+import { cn, enumLabel } from '@/lib/utils';
+import { isNavItemActive, navSections } from './nav-items';
 
 /**
  * The frame every signed-in screen renders inside: brand, primary navigation, and the account
@@ -102,30 +102,44 @@ function Brand() {
 function SidebarNav({ onNavigate = () => undefined }: Readonly<{ onNavigate?: () => void }>) {
   const pathname = usePathname();
   const { can } = useSession();
-  const items = visibleNavItems(can);
+  const sections = navSections(can);
 
   return (
-    <nav aria-label="Primary" className="flex-1 space-y-1 p-3">
-      {items.map((item) => {
-        const active = isNavItemActive(pathname, item.href);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            aria-current={active ? 'page' : undefined}
-            className={cn(
-              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              active
-                ? 'bg-secondary text-secondary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-            )}
-          >
-            <item.icon className="size-4" aria-hidden />
-            {item.label}
-          </Link>
-        );
-      })}
+    <nav aria-label="Primary" className="flex-1 space-y-4 p-3">
+      {sections.map((group) => (
+        <div key={group.section ?? 'workspace'} className="space-y-1">
+          {/*
+            The heading comes from the grouping, so a group with nothing visible in it never renders
+            one — an administrator sees "Administration", and everyone else sees no sign that it is
+            there.
+          */}
+          {group.section === undefined ? null : (
+            <p className="px-3 pb-1 text-[10px] font-bold tracking-[0.12em] text-muted-foreground uppercase">
+              {group.section}
+            </p>
+          )}
+          {group.items.map((item) => {
+            const active = isNavItemActive(pathname, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onNavigate}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  active
+                    ? 'bg-secondary text-secondary-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                )}
+              >
+                <item.icon className="size-4" aria-hidden />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 }
@@ -149,7 +163,7 @@ function AccountMenu({ user }: Readonly<{ user: SessionUser }>) {
         <DropdownMenuLabel className="font-normal">
           <span className="block truncate text-sm">{user.displayName}</span>
           <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
-          <span className="mt-1 block text-xs text-muted-foreground">{roleLabel(user.role)}</span>
+          <span className="mt-1 block text-xs text-muted-foreground">{enumLabel(user.role)}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -173,9 +187,3 @@ const initials = (displayName: string): string =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('') || '?';
-
-/** `RECORDS_STAFF` reads as "Records staff". Display only — authority comes from capabilities. */
-const roleLabel = (role: string): string => {
-  const words = role.replaceAll('_', ' ').toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-};

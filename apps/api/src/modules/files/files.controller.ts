@@ -19,6 +19,18 @@ import type { RequestUser } from '../../common/request-user.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { AttachmentsService, MAX_ATTACHMENT_BYTES } from './attachments.service.js';
 
+/**
+ * What an inline response is permitted to do once it is in the browser.
+ *
+ * `default-src 'none'` with only `img-src 'self'` leaves a PDF or an image able to render itself
+ * and nothing else: no script, no stylesheet, no frame, and no outbound request — so a crafted
+ * document cannot phone home or reach anything in the session that fetched it. `sandbox` drops
+ * the response into an opaque origin, which is what stops it scripting its way back to the app
+ * even though it is served from the API's own host.
+ */
+const INLINE_CONTENT_CSP =
+  "default-src 'none'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; sandbox";
+
 // The subset of multer's in-memory file object this controller consumes. Declared locally
 // rather than relying on the `Express.Multer.File` ambient global, which does not resolve
 // reliably under NodeNext module resolution and is used nowhere else in the codebase.
@@ -88,6 +100,38 @@ export class FilesController {
       'Content-Disposition',
       `attachment; filename="${safeDispositionFilename(file.fileName)}"`,
     );
+    response.send(Buffer.from(file.bytes));
+  }
+
+  /**
+   * The same bytes with an `inline` disposition, for the in-page preview.
+   *
+   * A separate route rather than `?inline=1` on the download: the two have different response
+   * headers, different allowed media types and different audit actions, and a query flag that
+   * silently changes all three is the kind of thing that gets reviewed as if it changed nothing.
+   */
+  @Get(':versionId/content')
+  async content(
+    @CurrentUser() actor: RequestUser,
+    @Param('documentId') documentId: string,
+    @Param('versionId') versionId: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    const file = await this.attachments.preview(actor, documentId, versionId);
+    response.setHeader('Content-Type', file.mediaType);
+    // The media type was established by sniffing the bytes on upload. Never let the browser
+    // re-guess it: a sniffed `text/html` would be rendered as a page, inline, from our own host.
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Content-Security-Policy', INLINE_CONTENT_CSP);
+    // The filename still travels, so a reader who chooses "save" from the viewer gets the real
+    // name rather than the version UUID from the URL.
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename="${safeDispositionFilename(file.fileName)}"`,
+    );
+    // Private, and short: scope can be revoked, and a shared cache must never hand these bytes
+    // to the next caller who asks for the same URL.
+    response.setHeader('Cache-Control', 'private, no-store');
     response.send(Buffer.from(file.bytes));
   }
 

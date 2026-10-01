@@ -1,4 +1,4 @@
-import type { AuditEntry, AuditEventRow } from '../src/modules/audit/audit.writer.js';
+import type { AuditEntry, AuditEventPage } from '../src/modules/audit/audit.writer.js';
 import { AuditWriter } from '../src/modules/audit/audit.writer.js';
 
 /**
@@ -13,7 +13,7 @@ export class InMemoryAuditWriter extends AuditWriter {
     return Promise.resolve();
   }
 
-  list(): Promise<AuditEventRow[]> {
-    return Promise.resolve([]);
+  list(): Promise<AuditEventPage> {
+    return Promise.resolve({ items: [], total: 0, limit: 100, offset: 0 });
   }
 }

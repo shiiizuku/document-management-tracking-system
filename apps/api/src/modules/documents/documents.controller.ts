@@ -78,6 +78,12 @@ export class DocumentsController {
     return this.documents.assignedQueue(actor).then((data) => ({ data }));
   }
 
+  // Also before `:id`, and for the same reason.
+  @Get('deleted')
+  deleted(@CurrentUser() actor: RequestUser) {
+    return this.documents.deletedQueue(actor).then((data) => ({ data }));
+  }
+
   @Get(':id/routing-slip.pdf')
   async routingSlip(
     @CurrentUser() actor: RequestUser,

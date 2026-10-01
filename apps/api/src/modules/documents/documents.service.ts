@@ -780,6 +780,21 @@ export class DocumentsService {
   }
 
   /**
+   * The deleted documents this actor could restore.
+   *
+   * Filtered by the restore capability on each loaded row rather than by a blanket check on the
+   * actor: `DOCUMENT_RESTORE` is scoped, so the right answer is per-document, and it is the same
+   * predicate `restore()` itself applies — a row listed here cannot then be refused on restore,
+   * and a row that would be refused is never offered.
+   */
+  async deletedQueue(actor: RequestUser): Promise<PublicDocument[]> {
+    const rows = await this.repository.listDeleted(actor);
+    return rows
+      .filter((row) => this.authorization.can(actor, this.asResource(row), 'DOCUMENT_RESTORE'))
+      .map((row) => this.toPublic(row));
+  }
+
+  /**
    * Everything the dashboard shows, in one round trip.
    *
    * All three parts resolve against the same `documentScopeFor` predicate the registry list uses,

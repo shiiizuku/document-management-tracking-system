@@ -53,12 +53,27 @@ describe('invalidateDocument', () => {
     expect(keys).toContain(JSON.stringify(['documents', 'list']));
   });
 
-  it('settles the lists alone when no particular document is named', () => {
+  it('settles the lists when no particular document is named', () => {
     const { client, invalidate } = harness();
 
     invalidateDocument(client, undefined);
 
-    expect(invalidatedKeys(invalidate)).toEqual([JSON.stringify(['documents', 'list'])]);
+    const keys = invalidatedKeys(invalidate);
+    expect(keys).toContain(JSON.stringify(['documents', 'list']));
+    expect(keys).not.toContain(JSON.stringify(['documents', 'detail', 'doc-1']));
+  });
+
+  /*
+   * Deletion and restore move a row between the registry and the deleted list, so the two are
+   * always settled together. Settling only one leaves a restored document still listed as deleted —
+   * a row the user can press Restore on a second time, against a version that no longer exists.
+   */
+  it('settles the deleted list alongside the registry', () => {
+    const { client, invalidate } = harness();
+
+    invalidateDocument(client, 'doc-1');
+
+    expect(invalidatedKeys(invalidate)).toContain(JSON.stringify(['documents', 'deleted']));
   });
 
   // The key factory is private, so a list key must be reachable by the prefix the invalidation

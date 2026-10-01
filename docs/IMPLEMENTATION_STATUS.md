@@ -44,7 +44,8 @@ The old in-process, `Map`-backed application (`DtsApplicationService`) has been 
 - **Notifications & outbox** — durable inbox (`NotificationsRepository`), transactional `OutboxWriter`,
   and a BullMQ relay + worker draining the outbox (tested against real Redis).
 - **Reports & audit** — monthly report + XLSX/PDF export read scoped Postgres documents;
-  `audit_events` are persisted and queryable via `GET admin/audit-events` (actor/action/date filters).
+  `audit_events` are persisted and queryable via `GET admin/audit-events` (actor/action/date filters,
+  returning `{ items, total, limit, offset }`), and browsable at `/audit`.
 
 **Runtime is fully wired:** `docker-compose.yml` defines postgres, redis, minio (built from source),
 and clamav; the app writes attachment bytes to **MinIO** through the `StoragePort`, the worker
@@ -52,19 +53,19 @@ and clamav; the app writes attachment bytes to **MinIO** through the `StoragePor
 an authenticated **WebSocket** gateway (worker → Redis → per-user sockets). The backend is
 feature-complete per this audit.
 
-**Frontend is now partially built** (PRs #50–#56, merged after the 2026-09-30 audit). `apps/web/src`
-holds a working operational workspace: login, the registry table with server-driven
-filters/sort/pagination/search (`registry-controls.tsx`, `pagination.tsx`), document create with a
-division/section picker, the detail panel + timeline + allowed-actions bar, metadata edit with
-revision history (`metadata-edit-modal.tsx`), forward/route (`route-modal.tsx`), attachments with
-scan-status badges and scan-gated download (`attachments-section.tsx`), the notifications inbox with
-live WebSocket updates (`notifications-panel.tsx`, `use-notifications.ts`, `realtime.ts`), and the
-monthly reports view with XLSX/PDF export (`reports-view.tsx`). **Still unbuilt on the frontend:** the
-admin/organization console (account-request queue, user/role management, division/section CRUD), the
-"request an account" screen, the audit-trail viewer (its sidebar nav button is currently inert), the
-real scope-aware dashboard (pending-by-division chart, overdue highlighting, recent-activity feed —
-the current metric tiles are counted client-side from the loaded page rather than from
-`GET /dashboard/summary`), logical delete/restore controls, and inline PDF/image preview.
+**The frontend is feature-complete for the pilot**, rebuilt on shadcn/ui across M7's F0–F2 (PRs
+#64–#66, succeeding the first cut in #50–#56). Every surface the MVP boundary names now exists and is
+routed: `/login` and `/request-account`; the registry with server-driven filters/sort/pagination/search,
+document create, the detail route with timeline and allowed-actions bar, metadata edit with revision
+history, forward/route; attachments with per-version scan badges, scan-gated download and inline
+PDF/image preview; the notifications sheet over the live WebSocket; monthly reports with XLSX/PDF
+export; the scope-aware dashboard (status totals, overdue, pending-by-division, recent activity, all
+from `GET /dashboard/summary`); `/my-work`; `/audit`; `/admin/requests`, `/admin/users`,
+`/admin/organization`; and capability-gated delete/restore plus the routing-slip download.
+
+**What is left on the frontend is quality, not surface area:** the ⌘K command palette (D-99's
+discoverable-shortcut requirement), and the axe sweep, responsive/browser matrix and Playwright E2E
+that the rebuild plan's decision 8 deferred to Phase 7.
 
 ### Module verdict
 
@@ -73,11 +74,11 @@ the current metric tiles are counted client-side from the loaded page rather tha
 | workflow              | **DONE** (pure FSM, tested)              | Persist transitions to `workflow_events`; transactional version bump |
 | authorization         | **DONE** (pure RBAC/scope, tested)       | Enforce over _persisted_ users/divisions/sections                   |
 | auth / session        | **DONE** (Postgres users, JWT + bcrypt)  | —                                                                   |
-| documents / search    | **Postgres-backed** (Phase 2–3)          | UI **built** (registry list/filters/sort/pagination/search, create, detail+timeline, metadata edit, forward/route). Remaining: `EXPLAIN` indexes; delete/restore UI |
-| files / versions      | **Postgres metadata + MinIO storage + ClamAV auto-scan** (Phase 4) | UI **built** (upload, scan-status badges, gated download). Remaining: inline PDF/image preview |
+| documents / search    | **Postgres-backed** (Phase 2–3)          | UI **built** (registry list/filters/sort/pagination/search, create, detail+timeline, metadata edit, forward/route, delete/restore, routing slip). Remaining: `EXPLAIN` indexes |
+| files / versions      | **Postgres metadata + MinIO storage + ClamAV auto-scan** (Phase 4) | UI **built** (upload, scan-status badges, gated download, inline preview of CLEAN PDFs/images). Remaining: — |
 | notifications         | **Postgres in-tx + outbox relay/worker + realtime WS** (Phase 5) | UI **built** (inbox, unread badge, mark-read, live WS updates). Remaining: reconnect/catch-up hardening |
-| reports / print       | **Postgres data + real XLSX/PDF** (Phase 6) | Reports UI **built** (month view + XLSX/PDF export). Remaining: routing-slip download control, audit-trail viewer, richer dashboard |
-| admin / identity / org| **DONE** (account requests, org CRUD, roles, audit query, profile photos) | Remaining: admin & org UI, request-an-account screen (backend endpoints all exist) |
+| reports / print       | **Postgres data + real XLSX/PDF** (Phase 6) | Reports UI **built** (month view + XLSX/PDF export), routing-slip download, audit-trail viewer, scope-aware dashboard. Remaining: — |
+| admin / identity / org| **DONE** (account requests, org CRUD, roles, audit query, profile photos) | Admin & org UI and the request-an-account screen are **built**. Remaining: — |
 
 ### Infrastructure verdict
 
@@ -284,8 +285,9 @@ behind it.
 - [x] (2h) File-upload input in the register modal and detail panel (multipart to the attachments
       endpoint). ✓ (`attachments-section.tsx`.)
 - [x] (2h) Version-history list with per-version scan-status badges. ✓
-- [~] (2h) Download/preview control gated by scan state. _Partial:_ scan-gated **download** works;
-      **inline PDF/image preview** is still unbuilt.
+- [x] (2h) Download/preview control gated by scan state. ✓ Scan-gated download, plus in-page preview
+      of `CLEAN` PDFs and images through `GET …/attachments/:versionId/content` (inline disposition,
+      `nosniff`, a `default-src 'none' … sandbox` CSP, and a sandboxed frame on the client).
 
 **Connections**
 
@@ -436,19 +438,21 @@ unticked _Frontend_ boxes in M1–M5: build those surfaces here, not in `DtsApp`
 - [x] (2h) `/dashboard` on `GET /dashboard/summary` + the new data (status totals, overdue, division
       chart, activity). _Done-when:_ the tiles no longer count the loaded page client-side.
 - [x] (2h) `/my-work` over `GET /documents/assigned`. _Done-when:_ an assignee sees their queue.
-- [ ] (2h) `/audit` viewer with user/action/date filters in the URL. _Done-when:_ the audit log is
-      browsable and filterable.
-- [ ] (2h) `/admin/requests`: pending queue, approve (role/division/section) and reject.
+- [x] (2h) `/audit` viewer with user/action/date filters in the URL. _Done-when:_ the audit log is
+      browsable and filterable. _Also:_ `GET /audit-events` now returns `{ items, total, limit, offset }`
+      so the viewer can say whether it is showing everything or the first page.
+- [x] (2h) `/admin/requests`: pending queue, approve (role/division/section) and reject.
       _Done-when:_ an admin approves a request from the UI.
-- [ ] (2h) `/admin/users`: create, edit role/placement, deactivate. _Done-when:_ users are manageable
+- [x] (2h) `/admin/users`: create, edit role/placement, deactivate. _Done-when:_ users are manageable
       from the UI.
-- [ ] (2h) `/admin/organization`: division/section CRUD. _Done-when:_ the org structure is manageable
+- [x] (2h) `/admin/organization`: division/section CRUD. _Done-when:_ the org structure is manageable
       from the UI.
-- [ ] (2h) `/request-account` public form (`submitAccountRequestSchema`). _Done-when:_ a visitor
+- [x] (2h) `/request-account` public form (`submitAccountRequestSchema`). _Done-when:_ a visitor
       submits a request.
-- [ ] (2h) Delete/restore controls (capability-gated) + routing-slip download. _Done-when:_ both work
-      from the detail page.
-- [ ] (2h) Backend + UI: inline preview for `CLEAN` PDFs/images (inline disposition, `nosniff`,
+- [x] (2h) Delete/restore controls (capability-gated) + routing-slip download. _Done-when:_ both work
+      from the detail page. _Also:_ `GET /documents/deleted` — restore needs a document's current
+      `version`, and no other read path can see a deleted row.
+- [x] (2h) Backend + UI: inline preview for `CLEAN` PDFs/images (inline disposition, `nosniff`,
       restrictive CSP). _Done-when:_ a clean PDF previews in-page; non-clean files cannot.
 
 **Later**

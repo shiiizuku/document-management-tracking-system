@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Capability } from '@dts/contracts';
-import { NAV_ITEMS, isNavItemActive, visibleNavItems } from '../src/components/dts/nav-items';
+import {
+  ADMIN_SECTION,
+  NAV_ITEMS,
+  isNavItemActive,
+  navSections,
+  visibleNavItems,
+} from '../src/components/dts/nav-items';
 
 const holding =
   (...capabilities: Capability[]) =>
@@ -36,5 +42,39 @@ describe('primary navigation', () => {
 
   it('does not highlight a sibling route that merely shares a prefix', () => {
     expect(isNavItemActive('/documents-archive', '/documents')).toBe(false);
+  });
+});
+
+describe('navigation grouping', () => {
+  it('gives the everyday screens no heading', () => {
+    const groups = navSections(() => false);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.section).toBeUndefined();
+  });
+
+  // The failure this guards against: a heading rendered above nothing, which tells a user an area
+  // exists that they cannot reach.
+  it('omits the administration heading entirely for a user with none of its capabilities', () => {
+    expect(navSections(() => false).map((group) => group.section)).not.toContain(ADMIN_SECTION);
+  });
+
+  it('shows the administration heading once one of its destinations is visible', () => {
+    const groups = navSections(holding('AUDIT_VIEW'));
+    const admin = groups.find((group) => group.section === ADMIN_SECTION);
+    expect(admin?.items.map((item) => item.label)).toEqual(['Audit trail']);
+  });
+
+  it('collects every administrative destination under one heading', () => {
+    const groups = navSections(
+      holding('AUDIT_VIEW', 'ACCOUNT_REQUEST_REVIEW', 'USER_MANAGE', 'ORG_MANAGE'),
+    );
+    expect(groups.filter((group) => group.section === ADMIN_SECTION)).toHaveLength(1);
+    expect(groups.find((group) => group.section === ADMIN_SECTION)?.items).toHaveLength(4);
+  });
+
+  it('loses no visible item to the grouping', () => {
+    const can = holding('REPORT_VIEW', 'AUDIT_VIEW', 'USER_MANAGE');
+    const grouped = navSections(can).flatMap((group) => group.items);
+    expect(grouped).toEqual(visibleNavItems(can));
   });
 });

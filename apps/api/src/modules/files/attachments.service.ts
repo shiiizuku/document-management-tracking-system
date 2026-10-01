@@ -36,6 +36,24 @@ export const ALLOWED_ATTACHMENT_MEDIA_TYPES: ReadonlySet<string> = new Set([
 ]);
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
+/**
+ * The formats a browser is asked to render in place rather than hand over as a file.
+ *
+ * Derived from the upload allow-list rather than listed again, because every format the system
+ * accepts is one it accepted *because* it can be previewed safely (decision 117). As a derivation
+ * a new upload format cannot quietly become previewable by omission — narrowing this set later is
+ * then a deliberate edit.
+ */
+export const PREVIEWABLE_ATTACHMENT_MEDIA_TYPES: ReadonlySet<string> =
+  ALLOWED_ATTACHMENT_MEDIA_TYPES;
+
+/** Bytes leaving the service for a caller to render or save, with what they are and were called. */
+export interface AttachmentContent {
+  fileName: string;
+  mediaType: string;
+  bytes: Uint8Array;
+}
+
 // The client-facing shape of a file version. It omits `objectKey` so the internal storage
 // layout (quarantine bucket paths) is never leaked over the API.
 export interface PublicAttachmentVersion {
@@ -180,7 +198,47 @@ export class AttachmentsService {
     actor: RequestUser,
     documentId: string,
     versionId: string,
-  ): Promise<{ fileName: string; mediaType: string; bytes: Uint8Array }> {
+  ): Promise<AttachmentContent> {
+    return this.readCleanBytes(actor, documentId, versionId, 'attachment.downloaded');
+  }
+
+  /**
+   * The same bytes, served to be rendered in place rather than saved.
+   *
+   * Deliberately a separate use case rather than a flag on {@link download}: the two differ in
+   * what they may serve (only formats a browser renders without a plugin) and in what they record
+   * — reading a document on screen and taking a copy of it away are different events in the
+   * trail. The quarantine rule is shared, because a preview discloses the bytes just as fully.
+   */
+  async preview(
+    actor: RequestUser,
+    documentId: string,
+    versionId: string,
+  ): Promise<AttachmentContent> {
+    const content = await this.readCleanBytes(actor, documentId, versionId, 'attachment.previewed');
+    // Checked after the read, not before it, so the refusal cannot be used to probe for versions:
+    // an unreadable document and an unpreviewable one are both reached through the checks above.
+    if (!PREVIEWABLE_ATTACHMENT_MEDIA_TYPES.has(content.mediaType))
+      throw new UnsupportedMediaTypeException({
+        code: 'PREVIEW_UNSUPPORTED',
+        message: 'This file type cannot be previewed in the browser',
+      });
+    return content;
+  }
+
+  /**
+   * The read path behind {@link download} and {@link preview}: authorize the document, find the
+   * version, refuse anything the scanner has not cleared, fetch the bytes, record the action.
+   *
+   * One method, so the fail-closed check cannot be present on one route and missing from the
+   * other — which is exactly the mistake a second copy of this sequence invites.
+   */
+  private async readCleanBytes(
+    actor: RequestUser,
+    documentId: string,
+    versionId: string,
+    action: 'attachment.downloaded' | 'attachment.previewed',
+  ): Promise<AttachmentContent> {
     await this.documents.requireReadableDocument(actor, documentId);
     const version = await this.versions.findVersionForDocument(documentId, versionId);
     if (version === null) throw new NotFoundException('Attachment not found');
@@ -194,11 +252,11 @@ export class AttachmentsService {
     if (bytes === null) throw new NotFoundException('Attachment content not found');
     await this.audit.write({
       actorId: actor.id,
-      action: 'attachment.downloaded',
+      action,
       targetType: 'document',
       targetId: documentId,
       outcome: 'SUCCESS',
-      summary: { versionId: version.id },
+      summary: { versionId: version.id, mediaType: version.mediaType },
     });
     return { fileName: version.originalName, mediaType: version.mediaType, bytes };
   }

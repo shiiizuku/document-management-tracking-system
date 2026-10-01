@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertCircle, ArrowLeft, FileX, Lock } from 'lucide-react';
+import { AlertCircle, ArrowLeft, FileX, Loader2, Lock, Printer } from 'lucide-react';
+import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,10 +14,11 @@ import { AttachmentsSection } from '@/features/attachments/attachments-section';
 import { useSession } from '@/features/session/queries';
 import { ApiError } from '@/lib/api';
 import { workflowActionLabel } from './action-labels';
+import { DeleteDocumentDialog } from './delete-document-dialog';
 import { DocumentActions } from './document-actions';
 import { MetadataDialog } from './metadata-dialog';
 import { RouteDialog } from './route-dialog';
-import { useDocument, type DocumentDetail } from './queries';
+import { useDocument, useRoutingSlip, type DocumentDetail } from './queries';
 
 /** A released or archived document is a closed record: its files no longer change. */
 const isClosed = (document: DocumentDetail) =>
@@ -78,11 +80,14 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
           <PriorityLabel priority={detail.priority} />
           <div className="ml-auto flex items-center gap-2">
             {/*
-              Both controls edit the document, so both are gated on DOCUMENT_EDIT — and hidden on a
-              closed record, where the server refuses them anyway.
+              Both editing controls are gated on DOCUMENT_EDIT — and hidden on a closed record,
+              where the server refuses them anyway. The routing slip is not: a released document is
+              exactly the one whose printable dossier people still need.
             */}
             {can('DOCUMENT_EDIT') && !closed ? <RouteDialog document={detail} /> : null}
             {can('DOCUMENT_EDIT') && !closed ? <MetadataDialog document={detail} /> : null}
+            <RoutingSlipButton document={detail} />
+            {can('DOCUMENT_DELETE') ? <DeleteDocumentDialog document={detail} /> : null}
           </div>
         </div>
       </div>
@@ -126,6 +131,36 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
 
       <Timeline document={detail} />
     </div>
+  );
+}
+
+/**
+ * Downloads the printable routing slip.
+ *
+ * Offered to anyone who can read the document, with no capability of its own: the slip contains
+ * nothing the page above it does not already show, and it is the artefact that travels stapled to
+ * the physical document. The export is still audited server-side, because a copy leaving the system
+ * is a different event from reading it on screen.
+ */
+function RoutingSlipButton({ document }: Readonly<{ document: DocumentDetail }>) {
+  const slip = useRoutingSlip();
+
+  const onClick = () =>
+    slip.mutate(
+      { id: document.id, trackingNumber: document.trackingNumber },
+      {
+        onError: (error) =>
+          toast.error('Could not produce the routing slip', {
+            description: error instanceof Error ? error.message : 'Please try again.',
+          }),
+      },
+    );
+
+  return (
+    <Button type="button" variant="outline" size="sm" onClick={onClick} disabled={slip.isPending}>
+      {slip.isPending ? <Loader2 className="animate-spin" /> : <Printer />}
+      Routing slip
+    </Button>
   );
 }
 

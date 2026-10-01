@@ -160,8 +160,9 @@ describe('identity & organization REST against a real database', () => {
       .get('/api/v1/audit-events')
       .set('Cookie', admin.cookies)
       .expect(200);
-    const actions = dataOf<{ action: string }[]>(events).map((row) => row.action);
-    expect(actions).toContain('auth.login');
+    const page = dataOf<{ items: { action: string }[]; total: number }>(events);
+    expect(page.items.map((row) => row.action)).toContain('auth.login');
+    expect(page.total).toBeGreaterThanOrEqual(page.items.length);
   }, 30_000);
 
   it('filters the audit trail by user, action, date range, and paginates', async () => {
@@ -172,32 +173,45 @@ describe('identity & organization REST against a real database', () => {
         .set('Cookie', admin.cookies)
         .expect(200);
 
-    // action filter: every returned row matches the requested action.
-    const byAction = dataOf<{ action: string; actorId: string }[]>(
-      await query('?action=auth.login'),
-    );
-    expect(byAction.length).toBeGreaterThan(0);
-    expect(byAction.every((row) => row.action === 'auth.login')).toBe(true);
+    interface Page {
+      items: { id: string; action: string; actorId: string }[];
+      total: number;
+      limit: number;
+      offset: number;
+    }
+
+    // action filter: every returned row matches the requested action, and the total describes
+    // the filtered set rather than the whole trail.
+    const byAction = dataOf<Page>(await query('?action=auth.login'));
+    expect(byAction.items.length).toBeGreaterThan(0);
+    expect(byAction.items.every((row) => row.action === 'auth.login')).toBe(true);
+    expect(byAction.total).toBe(byAction.items.length);
 
     // user filter (alias for actorId): the login events belong to the admin actor.
-    const adminActorId = byAction[0]!.actorId;
-    const byUser = dataOf<{ actorId: string }[]>(await query(`?user=${adminActorId}`));
-    expect(byUser.length).toBeGreaterThan(0);
-    expect(byUser.every((row) => row.actorId === adminActorId)).toBe(true);
+    const adminActorId = byAction.items[0]!.actorId;
+    const byUser = dataOf<Page>(await query(`?user=${adminActorId}`));
+    expect(byUser.items.length).toBeGreaterThan(0);
+    expect(byUser.items.every((row) => row.actorId === adminActorId)).toBe(true);
 
     // date range: a window ending in the future includes recent rows; one starting in the
     // future excludes them (from inclusive, to exclusive).
     const future = new Date(Date.now() + 3_600_000).toISOString();
     const past = new Date(Date.now() - 3_600_000).toISOString();
-    expect(dataOf<unknown[]>(await query(`?from=${past}&to=${future}`)).length).toBeGreaterThan(0);
-    expect(dataOf<unknown[]>(await query(`?from=${future}`))).toHaveLength(0);
+    expect(dataOf<Page>(await query(`?from=${past}&to=${future}`)).items.length).toBeGreaterThan(0);
+    const none = dataOf<Page>(await query(`?from=${future}`));
+    expect(none.items).toHaveLength(0);
+    expect(none.total).toBe(0);
 
-    // pagination: limit caps the page; offset skips into the ordered result.
-    const firstPage = dataOf<{ id: string }[]>(await query('?limit=1'));
-    expect(firstPage).toHaveLength(1);
-    const secondPage = dataOf<{ id: string }[]>(await query('?limit=1&offset=1'));
-    expect(secondPage).toHaveLength(1);
-    expect(secondPage[0]!.id).not.toBe(firstPage[0]!.id);
+    // pagination: limit caps the page, the total still counts the whole match, and offset skips
+    // into the ordered result.
+    const firstPage = dataOf<Page>(await query('?limit=1'));
+    expect(firstPage.items).toHaveLength(1);
+    expect(firstPage.limit).toBe(1);
+    expect(firstPage.total).toBeGreaterThan(1);
+    const secondPage = dataOf<Page>(await query('?limit=1&offset=1'));
+    expect(secondPage.items).toHaveLength(1);
+    expect(secondPage.offset).toBe(1);
+    expect(secondPage.items[0]!.id).not.toBe(firstPage.items[0]!.id);
 
     // a malformed date is rejected rather than silently ignored.
     await request(server())
