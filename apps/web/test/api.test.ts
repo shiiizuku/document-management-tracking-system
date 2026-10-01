@@ -149,8 +149,11 @@ describe('download', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(click);
   });
 
+  // The body is a string, not a Blob: under Node 22 the jsdom Blob is not the one undici's
+  // Response expects, and constructing from it throws "object.stream is not a function".
+  // `response.blob()` still yields a Blob for the code under test.
   const pdfResponse = (disposition?: string) =>
-    new Response(new Blob(['%PDF-1.7'], { type: 'application/pdf' }), {
+    new Response('%PDF-1.7', {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
