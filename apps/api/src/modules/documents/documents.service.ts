@@ -33,6 +33,9 @@ import {
 } from '../workflow/workflow.service.js';
 import {
   DocumentsRepository,
+  type DashboardActivityEntry,
+  type DashboardCounts,
+  type DashboardDivisionPending,
   type DocumentMetadataPatch,
   type DocumentRow,
   type DocumentSearchFilters,
@@ -111,6 +114,19 @@ export interface DocumentDetail extends PublicDocument {
   signatures: SignatureEntry[];
   timeline: TimelineEntry[];
   allowedActions: WorkflowAction[];
+}
+
+/**
+ * How many recent actions the dashboard feed carries.
+ *
+ * Small on purpose: this is a glance at what is moving, not a log. Anyone who wants the full
+ * history has the document's own timeline, and anyone auditing has `/admin/audit-events`.
+ */
+export const DASHBOARD_ACTIVITY_LIMIT = 10;
+
+export interface DashboardSummary extends DashboardCounts {
+  pendingByDivision: DashboardDivisionPending[];
+  recentActivity: DashboardActivityEntry[];
 }
 
 export interface DocumentSearchResult {
@@ -764,8 +780,21 @@ export class DocumentsService {
   }
 
   /** Scope-aware dashboard rollup (totals per status + overdue), for the dashboard summary. */
-  async dashboardSummary(actor: RequestUser) {
-    return this.repository.summary(actor);
+  /**
+   * Everything the dashboard shows, in one round trip.
+   *
+   * All three parts resolve against the same `documentScopeFor` predicate the registry list uses,
+   * which is the point: a division chart that counted rows the list would not show, or an activity
+   * feed naming a document the user cannot open, would be a disclosure dressed as a summary — and
+   * a user who clicked through would land on a 403.
+   */
+  async dashboardSummary(actor: RequestUser): Promise<DashboardSummary> {
+    const [counts, pendingByDivision, recentActivity] = await Promise.all([
+      this.repository.summary(actor),
+      this.repository.pendingByDivision(actor),
+      this.repository.recentActivity(actor, DASHBOARD_ACTIVITY_LIMIT),
+    ]);
+    return { ...counts, pendingByDivision, recentActivity };
   }
 
   // --------------------------------------------------------------- reports

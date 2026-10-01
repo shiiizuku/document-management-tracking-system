@@ -30,6 +30,7 @@ import {
   releaseEvents,
   sections,
   signatureEvents,
+  users,
   workflowEvents,
 } from '../../database/schema.js';
 import { workflowStatuses, type ReleaseMethod } from '../workflow/workflow.service.js';
@@ -40,6 +41,34 @@ export type DocumentRouteRow = typeof documentRoutes.$inferSelect;
 export type SignatureEventRow = typeof signatureEvents.$inferSelect;
 
 export type NewDocument = typeof documents.$inferInsert;
+
+/** Status totals for the dashboard tiles. */
+export interface DashboardCounts {
+  total: number;
+  byStatus: Record<DocumentRow['status'], number>;
+  overdue: number;
+}
+
+/** Work waiting to be accepted, broken down by the division holding it. */
+export interface DashboardDivisionPending {
+  divisionId: string;
+  divisionName: string;
+  total: number;
+}
+
+/** One entry in the scoped recent-activity feed. */
+export interface DashboardActivityEntry {
+  id: string;
+  documentId: string;
+  trackingNumber: string;
+  title: string;
+  action: string;
+  fromStatus: DocumentRow['status'] | null;
+  toStatus: DocumentRow['status'];
+  actorId: string;
+  actorName: string;
+  occurredAt: Date;
+}
 
 /** The columns a metadata edit is allowed to touch (see `updateDocumentMetadataSchema`). */
 export interface DocumentMetadataPatch {
@@ -603,9 +632,62 @@ export class DocumentsRepository {
    * from the same `documentScopeFor` predicate the list uses so the dashboard can never show a
    * number the list can't back up (decision register 90 — one source of truth for scope).
    */
-  async summary(
+  /** One division's share of the work waiting to be accepted. */
+  async pendingByDivision(actor: AuthorizationActor): Promise<DashboardDivisionPending[]> {
+    const rows = await this.database
+      .select({
+        divisionId: documents.divisionId,
+        divisionName: divisions.name,
+        total: count(),
+      })
+      .from(documents)
+      .innerJoin(divisions, eq(divisions.id, documents.divisionId))
+      .where(
+        and(isNull(documents.deletedAt), documentScopeFor(actor), eq(documents.status, 'PENDING')),
+      )
+      .groupBy(documents.divisionId, divisions.name)
+      .orderBy(desc(count()), asc(divisions.name));
+    return rows.map((row) => ({
+      divisionId: row.divisionId,
+      divisionName: row.divisionName,
+      total: row.total,
+    }));
+  }
+
+  /**
+   * The most recent workflow actions on documents this actor may read.
+   *
+   * Scoped through the same predicate as every list, so the feed can never name a document the
+   * actor could not have opened. Remarks are deliberately omitted: the feed exists to say that
+   * something moved and to link to it, and the full text already lives on the document's own
+   * timeline, behind the read check that this join only approximates at the row level.
+   */
+  async recentActivity(
     actor: AuthorizationActor,
-  ): Promise<{ total: number; byStatus: Record<DocumentRow['status'], number>; overdue: number }> {
+    limit: number,
+  ): Promise<DashboardActivityEntry[]> {
+    return this.database
+      .select({
+        id: workflowEvents.id,
+        documentId: workflowEvents.documentId,
+        trackingNumber: documents.trackingNumber,
+        title: documents.title,
+        action: workflowEvents.action,
+        fromStatus: workflowEvents.fromStatus,
+        toStatus: workflowEvents.toStatus,
+        actorId: workflowEvents.actorId,
+        actorName: users.displayName,
+        occurredAt: workflowEvents.occurredAt,
+      })
+      .from(workflowEvents)
+      .innerJoin(documents, eq(documents.id, workflowEvents.documentId))
+      .innerJoin(users, eq(users.id, workflowEvents.actorId))
+      .where(and(isNull(documents.deletedAt), documentScopeFor(actor)))
+      .orderBy(desc(workflowEvents.occurredAt))
+      .limit(limit);
+  }
+
+  async summary(actor: AuthorizationActor): Promise<DashboardCounts> {
     const scoped = and(isNull(documents.deletedAt), documentScopeFor(actor));
     const statusRows = await this.database
       .select({ status: documents.status, total: count() })
