@@ -287,18 +287,42 @@ export const shareDocumentSchema = z.object({
 // version starts PENDING, and a scanner may only ever report a resolved outcome — it
 // can never push a version back into the pending state (mirrors the domain service's
 // `Exclude<FileScanStatus, 'PENDING'>` contract).
-export const fileScanStatusSchema = z.enum(['CLEAN', 'INFECTED', 'SCAN_FAILED', 'PENDING_RETRY']);
+/**
+ * Every scan state a stored file version can hold, matching the `scan_status` database enum.
+ *
+ * The client needs the whole set, including `PENDING`: a freshly uploaded version sits there
+ * until the scanner reports, and that is precisely the state the UI has to render as "not yet
+ * downloadable" rather than fall through as an unrecognised string.
+ */
+export const scanStatusSchema = z.enum([
+  'PENDING',
+  'PENDING_RETRY',
+  'CLEAN',
+  'INFECTED',
+  'SCAN_FAILED',
+]);
+
+/**
+ * What a scanner may report back. Derived from the full set rather than listed again, so a new
+ * scan state cannot be added above without a decision about whether a scanner can report it.
+ * `PENDING` is excluded because it is the initial state the system assigns, not an outcome.
+ */
+export const fileScanStatusSchema = scanStatusSchema.exclude(['PENDING']);
 export const recordScanSchema = z.object({ status: fileScanStatusSchema });
 
 export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
 export type WorkflowAction = z.infer<typeof workflowActionSchema>;
 export type Role = z.infer<typeof roleSchema>;
 export type Capability = z.infer<typeof capabilitySchema>;
+export type DocumentDirection = z.infer<typeof documentDirectionSchema>;
+export type DocumentPriority = z.infer<typeof documentPrioritySchema>;
+export type ReleaseMethod = z.infer<typeof releaseMethodSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentMetadataInput = z.infer<typeof updateDocumentMetadataSchema>;
 export type AssignDocumentInput = z.infer<typeof assignDocumentSchema>;
 export type RouteDocumentInput = z.infer<typeof routeDocumentSchema>;
 export type ShareDocumentInput = z.infer<typeof shareDocumentSchema>;
+export type ScanStatus = z.infer<typeof scanStatusSchema>;
 export type FileScanResult = z.infer<typeof fileScanStatusSchema>;
 export type RecordScanInput = z.infer<typeof recordScanSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

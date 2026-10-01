@@ -18,8 +18,8 @@ export function PageHeader({
   eyebrow: string;
   title: string;
   /** Shown beside the title when the screen is a list whose size matters. */
-  count?: number;
-  description?: string;
+  count?: number | undefined;
+  description?: string | undefined;
   actions?: ReactNode;
 }>) {
   return (

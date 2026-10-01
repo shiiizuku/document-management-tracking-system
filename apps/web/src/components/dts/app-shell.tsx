@@ -15,6 +15,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { NotificationsSheet } from '@/features/notifications/notifications-sheet';
+import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
 import { useLogout, useSession, type SessionUser } from '@/features/session/queries';
 import { cn } from '@/lib/utils';
 import { isNavItemActive, visibleNavItems } from './nav-items';
@@ -25,9 +27,14 @@ import { isNavItemActive, visibleNavItems } from './nav-items';
  *
  * The same nav renders twice — in the permanent sidebar on a wide screen and inside a sheet on a
  * narrow one — from one `SidebarNav` below, so the two cannot drift apart.
+ *
+ * It is also where realtime is mounted. One socket for the whole signed-in app: a subscription
+ * per screen would open and close a connection on every navigation, and two subscriptions would
+ * invalidate the same queries twice per event.
  */
 export function AppShell({ user, children }: Readonly<{ user: SessionUser; children: ReactNode }>) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const realtime = useRealtimeSync();
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -58,6 +65,7 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
           <span className="font-serif text-base lg:hidden">Document Tracking System</span>
 
           <div className="ml-auto flex items-center gap-1">
+            <NotificationsSheet live={realtime.connected} />
             <AccountMenu user={user} />
           </div>
         </header>

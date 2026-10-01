@@ -1,13 +1,12 @@
 /*
- * Tailwind + shadcn theme for the rebuilt UI (F0).
+ * The app's theme: Tailwind, plus the brand carried into the shadcn CSS variables.
  *
- * This file is imported by the rebuilt route groups — (public) and (app) — and never by the legacy
- * `/` route, which keeps its own globals.css. That separation is what stops Tailwind's preflight
- * from resetting the bespoke screens while both exist. See docs/frontend-rebuild-plan.md (F0/F1).
+ * The `--dts-*` values are the brand itself, and are the palette the retired bespoke stylesheet
+ * used — the rebuild is meant to be visually continuous with the screens it replaced, not to look
+ * like stock shadcn. The shadcn semantic names below alias them, which is what lets a component
+ * copied from the registry inherit the brand without being patched.
  *
- * The brand values below are copied verbatim from globals.css so the rebuild is visually
- * indistinguishable from the screens it replaces. `--dts-*` are the source of truth; the shadcn
- * semantic names alias them so stock shadcn components inherit the brand without being patched.
+ * Imported once, by the root layout.
  */
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
 @import 'tailwindcss';

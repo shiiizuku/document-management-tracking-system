@@ -2,9 +2,13 @@
 
 _Agreed 2026-10-01. Task-level backlog: `docs/IMPLEMENTATION_STATUS.md` → **M7 · Frontend rebuild**._
 
-The current UI (PRs #50–#56) works but lives in one 735-line client component (`DtsApp`) styled by a
-1,198-line bespoke `globals.css`. It cannot absorb the remaining surfaces (admin, audit, dashboard) and
-has no routes. This plan replaces it, in phases, with a routed App Router app on shadcn/ui.
+**Status: F0 and F1 are done.** `DtsApp` and `globals.css` are gone; every screen below is on
+shadcn, routed, and served by the domain query modules. F2 (the new surfaces) is next.
+
+The UI this replaced (PRs #50–#56) worked but lived in one 735-line client component (`DtsApp`)
+styled by a 1,198-line bespoke `globals.css`. It could not absorb the remaining surfaces (admin,
+audit, dashboard) and had no routes. This plan replaces it, in phases, with a routed App Router app
+on shadcn/ui.
 
 ## Decisions
 

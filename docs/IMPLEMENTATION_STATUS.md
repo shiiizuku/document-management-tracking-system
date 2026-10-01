@@ -397,36 +397,36 @@ unticked _Frontend_ boxes in M1–M5: build those surfaces here, not in `DtsApp`
 
 **F0 — Foundation**
 
-- [ ] (2h) Style-isolation spike: one shadcn page rendered beside `globals.css`; choose how the old
+- [x] (2h) Style-isolation spike: one shadcn page rendered beside `globals.css`; choose how the old
       sheet is scoped. _Done-when:_ new and old screens render side by side without breaking each other.
-- [ ] (2h) Install Tailwind v4 + shadcn (`components.json`); port palette/type/radii into the shadcn
+- [x] (2h) Install Tailwind v4 + shadcn (`components.json`); port palette/type/radii into the shadcn
       CSS variables. _Done-when:_ a restyled `Button`/`Input`/`Dialog` matches the current brand.
-- [ ] (2h) Transport: richer `ApiError` (`code`, `details`, `correlationId`) + a `download(path,
+- [x] (2h) Transport: richer `ApiError` (`code`, `details`, `correlationId`) + a `download(path,
       filename)` helper for binary responses. _Done-when:_ unit tests cover the 409/403/field-error
       shapes and a PDF download.
-- [ ] (2h) `QueryClientProvider` with global 401 handling (clear cache → `/login?next=`), sonner
+- [x] (2h) `QueryClientProvider` with global 401 handling (clear cache → `/login?next=`), sonner
       `<Toaster>`. _Done-when:_ an expired session redirects with a toast.
-- [ ] (2h) `(public)`/`(app)` route groups, session gate, sidebar + topbar, capability-filtered nav;
+- [x] (2h) `(public)`/`(app)` route groups, session gate, sidebar + topbar, capability-filtered nav;
       export capability names from `@dts/contracts`. _Done-when:_ nav items appear only for capable users.
-- [ ] (2h) `DataTable` (server pagination/sort) + `FilterBar` + `PageHeader` + `EmptyState` +
+- [x] (2h) `DataTable` (server pagination/sort) + `FilterBar` + `PageHeader` + `EmptyState` +
       skeletons. _Done-when:_ the components render against a stubbed `api()` in a test.
 
 **F1 — Parity rebuild**
 
-- [ ] (2h) `/login` on shadcn + RHF/zod (`loginSchema`); seeded credentials prefilled in development
+- [x] (2h) `/login` on shadcn + RHF/zod (`loginSchema`); seeded credentials prefilled in development
       builds only. _Done-when:_ a production build shows empty fields.
-- [ ] (2h) `/documents` list via `features/documents` hooks, filters + page in search params.
+- [x] (2h) `/documents` list via `features/documents` hooks, filters + page in search params.
       _Done-when:_ a filtered URL reloads to the same view; back button works.
-- [ ] (2h) `/documents/[id]`: metadata, timeline, `DocumentActions` with remark/release-method dialogs
+- [x] (2h) `/documents/[id]`: metadata, timeline, `DocumentActions` with remark/release-method dialogs
       (no `window.prompt`). _Done-when:_ every allowed action runs from a dialog.
-- [ ] (2h) Detail: edit-metadata and forward/route forms on RHF + `applyServerErrors`; a 409 refetches
+- [x] (2h) Detail: edit-metadata and forward/route forms on RHF + `applyServerErrors`; a 409 refetches
       with a "changed — retry" message. _Done-when:_ a stale edit recovers without a reload.
-- [ ] (2h) Attachments: upload, scan badges, scan-gated download via `download()`. _Done-when:_ parity
+- [x] (2h) Attachments: upload, scan badges, scan-gated download via `download()`. _Done-when:_ parity
       with `attachments-section.tsx`.
-- [ ] (2h) Notifications sheet + `useRealtimeSync()`; optimistic mark-read with rollback.
+- [x] (2h) Notifications sheet + `useRealtimeSync()`; optimistic mark-read with rollback.
       _Done-when:_ a live event appears and the badge updates without a refresh.
-- [ ] (2h) `/reports` with XLSX/PDF via `download()`. _Done-when:_ parity with `reports-view.tsx`.
-- [ ] (2h) Retire `dts-app.tsx` and `globals.css`. _Done-when:_ neither file exists and every route
+- [x] (2h) `/reports` with XLSX/PDF via `download()`. _Done-when:_ parity with `reports-view.tsx`.
+- [x] (2h) Retire `dts-app.tsx` and `globals.css`. _Done-when:_ neither file exists and every route
       still renders.
 
 **F2 — New surfaces**

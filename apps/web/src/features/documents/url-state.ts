@@ -1,0 +1,74 @@
+import {
+  documentDirectionSchema,
+  documentPrioritySchema,
+  workflowStatusSchema,
+} from '@dts/contracts';
+import {
+  DEFAULT_DOCUMENT_FILTERS,
+  DOCUMENT_SORT_FIELDS,
+  DOCUMENT_TYPES,
+  type DocumentFilters,
+} from './queries';
+
+/**
+ * The registry's filter state, read from and written to the URL.
+ *
+ * The URL is the only copy. A filtered registry has to be linkable, survive a reload, and come
+ * back intact on the back button, and a component holding its own copy beside the URL would
+ * disagree with it the first time the user pressed Back. Keeping the translation here — rather
+ * than inline in the screen — makes it testable without a router, which matters because the
+ * failure mode is silent: an unparsed filter does not error, it just stops filtering.
+ *
+ * Every value is validated against the contract enums on the way in. These parameters arrive from
+ * whatever the user typed in the address bar, and passing an unrecognised status straight to the
+ * API would turn a typo into a 500.
+ */
+
+const oneOf = <T extends string>(allowed: readonly T[], raw: string | null): T | '' =>
+  raw !== null && (allowed as readonly string[]).includes(raw) ? (raw as T) : '';
+
+export const parseDocumentFilters = (params: URLSearchParams): DocumentFilters => ({
+  search: params.get('search') ?? '',
+  status: oneOf(workflowStatusSchema.options, params.get('status')),
+  priority: oneOf(documentPrioritySchema.options, params.get('priority')),
+  type: oneOf(DOCUMENT_TYPES, params.get('type')),
+  direction: oneOf(documentDirectionSchema.options, params.get('direction')),
+  // Unlike the filters, a missing or invalid sort falls back to a value rather than to "none":
+  // the list is always ordered by something, and the server would reject an empty sort field.
+  sort: oneOf(DOCUMENT_SORT_FIELDS, params.get('sort')) || DEFAULT_DOCUMENT_FILTERS.sort,
+  order: params.get('order') === 'asc' ? 'asc' : 'desc',
+});
+
+/** Page 1 for anything that is not a page number, so `?page=abc` shows the first page. */
+export const parsePage = (params: URLSearchParams): number => {
+  const page = Number(params.get('page'));
+  return Number.isInteger(page) && page > 0 ? page : 1;
+};
+
+/**
+ * Serialises filters and page back into a query string, omitting everything left at its default.
+ *
+ * That omission is what keeps a shareable URL readable — `/documents?status=PENDING` rather than
+ * a string of empty parameters — and it means the unfiltered registry is reached at `/documents`
+ * with no query at all.
+ */
+export const documentFiltersToParams = (filters: DocumentFilters, page: number): string => {
+  const params = new URLSearchParams();
+  if (filters.search.trim()) params.set('search', filters.search.trim());
+  if (filters.status) params.set('status', filters.status);
+  if (filters.priority) params.set('priority', filters.priority);
+  if (filters.type) params.set('type', filters.type);
+  if (filters.direction) params.set('direction', filters.direction);
+  if (filters.sort !== DEFAULT_DOCUMENT_FILTERS.sort) params.set('sort', filters.sort);
+  if (filters.order !== DEFAULT_DOCUMENT_FILTERS.order) params.set('order', filters.order);
+  if (page > 1) params.set('page', String(page));
+  return params.toString();
+};
+
+/** Whether anything is narrowing the registry, which is what decides if Clear is offered. */
+export const hasActiveDocumentFilters = (filters: DocumentFilters): boolean =>
+  filters.search.trim() !== '' ||
+  filters.status !== '' ||
+  filters.priority !== '' ||
+  filters.type !== '' ||
+  filters.direction !== '';

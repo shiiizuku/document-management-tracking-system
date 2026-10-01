@@ -2,10 +2,10 @@
  * The one seam between the browser and the API.
  *
  * Everything the client knows about talking to the server lives here: credentials, the CSRF
- * double-submit header, the `{ data }` / `{ error }` envelope, 204s, non-JSON failures, and the
- * blob dance a file download needs. Screens call `api()` or `download()` and handle `ApiError`;
- * they never see a header, an envelope or an object URL. Tests replace this module and nothing
- * else.
+ * double-submit header, the `{ data }` / `{ error }` envelope, 204s, non-JSON failures, the
+ * multipart dance an upload needs and the blob dance a download needs. Screens call `api()`,
+ * `upload()` or `download()` and handle `ApiError`; they never see a header, an envelope or an
+ * object URL. Tests replace this module and nothing else.
  */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
@@ -149,6 +149,21 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!response.ok) throw await errorFrom(response);
   if (response.status === 204) return undefined as T;
+  const payload = (await response.json()) as { data?: T };
+  return payload.data as T;
+}
+
+/**
+ * Sends a multipart body (a file upload) and unwraps the success envelope.
+ *
+ * Separate from `api()` for one reason: the browser must choose the `multipart/form-data`
+ * boundary itself, so this is the one request that must NOT carry a `Content-Type` header. Every
+ * other concern — credentials, the CSRF header, the envelope, the error shape — is identical, and
+ * is handled by the same code here rather than reimplemented by whichever feature uploads files.
+ */
+export async function upload<T>(path: string, body: FormData): Promise<T> {
+  const response = await request(path, { method: 'POST', body });
+  if (!response.ok) throw await errorFrom(response);
   const payload = (await response.json()) as { data?: T };
   return payload.data as T;
 }
