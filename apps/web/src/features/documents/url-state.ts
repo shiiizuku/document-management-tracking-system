@@ -27,12 +27,21 @@ import {
 const oneOf = <T extends string>(allowed: readonly T[], raw: string | null): T | '' =>
   raw !== null && (allowed as readonly string[]).includes(raw) ? (raw as T) : '';
 
+/**
+ * A division filter cannot be checked against a fixed list — divisions are rows, not an enum — so
+ * it is checked for shape instead. A value that is not a UUID could only have been typed or
+ * mangled, and forwarding it would turn that into a server error.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const asUuid = (raw: string | null): string => (raw !== null && UUID.test(raw) ? raw : '');
+
 export const parseDocumentFilters = (params: URLSearchParams): DocumentFilters => ({
   search: params.get('search') ?? '',
   status: oneOf(workflowStatusSchema.options, params.get('status')),
   priority: oneOf(documentPrioritySchema.options, params.get('priority')),
   type: oneOf(DOCUMENT_TYPES, params.get('type')),
   direction: oneOf(documentDirectionSchema.options, params.get('direction')),
+  divisionId: asUuid(params.get('divisionId')),
   // Unlike the filters, a missing or invalid sort falls back to a value rather than to "none":
   // the list is always ordered by something, and the server would reject an empty sort field.
   sort: oneOf(DOCUMENT_SORT_FIELDS, params.get('sort')) || DEFAULT_DOCUMENT_FILTERS.sort,
@@ -59,6 +68,7 @@ export const documentFiltersToParams = (filters: DocumentFilters, page: number):
   if (filters.priority) params.set('priority', filters.priority);
   if (filters.type) params.set('type', filters.type);
   if (filters.direction) params.set('direction', filters.direction);
+  if (filters.divisionId) params.set('divisionId', filters.divisionId);
   if (filters.sort !== DEFAULT_DOCUMENT_FILTERS.sort) params.set('sort', filters.sort);
   if (filters.order !== DEFAULT_DOCUMENT_FILTERS.order) params.set('order', filters.order);
   if (page > 1) params.set('page', String(page));
@@ -71,4 +81,5 @@ export const hasActiveDocumentFilters = (filters: DocumentFilters): boolean =>
   filters.status !== '' ||
   filters.priority !== '' ||
   filters.type !== '' ||
-  filters.direction !== '';
+  filters.direction !== '' ||
+  filters.divisionId !== '';

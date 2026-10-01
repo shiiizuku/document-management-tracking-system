@@ -37,13 +37,13 @@ afterEach(() => {
 });
 
 describe('LoginForm', () => {
-  it('signs in and goes to the registry', async () => {
+  it('signs in and goes to the dashboard', async () => {
     apiMock.mockResolvedValue(sessionUser());
     renderWithQuery(<LoginForm />);
 
     await signIn('records@dts.local', 'Records@1234!');
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/documents'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/dashboard'));
     expect(apiMock).toHaveBeenCalledWith('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email: 'records@dts.local', password: 'Records@1234!' }),
@@ -68,7 +68,7 @@ describe('LoginForm', () => {
 
     await signIn('records@dts.local', 'Records@1234!');
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/documents'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/dashboard'));
   });
 
   // The client resolves the API's own `loginSchema`, so a password the server would reject on

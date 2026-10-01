@@ -779,7 +779,6 @@ export class DocumentsService {
     return rows.map((row) => this.toPublic(row));
   }
 
-  /** Scope-aware dashboard rollup (totals per status + overdue), for the dashboard summary. */
   /**
    * Everything the dashboard shows, in one round trip.
    *

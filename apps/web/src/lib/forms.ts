@@ -57,9 +57,10 @@ export function applyServerErrors<
  * redirect that users have no way to distinguish from the real thing.
  *
  * Only a same-site absolute path is accepted: it must start with a single `/`, and must not be a
- * protocol-relative `//host` or carry a scheme. Anything else falls back to `/documents`.
+ * protocol-relative `//host` or carry a scheme. Anything else falls back to the dashboard, which
+ * is where `/` leads too.
  */
-export function safeNextPath(raw: string | null, fallback = '/documents'): string {
+export function safeNextPath(raw: string | null, fallback = '/dashboard'): string {
   if (raw === null || raw === '') return fallback;
   if (!raw.startsWith('/') || raw.startsWith('//')) return fallback;
   // A backslash is treated as a slash by some browsers, so `/\evil.example` is protocol-relative
