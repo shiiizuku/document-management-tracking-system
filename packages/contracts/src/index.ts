@@ -28,6 +28,45 @@ export const roleSchema = z.enum([
   'STAFF_MEMBER',
   'VIEWER',
 ]);
+
+/**
+ * Every capability the system can grant.
+ *
+ * Capability — never role — is the unit of authority. The API's role table resolves a signed-in
+ * user's role to a subset of this list and returns it from `/auth/me`; the client gates its
+ * navigation and controls on that array and never re-derives permission from `role`. Both sides
+ * resolving against one enum is what stops a capability from being renamed on the server while a
+ * nav item still gates on the old string, or a screen from gating on a capability no role holds.
+ *
+ * Which roles hold which capabilities deliberately stays on the server (policy register P-11,
+ * still provisional): that mapping is a policy decision, and shipping it to the browser would
+ * invite the client to anticipate the server's answer instead of asking for it.
+ */
+export const capabilitySchema = z.enum([
+  'DOCUMENT_CREATE',
+  'DOCUMENT_EDIT',
+  'DOCUMENT_ACCEPT',
+  'DOCUMENT_REQUEST_REVISION',
+  'DOCUMENT_RESUBMIT',
+  'DOCUMENT_SUBMIT_FOR_SIGNATURE',
+  'DOCUMENT_SIGN',
+  'DOCUMENT_PREPARE_RELEASE',
+  'DOCUMENT_RELEASE',
+  'DOCUMENT_ARCHIVE',
+  'DOCUMENT_DELETE',
+  'DOCUMENT_RESTORE',
+  'DOCUMENT_ASSIGN',
+  'REPORT_VIEW',
+  'AUDIT_VIEW',
+  'FILE_SCAN_RECORD',
+  'USER_MANAGE',
+  'ORG_MANAGE',
+  'ACCOUNT_REQUEST_REVIEW',
+]);
+
+/** The capability names as a list, for exhaustiveness checks over the whole set. */
+export const CAPABILITIES = capabilitySchema.options;
+
 export const documentDirectionSchema = z.enum(['INCOMING', 'OUTGOING']);
 export const documentPrioritySchema = z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']);
 export const releaseMethodSchema = z.enum(['MAILED', 'EMAILED', 'PICKED_UP', 'DELIVERED']);
@@ -254,6 +293,7 @@ export const recordScanSchema = z.object({ status: fileScanStatusSchema });
 export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
 export type WorkflowAction = z.infer<typeof workflowActionSchema>;
 export type Role = z.infer<typeof roleSchema>;
+export type Capability = z.infer<typeof capabilitySchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentMetadataInput = z.infer<typeof updateDocumentMetadataSchema>;
 export type AssignDocumentInput = z.infer<typeof assignDocumentSchema>;

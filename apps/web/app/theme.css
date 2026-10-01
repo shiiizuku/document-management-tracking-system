@@ -1,9 +1,9 @@
 /*
  * Tailwind + shadcn theme for the rebuilt UI (F0).
  *
- * This file is imported ONLY by the (app) route group, never by the legacy `/` route, which keeps
- * its own globals.css. That separation is what stops Tailwind's preflight from resetting the
- * bespoke screens while both exist. See docs/frontend-rebuild-plan.md (F0/F1).
+ * This file is imported by the rebuilt route groups — (public) and (app) — and never by the legacy
+ * `/` route, which keeps its own globals.css. That separation is what stops Tailwind's preflight
+ * from resetting the bespoke screens while both exist. See docs/frontend-rebuild-plan.md (F0/F1).
  *
  * The brand values below are copied verbatim from globals.css so the rebuild is visually
  * indistinguishable from the screens it replaces. `--dts-*` are the source of truth; the shadcn
@@ -11,6 +11,9 @@
  */
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
 @import 'tailwindcss';
+/* Supplies the enter/exit keyframes the Radix-driven components animate with (`animate-in`,
+   `slide-in-from-*`, `fade-in-0`). Tailwind v4 dropped the plugin these used to come from. */
+@import 'tw-animate-css';
 
 :root {
   /* Brand palette, verbatim from globals.css */
@@ -38,8 +41,15 @@
   --secondary-foreground: var(--dts-green);
   --muted: var(--dts-pale);
   --muted-foreground: var(--dts-muted);
-  --accent: var(--dts-gold);
-  --accent-foreground: var(--dts-ink);
+  /*
+   * shadcn's `accent` is the hover/active SURFACE — ghost buttons, dropdown and select items, table
+   * row hover — not a brand accent colour. Pointing it at the gold would repaint every hover state
+   * gold; the pale green is what the screens it replaces actually use. The gold stays available as
+   * `--dts-gold` (utilities `bg-gold` / `text-gold`) for the places the brand really wants it: the
+   * seal, the eyebrow rules, the priority flag.
+   */
+  --accent: var(--dts-pale);
+  --accent-foreground: var(--dts-green);
   --destructive: var(--dts-danger);
   --destructive-foreground: #fff;
   --border: var(--dts-line);
@@ -73,6 +83,11 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  /* Brand colours with no shadcn equivalent, exposed as utilities rather than inline styles. */
+  --color-gold: var(--dts-gold);
+  --color-ink: var(--dts-ink);
+  --color-paper: var(--dts-paper);
+
   --font-sans: 'DM Sans', system-ui, sans-serif;
   --font-serif: 'DM Serif Display', Georgia, serif;
 
@@ -87,5 +102,30 @@
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+  }
+
+  /*
+   * Headings carry the display serif, as they do on the screens being replaced. Set once here
+   * instead of adding `font-serif` to every heading in every route.
+   */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-serif);
+    font-weight: 400;
+  }
+
+  /*
+   * The eyebrow — a small upper-case green label above a heading — appears above every page title
+   * and panel heading in this design. It is a type treatment, not a component, so it stays a base
+   * class rather than becoming a one-element React wrapper.
+   */
+  .eyebrow {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--dts-green2);
   }
 }

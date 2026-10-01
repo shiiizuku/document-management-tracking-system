@@ -1,17 +1,22 @@
+import type { Capability } from '@dts/contracts';
 import type { Role } from './authorization.policy.js';
+
+// The capability vocabulary itself lives in `@dts/contracts` (`capabilitySchema`), so the client
+// gates its navigation on the same strings this table grants. What stays here is the mapping from
+// role to capabilities — a server-side policy decision the browser never sees.
 
 // Identity and organization capabilities. Provisional per policy register P-11: the approver
 // role is not yet fixed by the office, so account provisioning, user management and
 // organization changes are all administrator-only until it is. Changing that means editing
 // P-11 and this constant in the same PR.
-export const USER_MANAGE = 'USER_MANAGE';
-export const ORG_MANAGE = 'ORG_MANAGE';
-export const ACCOUNT_REQUEST_REVIEW = 'ACCOUNT_REQUEST_REVIEW';
+export const USER_MANAGE: Capability = 'USER_MANAGE';
+export const ORG_MANAGE: Capability = 'ORG_MANAGE';
+export const ACCOUNT_REQUEST_REVIEW: Capability = 'ACCOUNT_REQUEST_REVIEW';
 // Already held by ADMINISTRATOR below; named here so the audit policy references the same
 // string the role table does rather than repeating a literal.
-export const AUDIT_VIEW = 'AUDIT_VIEW';
+export const AUDIT_VIEW: Capability = 'AUDIT_VIEW';
 
-export const capabilitiesByRole: Readonly<Record<Role, readonly string[]>> = {
+export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> = {
   ADMINISTRATOR: [
     'DOCUMENT_CREATE',
     'DOCUMENT_EDIT',
