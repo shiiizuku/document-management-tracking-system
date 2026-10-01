@@ -2,8 +2,9 @@
 
 _Agreed 2026-10-01. Task-level backlog: `docs/IMPLEMENTATION_STATUS.md` → **M7 · Frontend rebuild**._
 
-**Status: F0 and F1 are done.** `DtsApp` and `globals.css` are gone; every screen below is on
-shadcn, routed, and served by the domain query modules. F2 (the new surfaces) is next.
+**Status: F0, F1 and F2 are done.** `DtsApp` and `globals.css` are gone; every screen below is on
+shadcn, routed, and served by the domain query modules. What remains is the ⌘K command palette under
+**Later**, plus the Phase 7 QA sweeps that decision 8 deferred.
 
 The UI this replaced (PRs #50–#56) worked but lived in one 735-line client component (`DtsApp`)
 styled by a 1,198-line bespoke `globals.css`. It could not absorb the remaining surfaces (admin,
@@ -87,21 +88,33 @@ Notifications stay a sheet opened from the layout, not a route.
 6. `/reports` — month view and XLSX/PDF export through `download()`.
 7. **Retire** `dts-app.tsx` and `globals.css`.
 
-### F2 — New surfaces
+### F2 — New surfaces _(done)_
 
-1. `/dashboard` — needs **two small backend additions**. `GET /dashboard/summary` returns only
-   `{ total, byStatus, overdue }` today:
-   - pending counts per division, computed with the same `documentScopeFor` predicate so the chart
-     reconciles with the list;
-   - a scoped recent-activity feed from `workflow_events`.
-2. `/my-work` — the assigned-to-me queue (`GET /documents/assigned` exists; nothing renders it).
-3. `/audit` — viewer with user/action/date filters over `GET admin/audit-events`.
+1. `/dashboard` — needed **two small backend additions**, both landed: pending counts per division
+   computed with the same `documentScopeFor` predicate, and a scoped recent-activity feed from
+   `workflow_events`.
+2. `/my-work` — the assigned-to-me queue over `GET /documents/assigned`.
+3. `/audit` — viewer with user/action/date filters in the URL, over `GET admin/audit-events`.
 4. `/admin/requests`, `/admin/users`, `/admin/organization`.
 5. `/request-account`.
 6. Delete/restore controls (capability-gated); routing-slip download.
-7. Inline preview — **needs a backend change**. The content endpoint always sends
-   `Content-Disposition: attachment`. Add an inline variant, only for `CLEAN` PDFs and images, with
-   `nosniff` and a restrictive CSP.
+7. Inline preview, for `CLEAN` PDFs and images only.
+
+**Three backend additions F2 turned out to need**, beyond the two the plan anticipated for the
+dashboard. Each is noted here because the plan said the remaining endpoints already existed:
+
+- `GET /documents/attachments/:versionId/content` — the inline variant the plan called for (item 7).
+  `inline` disposition, `nosniff`, a `default-src 'none' … sandbox` CSP, `private, no-store`, and its
+  own audit action (`attachment.previewed`): reading a document on screen and taking a copy away are
+  different events. It shares one fail-closed read path with the download, so the quarantine check
+  cannot be present on one route and missing from the other.
+- `GET /documents/deleted` — a scoped list of soft-deleted documents, filtered per row by the same
+  `DOCUMENT_RESTORE` predicate `restore()` applies. Item 6 needed it: a deleted row is invisible to
+  every other read, and `POST /documents/:id/restore` requires its current `version`, so without this
+  list the restore endpoint has no reachable caller.
+- `GET /audit-events` now answers `{ items, total, limit, offset }` instead of a bare array. An audit
+  viewer that cannot say whether it is showing everything or the first page is worse than one that
+  refuses to answer, and it matches the registry's page shape so both lists drive one `DataTable`.
 
 ### Later (after F2)
 

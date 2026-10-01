@@ -169,6 +169,44 @@ export async function upload<T>(path: string, body: FormData): Promise<T> {
 }
 
 /**
+ * Bytes fetched to be shown on the page rather than saved.
+ *
+ * `url` is a `blob:` URL — the only way to render a credentialed response in an `<img>` or an
+ * `<iframe>`, both of which issue their own uncredentialed request when pointed at a cross-site
+ * URL and would get a 401. `release` has to be called when the view goes away: an object URL is
+ * held by the document until it is revoked, so skipping it keeps every previewed file in memory
+ * for the life of the tab.
+ */
+export interface InlineContent {
+  url: string;
+  mediaType: string;
+  release: () => void;
+}
+
+/**
+ * Fetches a response for display in the page.
+ *
+ * The sibling of {@link download}: same credentials, same error envelope, but it hands back a URL
+ * instead of pushing the bytes at the browser's save dialog. Kept here rather than in the
+ * attachment feature because it is the same transport concern — screens should no more construct
+ * an object URL than they should set a CSRF header.
+ */
+export async function inlineContent(path: string): Promise<InlineContent> {
+  const response = await request(path, { method: 'GET' });
+  if (!response.ok) throw await errorFrom(response);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  return {
+    url,
+    // The server's Content-Type is authoritative — it is the type that was verified from the
+    // bytes on upload — and `blob.type` is derived from it, so either would do; this reads the
+    // header so the decision stays visibly the server's.
+    mediaType: response.headers.get('content-type') ?? blob.type,
+    release: () => URL.revokeObjectURL(url),
+  };
+}
+
+/**
  * Parses the filename the server chose. Prefers RFC 5987 `filename*` (which carries non-ASCII
  * names) over the plain `filename`, and keeps only the basename so a crafted header cannot steer
  * the save anywhere but the download folder.

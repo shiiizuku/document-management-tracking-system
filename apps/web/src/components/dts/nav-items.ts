@@ -1,4 +1,14 @@
-import { FileSpreadsheet, FileText, Inbox, LayoutDashboard, type LucideIcon } from 'lucide-react';
+import {
+  Building2,
+  FileSpreadsheet,
+  FileText,
+  Inbox,
+  LayoutDashboard,
+  ScrollText,
+  UserPlus,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import type { Capability } from '@dts/contracts';
 
 /**
@@ -6,8 +16,7 @@ import type { Capability } from '@dts/contracts';
  *
  * Kept as data in a plain module rather than as markup inside the sidebar for two reasons: the
  * gating and matching rules below are the part worth testing, and they are testable here without
- * a router or a rendered tree; and adding a route in a later phase is then a one-line change in
- * one place.
+ * a router or a rendered tree; and adding a route is then a one-line change in one place.
  */
 export interface NavItem {
   href: string;
@@ -18,14 +27,50 @@ export interface NavItem {
    * authenticated user may enter — the API still scopes what they find inside.
    */
   capability?: Capability;
+  /**
+   * The heading this item sits under. Omitted for the everyday screens, which need no heading
+   * because they are the default — a lone "Workspace" label above the first four items would be
+   * chrome explaining the obvious.
+   */
+  section?: string;
 }
+
+/** The heading the administrative routes sit under. One constant, so the group cannot split. */
+export const ADMIN_SECTION = 'Administration';
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/my-work', label: 'My work', icon: Inbox },
   { href: '/reports', label: 'Reports', icon: FileSpreadsheet, capability: 'REPORT_VIEW' },
-  // F2 adds /audit and the /admin group here, each with its capability.
+  {
+    href: '/audit',
+    label: 'Audit trail',
+    icon: ScrollText,
+    capability: 'AUDIT_VIEW',
+    section: ADMIN_SECTION,
+  },
+  {
+    href: '/admin/requests',
+    label: 'Account requests',
+    icon: UserPlus,
+    capability: 'ACCOUNT_REQUEST_REVIEW',
+    section: ADMIN_SECTION,
+  },
+  {
+    href: '/admin/users',
+    label: 'Users',
+    icon: Users,
+    capability: 'USER_MANAGE',
+    section: ADMIN_SECTION,
+  },
+  {
+    href: '/admin/organization',
+    label: 'Organization',
+    icon: Building2,
+    capability: 'ORG_MANAGE',
+    section: ADMIN_SECTION,
+  },
 ];
 
 /**
@@ -37,6 +82,27 @@ export const NAV_ITEMS: readonly NavItem[] = [
  */
 export const visibleNavItems = (can: (capability: Capability) => boolean): NavItem[] =>
   NAV_ITEMS.filter((item) => item.capability === undefined || can(item.capability));
+
+/**
+ * The visible items grouped for rendering, in declaration order.
+ *
+ * Derived rather than stored as a nested structure, so the list above stays a flat table that
+ * `visibleNavItems` and the active-route matcher can read without walking a tree. The important
+ * property is that a group with no visible items disappears entirely: a user who holds `AUDIT_VIEW`
+ * and nothing else must see one administrative item, not an empty "Administration" heading — which
+ * is precisely what a hardcoded heading in the sidebar would produce.
+ */
+export const navSections = (
+  can: (capability: Capability) => boolean,
+): { section: string | undefined; items: NavItem[] }[] => {
+  const groups: { section: string | undefined; items: NavItem[] }[] = [];
+  for (const item of visibleNavItems(can)) {
+    const last = groups.at(-1);
+    if (last !== undefined && last.section === item.section) last.items.push(item);
+    else groups.push({ section: item.section, items: [item] });
+  }
+  return groups;
+};
 
 /**
  * Whether a nav item is the one currently open.

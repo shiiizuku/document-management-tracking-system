@@ -9,7 +9,7 @@ import type {
   WorkflowAction,
   WorkflowStatus,
 } from '@dts/contracts';
-import { api } from '@/lib/api';
+import { api, download } from '@/lib/api';
 
 /**
  * Everything the browser knows about documents.
@@ -143,6 +143,7 @@ const documentKeys = {
     [...documentKeys.lists(), { ...filters, page }] as const,
   detail: (id: string) => [...documentKeys.all, 'detail', id] as const,
   revisions: (id: string) => [...documentKeys.all, 'revisions', id] as const,
+  deleted: () => [...documentKeys.all, 'deleted'] as const,
 };
 
 /**
@@ -209,6 +210,10 @@ export function invalidateDocument(client: QueryClient, id?: string): void {
     void client.invalidateQueries({ queryKey: documentKeys.revisions(id) });
   }
   void client.invalidateQueries({ queryKey: documentKeys.lists() });
+  // Deletion and restore move a row between the registry and the deleted list, so the two are
+  // always settled together: a restored document that is still listed as deleted is a row the
+  // user can press Restore on twice.
+  void client.invalidateQueries({ queryKey: documentKeys.deleted() });
 }
 
 export interface WorkflowCommand {
@@ -290,6 +295,74 @@ export function useRouteDocument(id: string) {
       }),
     onSuccess: () => invalidateDocument(client, id),
     onError: () => invalidateDocument(client, id),
+  });
+}
+
+/**
+ * The documents this user could restore.
+ *
+ * A deleted document is invisible to every other read path — the registry omits it and the detail
+ * route answers 404 — so this list is the only way to reach one, and the only source of the
+ * `version` that `useRestoreDocument` has to send. Enabled on demand rather than always: it is
+ * read by one dialog, and fetching a deleted-items list for every visit to the registry would ask
+ * a question nobody on screen has.
+ */
+export function useDeletedDocuments(enabled: boolean) {
+  return useQuery({
+    queryKey: documentKeys.deleted(),
+    queryFn: () => api<DocumentListItem[]>('/documents/deleted'),
+    enabled,
+  });
+}
+
+/**
+ * Logically deletes a document.
+ *
+ * `expectedVersion` is required for the same reason every other mutation carries it: deleting a
+ * document someone else has just moved on is exactly the mistake optimistic concurrency exists to
+ * stop. The row is not destroyed — {@link useRestoreDocument} reverses this — but it leaves every
+ * list and its own detail route, so callers navigate away on success.
+ */
+export function useDeleteDocument(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ expectedVersion }: { expectedVersion: number }) =>
+      api<DocumentListItem>(`/documents/${id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ expectedVersion }),
+      }),
+    // The detail query is invalidated too, so a user who stays on the page gets the "not
+    // available" state rather than a cached copy of a document that no longer exists.
+    onSuccess: () => invalidateDocument(client, id),
+    onError: () => invalidateDocument(client, id),
+  });
+}
+
+/** Reverses a logical deletion, returning the document to the registry. */
+export function useRestoreDocument() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, expectedVersion }: { id: string; expectedVersion: number }) =>
+      api<DocumentListItem>(`/documents/${id}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({ expectedVersion }),
+      }),
+    onSuccess: (_restored, { id }) => invalidateDocument(client, id),
+    onError: (_error, { id }) => invalidateDocument(client, id),
+  });
+}
+
+/**
+ * Downloads the printable routing slip — the dossier that travels with the physical document.
+ *
+ * Through `download()` rather than a link for the same reason as every other export: the request
+ * needs the session cookie, and a refusal must appear beside the button instead of replacing the
+ * page with an error document.
+ */
+export function useRoutingSlip() {
+  return useMutation({
+    mutationFn: ({ id, trackingNumber }: { id: string; trackingNumber: string }) =>
+      download(`/documents/${id}/routing-slip.pdf`, `routing-slip-${trackingNumber}.pdf`),
   });
 }
 

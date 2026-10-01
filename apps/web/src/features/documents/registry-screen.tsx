@@ -16,6 +16,7 @@ import { PriorityLabel, StatusBadge, documentTypeLabel } from '@/components/dts/
 import { useDivisions } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { CreateDocumentDialog } from './create-document-dialog';
+import { DeletedDocumentsDialog } from './deleted-documents-dialog';
 import {
   DOCUMENT_PAGE_SIZE,
   DOCUMENT_TYPES,
@@ -184,7 +185,14 @@ export function RegistryScreen() {
         eyebrow="Registry"
         title="Documents"
         count={documents.data?.total}
-        actions={can('DOCUMENT_CREATE') ? <CreateDocumentDialog /> : null}
+        actions={
+          <>
+            {/* Recovery sits beside the registry because that is the list a deleted document left,
+                and it is the only way back to one. */}
+            {can('DOCUMENT_RESTORE') ? <DeletedDocumentsDialog /> : null}
+            {can('DOCUMENT_CREATE') ? <CreateDocumentDialog /> : null}
+          </>
+        }
       />
 
       <FilterBar

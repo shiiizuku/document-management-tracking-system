@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ScanStatus } from '@dts/contracts';
-import { api, download, upload } from '@/lib/api';
+import { api, download, inlineContent, upload, type InlineContent } from '@/lib/api';
 import { invalidateDocument } from '@/features/documents/queries';
 
 /**
@@ -84,8 +84,44 @@ export function useDownloadAttachment(documentId: string) {
   });
 }
 
+/**
+ * Fetches a version's bytes for the in-page preview.
+ *
+ * A mutation rather than a query, and deliberately: the result owns an object URL that has to be
+ * released, and a cached query would hand the same URL to a second viewer after the first one
+ * revoked it. Modelled as an action the viewer performs once, whose result the viewer then owns.
+ */
+export function usePreviewAttachment(documentId: string) {
+  return useMutation({
+    mutationFn: (version: AttachmentVersion): Promise<InlineContent> =>
+      inlineContent(`/documents/${documentId}/attachments/${version.id}/content`),
+  });
+}
+
 /** Whether a version's bytes may leave the quarantine. Only a clean scan clears it. */
 export const isDownloadable = (status: ScanStatus): boolean => status === 'CLEAN';
+
+/**
+ * The media types the browser is asked to render in place.
+ *
+ * Mirrors the API's own preview allow-list. Duplicated across the seam on purpose: the server
+ * refuses anything else with a 415, so the cost of this list being wrong is a button that fails
+ * rather than a file served unsafely — and the alternative, offering Preview on every attachment
+ * and letting a third of them error, is worse than the duplication.
+ */
+const PREVIEWABLE_MEDIA_TYPES: ReadonlySet<string> = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+]);
+
+/** Whether this version can be shown on the page: cleared by the scanner, and a renderable type. */
+export const isPreviewable = (version: AttachmentVersion): boolean =>
+  isDownloadable(version.scanStatus) && PREVIEWABLE_MEDIA_TYPES.has(version.mediaType);
+
+/** Whether a preview should render as an image rather than in a document frame. */
+export const isImageMediaType = (mediaType: string): boolean => mediaType.startsWith('image/');
 
 const SCAN_LABELS: Record<ScanStatus, string> = {
   PENDING: 'Scan pending',

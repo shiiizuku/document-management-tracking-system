@@ -140,12 +140,15 @@ correlation-ID middleware, a PII-redacting structured logger, and the Zod pipe.
 | Forms        | react-hook-form + `zodResolver` over `@dts/contracts` |
 | Tests        | Vitest + Testing Library + jsdom                      |
 
-**The rebuild's parity phase is done** (F0 and F1 of
-[frontend-rebuild-plan.md](frontend-rebuild-plan.md)): `DtsApp` and the bespoke `globals.css` are
-gone, and there is one design system. Two App Router groups divide the app by who may enter:
+**The rebuild is done** (F0–F2 of [frontend-rebuild-plan.md](frontend-rebuild-plan.md)): `DtsApp` and
+the bespoke `globals.css` are gone, there is one design system, and every surface the MVP boundary
+names is routed. Two App Router groups divide the app by who may enter:
 
 - `app/(public)` — sign in, and the account request form.
-- `app/(app)` — everything behind the session gate, inside the shared `AppShell`.
+- `app/(app)` — everything behind the session gate, inside the shared `AppShell`: the dashboard, the
+  registry and a document's own route, `/my-work`, `/reports`, `/audit`, and the `/admin` console
+  (account requests, users, organization). Notifications stay a sheet opened from the shell rather
+  than a route of their own.
 
 Data lives in per-feature query modules under `src/features/<domain>/queries.ts`, each owning its
 own query keys _and_ its invalidation, so screens never see a cache key and the realtime adapter
@@ -154,7 +157,10 @@ can invalidate a document without knowing how documents are cached. The shared l
 shadcn primitives they are built from are owned source in `src/components/ui/`.
 
 Capabilities come from the `capabilities[]` that `/auth/me` returns — the client never derives
-authority from `role`.
+authority from `role`. The same list gates the navigation, whose administrative group disappears
+entirely rather than showing a heading over nothing, and `<RequireCapability>` on each admin route.
+Both are courtesies: the API enforces the identical capability on every request, so the point is that
+nobody is shown a screen whose every action would be refused.
 
 ## 6 · Shared contracts
 
@@ -251,7 +257,14 @@ Decisions 89–134 of CONTEXT.md, realized as:
   depth ([ADR-0003](adr/0003-identifier-strategy.md)).
 - **Uploads.** An allow-list verified by magic bytes, a size ceiling, a server-generated storage
   key (the uploaded filename is untrusted display data), and a SHA-256 digest per version.
-- **Downloads fail closed.** A version that is not `CLEAN` is never served.
+- **Downloads fail closed.** A version that is not `CLEAN` is never served. The in-page preview route
+  shares that one read path rather than repeating it, so the quarantine check cannot be present on one
+  and missing from the other; it serves only browser-renderable types, with `nosniff`, a
+  `default-src 'none' … sandbox` CSP and `private, no-store`, into a sandboxed frame. Reading bytes on
+  screen and taking a copy away are separate audit actions.
+- **Deletion is logical and reversible.** A deleted document leaves every read path, including its own
+  route; the only way back is `GET /documents/deleted`, itself filtered per row by the same scoped
+  `DOCUMENT_RESTORE` predicate the restore endpoint applies.
 - **Exports.** Formula-injection-safe XLSX and safe filenames; reports and routing slips render
   from authoritative server data.
 - **Errors and logs.** Generic client messages, correlation IDs retained for support, and
@@ -259,7 +272,7 @@ Decisions 89–134 of CONTEXT.md, realized as:
 
 ## 10 · Testing and CI
 
-Forty-six test files across three Vitest projects:
+Sixty-six test files across three Vitest projects:
 
 | Suite                                                       | What it proves                                                                                                                |
 | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -295,16 +308,16 @@ all persisted to Postgres. The runtime is fully wired — attachment bytes go to
 storage port, the worker auto-scans each upload through ClamAV and records the verdict, and
 notifications fan out over an authenticated WebSocket gateway fed by Redis.
 
-**Frontend: partially built, now being rebuilt.** The operational workspace works — login, the
-registry with server-driven filters/sort/pagination/search, document create, the detail panel with
-timeline and allowed-actions bar, metadata edit with revision history, forward/route, attachments
-with scan-gated download, the live notifications inbox, and monthly reports with XLSX/PDF export.
-The F0 foundation of the shadcn rebuild has landed.
+**Frontend: rebuilt and feature-complete for the pilot.** The whole shadcn rebuild has landed — the
+operational workspace (login, registry, document route, attachments with scan-gated download and
+inline preview, notifications, reports), the scope-aware dashboard and assigned-work queue, the audit
+viewer, the admin console, the public account-request form, and capability-gated delete/restore with
+the routing-slip download.
 
-**Not yet built:** the admin/organization console, the request-an-account screen, the audit-trail
-viewer, the real scope-aware dashboard, delete/restore controls, and inline PDF/image preview —
-every backing endpoint already exists. Phase 7 (acceptance, backup rehearsal, handover) has not
-started.
+**Not yet built:** the ⌘K command palette, and Phase 7 itself — acceptance, the axe and
+responsive/browser sweeps, Playwright E2E, the backup-and-restore rehearsal, and handover. The
+policy register's `OPEN` and `PROVISIONAL` rows also have to reach `AGREED` before readiness
+sign-off.
 
 The current task-level truth is always [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md), not
 this section.

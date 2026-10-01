@@ -257,6 +257,35 @@ export class InMemoryDocumentsRepository {
     );
   }
 
+  findByIdIncludingDeleted(id: string): Promise<DocumentRow | null> {
+    return Promise.resolve(this.documents.get(id) ?? null);
+  }
+
+  softDelete(id: string, expectedVersion: number): Promise<DocumentRow | null> {
+    return Promise.resolve(this.applyVersioned(id, expectedVersion, { deletedAt: now() }));
+  }
+
+  /**
+   * Mirrors the SQL guard rather than reusing {@link applyVersioned}, which refuses a deleted row:
+   * restore is the one mutation that requires the row to *be* deleted.
+   */
+  restore(id: string, expectedVersion: number): Promise<DocumentRow | null> {
+    const row = this.documents.get(id);
+    if (row === undefined || row.deletedAt === null || row.version !== expectedVersion)
+      return Promise.resolve(null);
+    const next = { ...row, deletedAt: null, version: row.version + 1, updatedAt: now() };
+    this.documents.set(id, next);
+    return Promise.resolve(next);
+  }
+
+  listDeleted(actor: AuthorizationActor): Promise<DocumentRow[]> {
+    return Promise.resolve(
+      [...this.documents.values()].filter(
+        (row) => row.deletedAt !== null && this.authorization.canRead(actor, this.resource(row)),
+      ),
+    );
+  }
+
   relocate(
     id: string,
     expectedVersion: number,

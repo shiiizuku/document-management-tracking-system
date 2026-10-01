@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -109,6 +110,16 @@ export function LoginForm() {
 
         <p className="text-xs text-muted-foreground">
           Access is monitored and recorded in the audit trail.
+        </p>
+
+        <p className="text-sm text-muted-foreground">
+          No account yet?{' '}
+          <Link
+            href="/request-account"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Request access
+          </Link>
         </p>
       </form>
     </Form>

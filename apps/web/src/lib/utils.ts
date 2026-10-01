@@ -12,3 +12,18 @@ import { twMerge } from 'tailwind-merge';
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+/**
+ * How a SCREAMING_SNAKE enum value reads to a person: `RECORDS_STAFF` becomes "Records staff".
+ *
+ * The API serves roles, account-request statuses and release methods as enum members, and four
+ * screens plus the account menu need the same sentence-cased rendering of them. Mechanical rather
+ * than a lookup table on purpose — a hand-written label per member would be a second vocabulary to
+ * keep in step with the contract's, and these names are already written to be read.
+ *
+ * Display only. Authority is never derived from one of these strings; capabilities decide that.
+ */
+export function enumLabel(value: string): string {
+  const words = value.replaceAll('_', ' ').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}

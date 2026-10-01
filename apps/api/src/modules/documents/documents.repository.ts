@@ -516,6 +516,22 @@ export class DocumentsRepository {
       .then((rows) => rows.map((row) => row.document));
   }
 
+  /**
+   * Soft-deleted documents still inside the caller's scope, newest deletion first.
+   *
+   * Restoring a document needs its id *and* its current version, and a deleted row is invisible to
+   * every other read path — so without this list the restore endpoint is only reachable by someone
+   * who kept a URL and guessed a version number. Scoped by the same `documentScopeFor` predicate
+   * as the registry, because the deleted-items view must not widen what anyone can see.
+   */
+  async listDeleted(actor: AuthorizationActor): Promise<DocumentRow[]> {
+    return this.database
+      .select()
+      .from(documents)
+      .where(and(isNotNull(documents.deletedAt), documentScopeFor(actor)))
+      .orderBy(desc(documents.deletedAt), desc(documents.id));
+  }
+
   /** Moves a document to a new division/section under the optimistic-version guard. */
   async relocate(
     id: string,
