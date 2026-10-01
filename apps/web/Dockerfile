@@ -6,6 +6,8 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/contracts/tsconfig.json packages/contracts/tsconfig.json
+COPY packages/contracts/src packages/contracts/src
 RUN npm ci
 COPY packages/contracts packages/contracts
 COPY apps/web apps/web

@@ -58,11 +58,16 @@ services:
       retries: 20
       start_period: 90s
 
+  # Applies migrations once against a live database, then exits; the api waits for it
+  # to succeed. Runs the COMPILED migrator (`dist/`) because the runtime image carries
+  # no `src/`, and from `working_dir` apps/api so the migrator's relative
+  # `migrationsFolder: './drizzle'` resolves to the drizzle/ the image copies in.
   migrate:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    command: npm run db:migrate -w @dts/api
+    working_dir: /app/apps/api
+    command: node dist/database/migrate.js
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
     depends_on:
@@ -95,7 +100,7 @@ services:
       clamav: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:4000/api/v1/health/ready']
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4000/api/v1/health/ready']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -122,7 +127,7 @@ services:
     depends_on:
       api: { condition: service_healthy }
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:4001/ready']
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4001/ready']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -140,7 +145,7 @@ services:
     depends_on:
       api: { condition: service_healthy }
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/']
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/']
       interval: 10s
       timeout: 5s
       retries: 12
