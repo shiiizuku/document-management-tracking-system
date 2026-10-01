@@ -6,22 +6,26 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 
 ---
 
-## Phase status (updated 2026-09-29)
+## Phase status (updated 2026-10-01)
 
 | Phase                              | Backend            | Frontend      | Notes                                                                 |
 | ---------------------------------- | ------------------ | ------------- | --------------------------------------------------------------------- |
 | 0 — Foundations                    | ✅ done            | n/a           | Cold-boot + IT sign-off are external gates (see `policy-register.md`) |
-| 1 — Identity & Organization        | ✅ done            | ⏳ deferred   | Merged in PR #39; frontend intentionally deferred                      |
-| 2 — Document registry              | ✅ done            | ⏳ deferred   | Aggregate is Postgres-backed, `DtsApplicationService` retired (PR #40) |
-| 3 — Workflow & routing             | ◑ mostly done      | ⏳ deferred   | Transitions, assignment, routing/forwarding, sharing, work queue persisted (PR #41); parallel-route completion semantics deferred (open policy) |
-| 4 — Files & scanning               | ◑ persistence done | ⬜ not started | `file_records`/`file_versions` + `signature_events` persisted; bytes behind a `StoragePort` (in-memory adapter); MinIO adapter + ClamAV scan worker deferred (need running services) |
-| 5 — Outbox, notifications, dashboard | ◑ mostly done    | ⬜ not started | Notifications persisted in the domain tx; outbox **relay + BullMQ worker** run against real Redis; dashboard summary scoped. Realtime WS gateway deferred |
-| 6 — Reports, routing slip, audit UI | ✅ done            | ⏳ deferred   | Monthly report (JSON/PDF/XLSX), routing-slip PDF, and audit query (`user`/`action`/`from`/`to` + pagination) all Postgres-backed and audited; every export logged (`feat/phase-6-reports-audit`). UI deferred |
+| 1 — Identity & Organization        | ✅ done            | ⬜ not started | Backend merged in PR #39. Frontend still owes: admin/org console, request-an-account screen |
+| 2 — Document registry              | ✅ done            | ◑ mostly done | Aggregate Postgres-backed, `DtsApplicationService` retired (PR #40). UI: registry list/filters/sort/pagination/search, create+org picker, detail+timeline, metadata edit, forward/route all built (PRs #51–#56); delete/restore UI remains |
+| 3 — Workflow & routing             | ◑ mostly done      | ◑ mostly done | Transitions, assignment, routing/forwarding, sharing, work queue persisted (PR #41); parallel-route completion semantics deferred (open policy). UI: allowed-actions bar + forward/route built; work-queue view remains |
+| 4 — Files & scanning               | ✅ done            | ◑ mostly done | `file_records`/`file_versions` + `signature_events` persisted; MinIO adapter + ClamAV auto-scan worker wired. UI: upload + scan badges + gated download built (PR #53); inline PDF/image preview remains |
+| 5 — Outbox, notifications, dashboard | ✅ done          | ◑ partial     | Notifications persisted in the domain tx; outbox **relay + BullMQ worker** on real Redis; realtime WS gateway live. UI: notifications inbox + live updates built (PR #50); scope-aware dashboard (pending-by-division, overdue, recent activity) still owed |
+| 6 — Reports, routing slip, audit UI | ✅ done            | ◑ partial     | Monthly report (JSON/PDF/XLSX), routing-slip PDF, audit query all Postgres-backed and audited (`feat/phase-6-reports-audit`). UI: reports view + XLSX/PDF export built (PR #54); routing-slip download control + audit-trail viewer remain |
 | 7 — Hardening & readiness          | ⬜ not started     | ⬜ not started |                                                                       |
 
-Legend: ✅ done · ◑ partial · ⏳ deferred (planned for a later phase) · ⬜ not started. **Frontend is
-deferred across the board** by an explicit decision (`docs/phase-1-completion-report.md`); the
-backend is being driven to durability first, with the UI to follow.
+Legend: ✅ done · ◑ partial · ⏳ deferred (planned for a later phase) · ⬜ not started. **The frontend
+was deferred backend-first** by an explicit decision (`docs/phase-1-completion-report.md`); as of
+2026-10-01 the operational workspace UI has been built out (PRs #50–#56 — notifications, registry
+controls, org picker, attachments, reports, metadata edit, routing). The remaining UI surfaces are the
+**admin/organization console**, the **request-an-account screen**, the **audit-trail viewer**, the
+**scope-aware dashboard**, **delete/restore controls**, and **inline file preview** — plus all of
+Phase 7.
 
 ---
 
