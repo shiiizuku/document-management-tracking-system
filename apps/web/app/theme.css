@@ -1,0 +1,91 @@
+/*
+ * Tailwind + shadcn theme for the rebuilt UI (F0).
+ *
+ * This file is imported ONLY by the (app) route group, never by the legacy `/` route, which keeps
+ * its own globals.css. That separation is what stops Tailwind's preflight from resetting the
+ * bespoke screens while both exist. See docs/frontend-rebuild-plan.md (F0/F1).
+ *
+ * The brand values below are copied verbatim from globals.css so the rebuild is visually
+ * indistinguishable from the screens it replaces. `--dts-*` are the source of truth; the shadcn
+ * semantic names alias them so stock shadcn components inherit the brand without being patched.
+ */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
+@import 'tailwindcss';
+
+:root {
+  /* Brand palette, verbatim from globals.css */
+  --dts-ink: #17231e;
+  --dts-muted: #68756f;
+  --dts-paper: #f4f3ed;
+  --dts-card: #fff;
+  --dts-line: #dcded7;
+  --dts-green: #175c43;
+  --dts-green2: #237a5a;
+  --dts-pale: #e3eee8;
+  --dts-gold: #c49a45;
+  --dts-danger: #a63d3d;
+
+  /* shadcn semantic aliases */
+  --background: var(--dts-paper);
+  --foreground: var(--dts-ink);
+  --card: var(--dts-card);
+  --card-foreground: var(--dts-ink);
+  --popover: var(--dts-card);
+  --popover-foreground: var(--dts-ink);
+  --primary: var(--dts-green);
+  --primary-foreground: #fff;
+  --secondary: var(--dts-pale);
+  --secondary-foreground: var(--dts-green);
+  --muted: var(--dts-pale);
+  --muted-foreground: var(--dts-muted);
+  --accent: var(--dts-gold);
+  --accent-foreground: var(--dts-ink);
+  --destructive: var(--dts-danger);
+  --destructive-foreground: #fff;
+  --border: var(--dts-line);
+  --input: var(--dts-line);
+  --ring: var(--dts-green2);
+  --radius: 0.625rem;
+}
+
+/*
+ * `inline` resolves the var() at build time so utilities such as bg-background and text-primary
+ * are generated from the aliases above.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --font-serif: 'DM Serif Display', Georgia, serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+  }
+}
