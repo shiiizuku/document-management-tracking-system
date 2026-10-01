@@ -7,6 +7,10 @@
     "moduleResolution": "Bundler",
     "jsx": "preserve",
     "incremental": true,
+    // `baseUrl` is inherited from tsconfig.base.json and resolves to the REPO ROOT, which would
+    // send `@/*` to the wrong tree. Re-anchoring it here is what makes the alias mean `apps/web`.
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
     "plugins": [{ "name": "next" }]
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

@@ -28,6 +28,45 @@ export const roleSchema = z.enum([
   'STAFF_MEMBER',
   'VIEWER',
 ]);
+
+/**
+ * Every capability the system can grant.
+ *
+ * Capability — never role — is the unit of authority. The API's role table resolves a signed-in
+ * user's role to a subset of this list and returns it from `/auth/me`; the client gates its
+ * navigation and controls on that array and never re-derives permission from `role`. Both sides
+ * resolving against one enum is what stops a capability from being renamed on the server while a
+ * nav item still gates on the old string, or a screen from gating on a capability no role holds.
+ *
+ * Which roles hold which capabilities deliberately stays on the server (policy register P-11,
+ * still provisional): that mapping is a policy decision, and shipping it to the browser would
+ * invite the client to anticipate the server's answer instead of asking for it.
+ */
+export const capabilitySchema = z.enum([
+  'DOCUMENT_CREATE',
+  'DOCUMENT_EDIT',
+  'DOCUMENT_ACCEPT',
+  'DOCUMENT_REQUEST_REVISION',
+  'DOCUMENT_RESUBMIT',
+  'DOCUMENT_SUBMIT_FOR_SIGNATURE',
+  'DOCUMENT_SIGN',
+  'DOCUMENT_PREPARE_RELEASE',
+  'DOCUMENT_RELEASE',
+  'DOCUMENT_ARCHIVE',
+  'DOCUMENT_DELETE',
+  'DOCUMENT_RESTORE',
+  'DOCUMENT_ASSIGN',
+  'REPORT_VIEW',
+  'AUDIT_VIEW',
+  'FILE_SCAN_RECORD',
+  'USER_MANAGE',
+  'ORG_MANAGE',
+  'ACCOUNT_REQUEST_REVIEW',
+]);
+
+/** The capability names as a list, for exhaustiveness checks over the whole set. */
+export const CAPABILITIES = capabilitySchema.options;
+
 export const documentDirectionSchema = z.enum(['INCOMING', 'OUTGOING']);
 export const documentPrioritySchema = z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']);
 export const releaseMethodSchema = z.enum(['MAILED', 'EMAILED', 'PICKED_UP', 'DELIVERED']);
@@ -248,17 +287,42 @@ export const shareDocumentSchema = z.object({
 // version starts PENDING, and a scanner may only ever report a resolved outcome — it
 // can never push a version back into the pending state (mirrors the domain service's
 // `Exclude<FileScanStatus, 'PENDING'>` contract).
-export const fileScanStatusSchema = z.enum(['CLEAN', 'INFECTED', 'SCAN_FAILED', 'PENDING_RETRY']);
+/**
+ * Every scan state a stored file version can hold, matching the `scan_status` database enum.
+ *
+ * The client needs the whole set, including `PENDING`: a freshly uploaded version sits there
+ * until the scanner reports, and that is precisely the state the UI has to render as "not yet
+ * downloadable" rather than fall through as an unrecognised string.
+ */
+export const scanStatusSchema = z.enum([
+  'PENDING',
+  'PENDING_RETRY',
+  'CLEAN',
+  'INFECTED',
+  'SCAN_FAILED',
+]);
+
+/**
+ * What a scanner may report back. Derived from the full set rather than listed again, so a new
+ * scan state cannot be added above without a decision about whether a scanner can report it.
+ * `PENDING` is excluded because it is the initial state the system assigns, not an outcome.
+ */
+export const fileScanStatusSchema = scanStatusSchema.exclude(['PENDING']);
 export const recordScanSchema = z.object({ status: fileScanStatusSchema });
 
 export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
 export type WorkflowAction = z.infer<typeof workflowActionSchema>;
 export type Role = z.infer<typeof roleSchema>;
+export type Capability = z.infer<typeof capabilitySchema>;
+export type DocumentDirection = z.infer<typeof documentDirectionSchema>;
+export type DocumentPriority = z.infer<typeof documentPrioritySchema>;
+export type ReleaseMethod = z.infer<typeof releaseMethodSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentMetadataInput = z.infer<typeof updateDocumentMetadataSchema>;
 export type AssignDocumentInput = z.infer<typeof assignDocumentSchema>;
 export type RouteDocumentInput = z.infer<typeof routeDocumentSchema>;
 export type ShareDocumentInput = z.infer<typeof shareDocumentSchema>;
+export type ScanStatus = z.infer<typeof scanStatusSchema>;
 export type FileScanResult = z.infer<typeof fileScanStatusSchema>;
 export type RecordScanInput = z.infer<typeof recordScanSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
