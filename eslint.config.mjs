@@ -11,7 +11,7 @@ export default tseslint.config(
       '**/drizzle/meta/**',
       'minio/**',
       '**/*.config.ts',
-      'eslint.config.mjs',
+      '**/*.config.mjs',
       'packages/contracts/test/**',
     ],
   },
