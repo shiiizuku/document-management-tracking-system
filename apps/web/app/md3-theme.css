@@ -174,6 +174,13 @@
   --md-inverse-surface: var(--md-neutral-20);
   --md-inverse-on-surface: var(--md-neutral-96);
   --md-scrim: var(--md-neutral-0);
+  /*
+   * The scrim as it is actually painted: MD3 puts it at 32%. This is a named token rather than a
+   * `bg-scrim/32` opacity modifier for a reason worth knowing — `--md-scrim` resolves through
+   * nested `var()`s, so Tailwind cannot statically rewrite it into a `color-mix`, and it drops the
+   * modifier instead of failing. `bg-scrim/32` emits a fully OPAQUE scrim and blacks out the page.
+   */
+  --md-scrim-veil: color-mix(in oklab, var(--md-neutral-0) 32%, transparent);
   --md-shadow: var(--md-neutral-0);
 
   /* ----------------------------------------------------------------------------------------------
@@ -628,6 +635,7 @@
   --color-inverse-surface: var(--md-inverse-surface);
   --color-inverse-on-surface: var(--md-inverse-on-surface);
   --color-scrim: var(--md-scrim);
+  --color-scrim-veil: var(--md-scrim-veil);
 
   /* Tonal elevation as backgrounds: `bg-elevation-2`. No shadow utility required. */
   --color-elevation-0: var(--md-elevation-0);
@@ -749,6 +757,16 @@
   --ease-emphasized-decelerate: var(--md-ease-emphasized-decelerate);
   --ease-emphasized-accelerate: var(--md-ease-emphasized-accelerate);
 
+  /*
+   * There is deliberately no `--duration-*` block to match the easings above. Tailwind v4 has a
+   * theme namespace for `ease-*` but NOT for `duration-*`, which takes a bare number of
+   * milliseconds or an arbitrary value and nothing else. A `duration-short-2` class therefore
+   * matches no utility, generates no CSS, and leaves Tailwind's own 150ms default in place — with
+   * no error, which is how it survived on Button, Card and the appearance panel unnoticed.
+   *
+   * Components spell the duration `duration-(--md-duration-short-2)` instead. Keep that shape.
+   */
+
   /* Density, as `h-control`, `px-control`, `p-card`, `gap-card` and friends. */
   --spacing-control: var(--md-density-control-px);
   --spacing-control-gap: var(--md-density-control-gap);
@@ -757,6 +775,32 @@
   --spacing-section: var(--md-density-section-gap);
   --height-control: var(--md-density-control-h);
   --size-control: var(--md-density-control-h);
+}
+
+@layer base {
+  /*
+   * THE DEFAULT BORDER COLOUR.
+   *
+   * Tailwind v4 changed the default border colour from v3's grey to `currentColor`, so a bare
+   * `border` or `border-b` — which is what most of the unmodified shadcn components in `ui/` carry
+   * — paints the element's TEXT colour. That is `on-surface`: tone 10 in light, tone 90 in dark.
+   * The registry's row dividers were painting at L 0.90 on an L 0.17 surface in dark mode, a
+   * near-white grid, where `--border` (outline-variant) is L 0.30.
+   *
+   * The fix belongs here rather than in each component for the same reason the bridge above
+   * exists: it is one rule, it is the actual root cause, and it covers the next registry component
+   * added as well as the nine already affected (alert, command, dialog, dropdown-menu, select,
+   * sheet, table). An explicit `border-<colour>` utility still wins — it lands in the utilities
+   * layer, which outranks this.
+   *
+   * `outline-variant`, not `outline`: see the bridge note. A divider wants the quieter token.
+   */
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    border-color: var(--border);
+  }
 }
 
 @layer utilities {

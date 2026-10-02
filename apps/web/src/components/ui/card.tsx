@@ -35,7 +35,7 @@ const cardVariants = cva(
     'rounded-[var(--md-density-card-radius)]',
     'text-card-foreground',
     // Cards are a cross-fade target when the user changes accent, mode or density. Colour only.
-    'transition-[background-color,border-color,box-shadow] duration-medium-1 ease-standard',
+    'transition-[background-color,border-color,box-shadow] duration-(--md-duration-medium-1) ease-standard',
   ],
   {
     variants: {

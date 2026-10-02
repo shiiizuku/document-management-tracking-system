@@ -244,10 +244,33 @@ that way — a rule that reads two axes at once is the first crack.
 them for tooling and is *not* the build's source of truth (this project is Tailwind v4 — `@theme`
 is). If you change one, change both.
 
-**One gotcha worth remembering.** `tailwind-merge` does not know the MD3 type roles, so it files
-`text-label-large` under *text colour* and `cn('text-label-large', 'text-primary-foreground')`
-silently drops the font size. `src/lib/utils.ts` extends it with the fifteen roles. Add a role to
-the stylesheet and you must add it there too — nothing will error; it will just go missing.
+### Four traps, all of which fail silently
+
+Every one of these was found on a real screen after the port had been reviewed and merged. None of
+them errors; each just quietly does the wrong thing.
+
+**`tailwind-merge` does not know the MD3 names.** It files `text-label-large` under *text colour*,
+so `cn('text-label-large', 'text-primary-foreground')` drops the font size. It also does not know
+`ease-standard`, so `cn('ease-standard', 'ease-linear')` keeps *both* and lets stylesheet order
+decide. `src/lib/utils.ts` extends it with the fifteen type roles, the shadow and shape scales, and
+the six easings. Add a token to the stylesheet and you must add it there too.
+
+**There is no `duration-*` theme namespace in Tailwind v4.** `ease-*` has one; `duration-*` does
+not — it takes a bare number of milliseconds or an arbitrary value, full stop. A `duration-short-2`
+class matches nothing, generates nothing, and leaves Tailwind's 150ms default in place. Write
+`duration-(--md-duration-short-2)` instead. (Button, Card and the appearance panel all carried the
+dead form for a while, which is why every control animated at 150ms rather than at its token.)
+
+**An opacity modifier on a role silently disappears.** `--md-scrim` resolves through nested
+`var()`s, so Tailwind cannot rewrite it into a `color-mix` and drops the `/32` rather than failing:
+`bg-scrim/32` emits a fully **opaque** scrim and blacks out the page. Where a role needs a fixed
+alpha, give it its own token — `--md-scrim-veil` is the scrim at MD3's 32%.
+
+**Tailwind v4's default border colour is `currentColor`, not grey.** A bare `border` or `border-b`
+— which is what most unmodified registry components carry — therefore paints `on-surface`: tone 10
+in light, tone 90 in dark. The registry's row dividers were rendering as a near-white grid in dark
+mode. `md3-theme.css` sets the `*` default to `var(--border)` in `@layer base`; an explicit
+`border-<role>` utility still wins over it.
 
 ---
 
@@ -257,7 +280,8 @@ the stylesheet and you must add it there too — nothing will error; it will jus
 `secondary` · `tertiary` · `error` (all four with the same four-part shape) · `surface`
 `on-surface` `on-surface-variant` `surface-dim` `surface-bright` ·
 `surface-container-{lowest,low,DEFAULT,high,highest}` · `outline` `outline-variant` ·
-`inverse-surface` `inverse-on-surface` `inverse-primary` `scrim`
+`inverse-surface` `inverse-on-surface` `inverse-primary` `scrim` `scrim-veil` (the scrim at 32%,
+which is what overlays actually use)
 
 **Elevation** — `bg-elevation-{0..5}`, `shadow-md3-{1..5}`
 
@@ -266,7 +290,7 @@ the stylesheet and you must add it there too — nothing will error; it will jus
 **Shape** — `rounded-md3-{none,xs,sm,md,lg,xl}`, `rounded-full`
 
 **Motion** — `ease-{standard,emphasized}[-decelerate|-accelerate]`,
-`duration-{short,medium,long}-{1..4}`
+`duration-(--md-duration-{short,medium,long}-{1..4})` — note the shape; see the traps above
 
 **Density** — `h-control` `size-control` `px-control` `gap-control-gap` `p-card` `gap-card-gap`
 `gap-section`

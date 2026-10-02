@@ -192,7 +192,7 @@ export function AppearancePanel() {
               onClick={() => set({ accent: a.id })}
               className={cn(
                 'md3-state-layer flex items-center gap-2 rounded-md3-md border p-2 text-left',
-                'transition-[background-color,border-color] duration-short-2 ease-standard',
+                'transition-[background-color,border-color] duration-(--md-duration-short-2) ease-standard',
                 accent === a.id
                   ? 'border-primary bg-secondary-container text-on-secondary-container'
                   : 'border-outline-variant text-on-surface',
@@ -221,7 +221,7 @@ export function AppearancePanel() {
               onClick={() => set({ density: d.id })}
               className={cn(
                 'md3-state-layer flex items-center justify-between gap-2 rounded-md3-md border px-3 py-2 text-left',
-                'transition-[background-color,border-color] duration-short-2 ease-standard',
+                'transition-[background-color,border-color] duration-(--md-duration-short-2) ease-standard',
                 density === d.id
                   ? 'border-primary bg-secondary-container text-on-secondary-container'
                   : 'border-outline-variant text-on-surface',

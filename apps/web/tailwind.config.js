@@ -122,6 +122,8 @@ const config = {
         'inverse-surface': 'var(--md-inverse-surface)',
         'inverse-on-surface': 'var(--md-inverse-on-surface)',
         scrim: 'var(--md-scrim)',
+        /* The scrim at MD3's 32%. A token rather than a `/32` modifier — see the bridge guide. */
+        'scrim-veil': 'var(--md-scrim-veil)',
 
         // --- Tonal elevation, as background colours --------------------------------------------
         // `bg-elevation-2` instead of `shadow-md`. This is the heart of the MD3 port: the five
