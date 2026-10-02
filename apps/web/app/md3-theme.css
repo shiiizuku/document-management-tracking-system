@@ -34,7 +34,27 @@
 
 @custom-variant dark (&:is(.dark *, .dark, [data-theme='dark'] *, [data-theme='dark']));
 
-:root {
+/*
+ * Everything from here to the end of the elevation block is declared for `:root` AND for any
+ * element carrying `data-accent` — which is the mechanism, not a flourish.
+ *
+ * A custom property is substituted once, on the element that declares it, and descendants inherit
+ * the RESULT. So `--md-primary-40: oklch(40% var(--md-chroma-primary) var(--md-hue-primary))`
+ * declared only at `:root` resolves there and nowhere else: a nested element may override
+ * `--md-hue-primary` all it likes, the ramp above it has already been computed and frozen. That is
+ * why the nine accent swatches in the appearance menu all painted the CURRENT accent — the hue
+ * changed per swatch and nothing downstream looked at it again.
+ *
+ * Matching `[data-accent]` as well re-runs the derivation on that element, so a `data-accent` put
+ * on a span re-seeds the whole palette for that span and `bg-primary` inside it is a true preview.
+ * The nine presets below are also `[data-accent='…']`, equal specificity but later in the file, so
+ * a named preset still beats the Sage defaults declared here.
+ *
+ * Only the colour-derived tokens live in this block. Shape, motion and density follow in a
+ * `:root`-only block, because a swatch has no business re-declaring the app's density.
+ */
+:root,
+[data-accent] {
   /* ----------------------------------------------------------------------------------------------
    * PALETTE SEEDS — six palettes, two numbers each. Everything in the next section is derived.
    * `[data-accent]` overrides these; the defaults here are the Sage (brand) preset.
@@ -221,7 +241,13 @@
   --md-shadow-5:
     0 4px 4px 0 color-mix(in oklab, var(--md-shadow) 30%, transparent),
     0 8px 12px 6px color-mix(in oklab, var(--md-shadow) 15%, transparent);
+}
 
+/*
+ * Scheme-independent scales. `:root` only: these do not derive from the accent, and an accent
+ * preview must not reset the app's density inside its own subtree.
+ */
+:root {
   /* ----------------------------------------------------------------------------------------------
    * SHAPE SCALE
    * -------------------------------------------------------------------------------------------- */
@@ -424,8 +450,16 @@
  * surface by adding white without washing it out, so MD3 lifts it by adding hue.
  * ============================================================================================== */
 
+/*
+ * The descendant selectors are for the accent previews. A nested `[data-accent]` re-declares the
+ * LIGHT roles above it (they share a block with the ramps it needs), so without these a swatch
+ * would paint light-scheme roles while the rest of the page is dark. `.dark [data-accent]` is
+ * (0,2,0) against the light block's (0,1,0), so the dark roles win on the swatch too.
+ */
 .dark,
-[data-theme='dark'] {
+[data-theme='dark'],
+.dark [data-accent],
+[data-theme='dark'] [data-accent] {
   --md-primary: var(--md-primary-80);
   --md-on-primary: var(--md-primary-20);
   --md-primary-container: var(--md-primary-30);
@@ -477,7 +511,9 @@
  * `data-theme` once the user has chosen, and this block stops applying.
  */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(.light) {
+  /* Same pairing as the explicit-dark block above, for the accent previews. */
+  :root:not([data-theme='light']):not(.light),
+  :root:not([data-theme='light']):not(.light) [data-accent] {
     --md-primary: var(--md-primary-80);
     --md-on-primary: var(--md-primary-20);
     --md-primary-container: var(--md-primary-30);
@@ -542,7 +578,15 @@
  *     quieter one, or the table turns into a grid of boxes.
  * ============================================================================================== */
 
-:root {
+/*
+ * `[data-accent]` for the same reason the palette block carries it: `--primary: var(--md-primary)`
+ * is substituted where it is declared, so a bridge declared only at `:root` would hand every
+ * descendant the root accent's colour no matter what `--md-primary` says locally — and `bg-primary`
+ * goes through this alias, not through `--md-primary` directly. Re-aliasing on the accented element
+ * is what carries a re-seeded palette into the shadcn utility names.
+ */
+:root,
+[data-accent] {
   --background: var(--md-surface-container-low);
   --foreground: var(--md-on-surface);
 
