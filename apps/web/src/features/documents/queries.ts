@@ -27,7 +27,21 @@ import { api, download } from '@/lib/api';
 
 export const DOCUMENT_PAGE_SIZE = 20;
 
-export const DOCUMENT_TYPES = ['MEMORANDUM', 'FOI_REQUEST', 'SPECIAL_ORDER', 'LETTER'] as const;
+/**
+ * The document classes the office tracks (policy register P-01).
+ *
+ * The column is free text in the database and the contract caps it at 80 characters, so this list
+ * is the whole of the restriction: it fills the create form and the registry filter, and nothing
+ * server-side refuses a value outside it. Adding a class is a one-line change here; removing one
+ * does not retire the documents already filed under it.
+ */
+export const DOCUMENT_TYPES = [
+  'MEMORANDUM',
+  'FOI_REQUEST',
+  'SPECIAL_ORDER',
+  'LETTER',
+  'DENR_8888_ACTION_CENTER',
+] as const;
 
 /** Fields the API will sort by. Anything else is rejected server-side, so this list is the truth. */
 export const DOCUMENT_SORT_FIELDS = ['createdAt', 'priority', 'status'] as const;
@@ -305,6 +319,8 @@ export interface MetadataPatch {
   company?: string | null | undefined;
   referenceNumber?: string | null | undefined;
   confidential?: boolean | undefined;
+  /** An ISO instant to set a target date, `null` to clear it. Omitted leaves it alone. */
+  dueAt?: string | null | undefined;
 }
 
 export function useUpdateMetadata(id: string) {

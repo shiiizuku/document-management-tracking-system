@@ -19,6 +19,7 @@ vi.mock('../src/lib/api', async () => {
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/documents',
+  useSearchParams: () => new URLSearchParams(),
   useRouter: () => ({ replace: replaceMock, push: vi.fn() }),
 }));
 

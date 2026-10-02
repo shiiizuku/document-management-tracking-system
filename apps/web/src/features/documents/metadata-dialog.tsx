@@ -8,6 +8,7 @@ import { documentPrioritySchema, updateDocumentMetadataSchema } from '@dts/contr
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { dueDateToIso, isoToDueDate } from './due-date';
 import {
   Dialog,
   DialogContent,
@@ -62,6 +63,8 @@ type MetadataFormValues = {
   company: string;
   referenceNumber: string;
   confidential: boolean;
+  /** `YYYY-MM-DD` as the date input holds it, or `''` for no target date. */
+  dueAt: string;
 };
 
 /** Empty text means "clear this field", which the API expresses as null rather than `''`. */
@@ -113,6 +116,7 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
       company: document.company ?? '',
       referenceNumber: document.referenceNumber ?? '',
       confidential: document.confidential,
+      dueAt: isoToDueDate(document.dueAt),
     },
   });
 
@@ -292,6 +296,20 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
 
             <FormField
               control={form.control}
+              name="dueAt"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Target date</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
               name="confidential"
               render={({ field }) => (
                 <FormItem className="flex items-center gap-2 sm:col-span-2">
@@ -376,6 +394,9 @@ const toPatch = (values: MetadataFormValues) => ({
   company: orNull(values.company),
   referenceNumber: orNull(values.referenceNumber),
   confidential: values.confidential,
+  // `null` clears the target date; an omitted field would leave the old one in place, and the
+  // two mean different things to the patch schema.
+  dueAt: dueDateToIso(values.dueAt) ?? null,
 });
 
 /**

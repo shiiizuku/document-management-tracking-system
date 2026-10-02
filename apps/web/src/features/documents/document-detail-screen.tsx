@@ -13,6 +13,8 @@ import { PriorityLabel, StatusBadge, documentTypeLabel } from '@/components/dts/
 import { AttachmentsSection } from '@/features/attachments/attachments-section';
 import { useSession } from '@/features/session/queries';
 import { ApiError } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { dueLabel, isPastDue } from './due-date';
 import { workflowActionLabel } from './action-labels';
 import { DeleteDocumentDialog } from './delete-document-dialog';
 import { DocumentActions } from './document-actions';
@@ -99,6 +101,7 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
         <Field label="Company / agency" value={detail.company} />
         <Field label="External reference" value={detail.referenceNumber} />
         <Field label="Registered" value={new Date(detail.createdAt).toLocaleDateString()} />
+        <DueField document={detail} />
         {detail.releaseMethod === null ? null : (
           <Field
             label="Released by"
@@ -161,6 +164,40 @@ function RoutingSlipButton({ document }: Readonly<{ document: DocumentDetail }>)
       {slip.isPending ? <Loader2 className="animate-spin" /> : <Printer />}
       Routing slip
     </Button>
+  );
+}
+
+/**
+ * The target date, and how far from it this document is (policy register P-04).
+ *
+ * Counted in whole elapsed calendar days — no working hours, no holidays — which is the whole of
+ * the agreed rule. Overdue is only called out while the document is still live: a released or
+ * archived record that missed its date is history, not a thing anyone can still act on, and
+ * colouring it red forever would train people to ignore the colour.
+ */
+function DueField({ document }: Readonly<{ document: DocumentDetail }>) {
+  if (document.dueAt === null) return <Field label="Target date" value={null} />;
+
+  const label = dueLabel(document.dueAt);
+  const overdue = isPastDue(document.dueAt) && !isClosed(document);
+
+  return (
+    <div>
+      <dt className="text-xs tracking-wide text-muted-foreground uppercase">Target date</dt>
+      <dd className="mt-0.5 text-sm text-foreground">
+        {new Date(document.dueAt).toLocaleDateString()}
+        {label === null ? null : (
+          <span
+            className={cn(
+              'ml-2 text-xs',
+              overdue ? 'font-semibold text-destructive' : 'text-muted-foreground',
+            )}
+          >
+            {label}
+          </span>
+        )}
+      </dd>
+    </div>
   );
 }
 

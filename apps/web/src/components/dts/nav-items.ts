@@ -1,4 +1,5 @@
 import {
+  Archive,
   Building2,
   FileSpreadsheet,
   FileText,
@@ -43,6 +44,21 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/my-work', label: 'My work', icon: Inbox },
   { href: '/reports', label: 'Reports', icon: FileSpreadsheet, capability: 'REPORT_VIEW' },
+  {
+    /*
+     * The archive (policy register P-09). A filtered registry rather than a route of its own:
+     * ARCHIVED is a workflow status, so the list already exists and already scopes itself — a
+     * second screen would be a second place for the scoping to drift.
+     *
+     * Gated on DOCUMENT_ARCHIVE rather than on a role. The decision names "the records role", but
+     * authority here is capability-based by design (the client never reasons from `role`), and the
+     * people who can archive a document are the people who have reason to review the archive.
+     */
+    href: '/documents?status=ARCHIVED',
+    label: 'Archive',
+    icon: Archive,
+    capability: 'DOCUMENT_ARCHIVE',
+  },
   {
     href: '/audit',
     label: 'Audit trail',
@@ -111,5 +127,48 @@ export const navSections = (
  * so a future `/documents-archive` would not. Exact-match alone would unhighlight the whole
  * sidebar as soon as the user opened a record.
  */
-export const isNavItemActive = (pathname: string, href: string): boolean =>
-  pathname === href || pathname.startsWith(`${href}/`);
+export const isNavItemActive = (pathname: string, href: string): boolean => {
+  const path = href.split('?')[0] ?? href;
+  return pathname === path || pathname.startsWith(`${path}/`);
+};
+
+/**
+ * Which single destination is the one currently open.
+ *
+ * Two items now point at `/documents` — the registry and the archive, which is the same list
+ * filtered to ARCHIVED — so "does this item match the path" is no longer enough to pick one. The
+ * more specific item wins: an item whose query is satisfied by the current URL beats one with no
+ * query at all, which is what stops the registry and the archive lighting up together, and what
+ * stops the archive never lighting up because its `?status=` is not part of the pathname.
+ *
+ * Returns the winning href, or null when nothing matches. Taking the whole list rather than
+ * answering per item is the point: "most specific" is not a property any single item has.
+ */
+export const activeNavHref = (
+  pathname: string,
+  search: URLSearchParams,
+  items: readonly NavItem[],
+): string | null => {
+  let best: { href: string; score: number } | null = null;
+
+  for (const item of items) {
+    if (!isNavItemActive(pathname, item.href)) continue;
+
+    const query = new URLSearchParams(item.href.split('?')[1] ?? '');
+    // Every parameter the item names has to be present with that value; an item asking for
+    // ARCHIVED must not match the unfiltered registry.
+    let satisfied = true;
+    let score = 0;
+    for (const [key, value] of query) {
+      if (search.get(key) !== value) {
+        satisfied = false;
+        break;
+      }
+      score += 1;
+    }
+    if (!satisfied) continue;
+    if (best === null || score > best.score) best = { href: item.href, score };
+  }
+
+  return best?.href ?? null;
+};
