@@ -130,7 +130,6 @@ export function CreateDocumentDialog() {
   const divisions = useDivisions();
   const divisionId = form.watch('divisionId');
   const sections = useSections(divisionId || null);
-  const direction = form.watch('direction');
 
   // Default to the user's own division once the list arrives, or to the only one there is. Doing
   // it here rather than in `defaultValues` is what covers the case where the session resolved
@@ -239,7 +238,7 @@ export function CreateDocumentDialog() {
               )}
             />
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-3 [&>*]:min-w-0">
               <FormField
                 control={form.control}
                 name="direction"
@@ -330,9 +329,12 @@ export function CreateDocumentDialog() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  {direction === 'INCOMING' ? (
-                    <FormDescription>Required for an incoming document.</FormDescription>
-                  ) : null}
+                  {/*
+                    No "required for incoming" hint under the field. The shared schema already
+                    says it, in the same words, at the moment it is actually true — a standing
+                    line of grey text repeats that for every clerk filing outgoing mail, who it
+                    does not apply to.
+                  */}
                   <FormMessage />
                 </FormItem>
               )}
@@ -348,7 +350,7 @@ export function CreateDocumentDialog() {
               summary="Priority, section, target date, company, email"
               hasError={hasDetailErrors}
             >
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-3 [&>*]:min-w-0">
                 <FormField
                   control={form.control}
                   name="priority"
@@ -413,7 +415,7 @@ export function CreateDocumentDialog() {
                   name="dueAt"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Target date (optional)</FormLabel>
+                      <FormLabel>Target date</FormLabel>
                       <FormControl>
                         {/*
                           A day in, an instant out. The contract types `dueAt` as a datetime, but the
@@ -433,8 +435,6 @@ export function CreateDocumentDialog() {
                     </FormItem>
                   )}
                 />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="company"
@@ -453,7 +453,7 @@ export function CreateDocumentDialog() {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email address (optional)</FormLabel>
+                      <FormLabel>Email address</FormLabel>
                       <FormControl>
                         {/*
                           `type="email"` for the keyboard it brings up on a phone and for the browser's
@@ -468,9 +468,6 @@ export function CreateDocumentDialog() {
                           value={field.value ?? ''}
                         />
                       </FormControl>
-                      <FormDescription>
-                        Where replies about this document should go.
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -484,7 +481,7 @@ export function CreateDocumentDialog() {
               hasError={hasContentErrors}
             >
               <FormItem>
-                <FormLabel htmlFor="register-attachments">Attachments (optional)</FormLabel>
+                <FormLabel htmlFor="register-attachments">Attachments</FormLabel>
                 <StagedFiles
                   id="register-attachments"
                   files={staged}
@@ -494,9 +491,7 @@ export function CreateDocumentDialog() {
                   }
                   disabled={busy}
                 />
-                <FormDescription>
-                  Files upload once the record exists and the tracking number is assigned.
-                </FormDescription>
+                <FormDescription>Uploaded once the record is saved.</FormDescription>
               </FormItem>
 
               <FormField
@@ -661,15 +656,26 @@ function OptionalSection({
   }, [hasError]);
 
   return (
+    /*
+      A rule and a line of text, not a bordered panel. A filled box inside a dialog that is itself
+      a box reads as a third level of container for what is really just "the rest of this form";
+      a hairline says the same thing with one pixel.
+    */
     <CollapsiblePrimitive.Root
       open={open}
       onOpenChange={setOpen}
-      className="rounded-md3-sm border border-border"
+      className="border-t border-border"
     >
       <CollapsiblePrimitive.Trigger asChild>
         <button
           type="button"
-          className="md3-state-layer flex w-full items-center gap-2 rounded-md3-sm px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          /*
+            Deliberately NOT `md3-state-layer`. That utility lights a trigger while its surface is
+            open, which is right for a menu — the button is "held down" for as long as the menu
+            hangs off it — and wrong for a disclosure, where open is the resting state of the
+            section below and the heading is just a heading. A plain hover is all this wants.
+          */
+          className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-md3-sm px-2 py-2 text-left outline-none transition-colors duration-(--md-duration-short-2) ease-standard hover:bg-on-surface/8 focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             className={cn(
@@ -697,7 +703,7 @@ function OptionalSection({
       </CollapsiblePrimitive.Trigger>
 
       <CollapsiblePrimitive.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-        <div className="flex flex-col gap-3 border-t border-border p-3">{children}</div>
+        <div className="flex flex-col gap-3 pt-1 pb-3">{children}</div>
       </CollapsiblePrimitive.Content>
     </CollapsiblePrimitive.Root>
   );
