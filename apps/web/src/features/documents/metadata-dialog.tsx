@@ -62,6 +62,7 @@ type MetadataFormValues = {
   sender: string;
   company: string;
   referenceNumber: string;
+  email: string;
   confidential: boolean;
   /** `YYYY-MM-DD` as the date input holds it, or `''` for no target date. */
   dueAt: string;
@@ -115,6 +116,7 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
       sender: document.sender ?? '',
       company: document.company ?? '',
       referenceNumber: document.referenceNumber ?? '',
+      email: document.email ?? '',
       confidential: document.confidential,
       dueAt: isoToDueDate(document.dueAt),
     },
@@ -270,10 +272,30 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
               control={form.control}
               name="referenceNumber"
               render={({ field }) => (
-                <FormItem className="sm:col-span-2">
+                <FormItem>
                   <FormLabel>External reference</FormLabel>
                   <FormControl>
                     <Input maxLength={120} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email address</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      maxLength={240}
+                      autoComplete="off"
+                      placeholder="sender@agency.gov.ph"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -393,6 +415,7 @@ const toPatch = (values: MetadataFormValues) => ({
   sender: orNull(values.sender),
   company: orNull(values.company),
   referenceNumber: orNull(values.referenceNumber),
+  email: orNull(values.email),
   confidential: values.confidential,
   // `null` clears the target date; an omitted field would leave the old one in place, and the
   // two mean different things to the patch schema.

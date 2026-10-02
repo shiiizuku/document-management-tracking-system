@@ -109,7 +109,7 @@ describe('CreateDocumentDialog', () => {
           status: 422,
           code: 'VALIDATION_FAILED',
           message: 'Validation failed',
-          details: { fieldErrors: { referenceNumber: ['Already used by another document'] } },
+          details: { fieldErrors: { email: ['Enter a valid email address'] } },
         }),
       ),
     );
@@ -121,7 +121,7 @@ describe('CreateDocumentDialog', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
 
     await waitFor(() =>
-      expect(screen.getByText('Already used by another document')).toBeInTheDocument(),
+      expect(screen.getByText('Enter a valid email address')).toBeInTheDocument(),
     );
     expect(pushMock).not.toHaveBeenCalled();
   });

@@ -47,6 +47,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/**
+ * The filter panel is collapsed unless the screen arrives already filtered, so a test that drives
+ * a filter has to open it the way a user would.
+ */
+const openAdvanced = () => userEvent.click(screen.getByRole('button', { name: /Advanced search/ }));
+
 describe('UsersScreen', () => {
   it('lists accounts with their role and placement named', async () => {
     serve();
@@ -87,6 +93,7 @@ describe('UsersScreen', () => {
   it('narrows the list on the server, not in the browser', async () => {
     serve();
     renderWithQuery(<UsersScreen />);
+    await openAdvanced();
     await waitFor(() => expect(screen.getByLabelText('Search')).toBeInTheDocument());
 
     await userEvent.type(screen.getByLabelText('Search'), 'ana');

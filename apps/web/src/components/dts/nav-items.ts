@@ -82,7 +82,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   },
   {
     href: '/admin/organization',
-    label: 'Organization',
+    label: 'Divisions',
     icon: Building2,
     capability: 'ORG_MANAGE',
     section: ADMIN_SECTION,

@@ -47,6 +47,12 @@ afterEach(() => {
   searchParams.value = new URLSearchParams();
 });
 
+/**
+ * The filter panel is collapsed unless the screen arrives already filtered, so a test that drives
+ * a filter has to open it the way a user would.
+ */
+const openAdvanced = () => userEvent.click(screen.getByRole('button', { name: /Advanced search/ }));
+
 describe('RegistryScreen', () => {
   it('lists a page of documents with its tracking number and status', async () => {
     serve({ items: [documentItem()], total: 1 });
@@ -116,6 +122,7 @@ describe('RegistryScreen', () => {
     renderWithQuery(<RegistryScreen />);
     await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
 
+    await openAdvanced();
     await userEvent.click(screen.getByLabelText('Status'));
     await userEvent.click(screen.getByRole('option', { name: 'pending' }));
 
@@ -128,6 +135,7 @@ describe('RegistryScreen', () => {
     renderWithQuery(<RegistryScreen />);
     await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
 
+    await openAdvanced();
     await userEvent.click(screen.getByLabelText('Priority'));
     await userEvent.click(screen.getByRole('option', { name: 'URGENT' }));
 
@@ -139,6 +147,7 @@ describe('RegistryScreen', () => {
     renderWithQuery(<RegistryScreen />);
     await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
 
+    await openAdvanced();
     await userEvent.type(screen.getByLabelText('Search'), 'memo');
     expect(pushMock).not.toHaveBeenCalled();
 

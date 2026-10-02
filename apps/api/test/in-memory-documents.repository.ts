@@ -87,6 +87,7 @@ export class InMemoryDocumentsRepository {
       id: values.id ?? randomUUID(),
       trackingNumber: values.trackingNumber,
       referenceNumber: values.referenceNumber ?? null,
+      email: values.email ?? null,
       title: values.title,
       type: values.type,
       description: values.description ?? null,

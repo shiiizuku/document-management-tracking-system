@@ -252,6 +252,46 @@
  */
 :root {
   /* ----------------------------------------------------------------------------------------------
+   * THE WORKFLOW SIGNAL SCALE
+   *
+   * A document's status is a four-way traffic signal — waiting / moving / done / closed — and that
+   * is a distinction the accent palette deliberately cannot carry: the whole point of the accent
+   * presets is that `primary` means whatever the user picked, so status cannot be spoken in it.
+   * These four hues are therefore fixed, like `error` is, and for the same reason.
+   *
+   * What they were NOT, until now, is scheme-aware. They were literal light-mode hex values, so in
+   * dark mode a "Pending" pill stayed a pale cream blob on a near-black page, and the two priority
+   * colours failed WCAG AA outright: URGENT measured 2.73:1 and HIGH 4.22:1 against
+   * surface-container-high. (HIGH failed in light mode too, at 3.58:1.)
+   *
+   * `light-dark()` rather than a second block in each of the two dark scopes: `color-scheme` is
+   * already set per mode in theme.css, so the switch exists and one declaration can carry both
+   * values. The container/on-container tone pairs follow MD3's own light-vs-dark convention —
+   * tone 95 on tone 45 in light, tone 30 on tone 90 in dark.
+   * -------------------------------------------------------------------------------------------- */
+
+  /* Waiting on someone: PENDING, FOR_REVISION. */
+  --dts-signal-wait: light-dark(oklch(95% 0.055 85), oklch(32% 0.05 85));
+  --dts-on-signal-wait: light-dark(oklch(45% 0.09 85), oklch(90% 0.06 85));
+  /* Moving: IN_PROCESS, FOR_SIGNATURE, FOR_RELEASE. */
+  --dts-signal-move: light-dark(oklch(92% 0.028 240), oklch(32% 0.045 240));
+  --dts-on-signal-move: light-dark(oklch(45% 0.075 240), oklch(88% 0.05 240));
+  /* Complete: SIGNED, RELEASED. */
+  --dts-signal-done: light-dark(oklch(93% 0.032 160), oklch(32% 0.045 160));
+  --dts-on-signal-done: light-dark(oklch(45% 0.08 160), oklch(89% 0.05 160));
+  /* Closed: ARCHIVED. */
+  --dts-signal-closed: light-dark(oklch(92% 0.004 85), oklch(30% 0.004 85));
+  --dts-on-signal-closed: light-dark(oklch(45% 0.008 85), oklch(87% 0.005 85));
+
+  /*
+   * Priority, which is text on the page rather than a pill, so these are the ON-colours only and
+   * they have to clear 4.5:1 against `surface-container-high` in both schemes — the lightness
+   * stops below are picked for exactly that and are verified in the browser, not guessed.
+   */
+  --dts-priority-urgent: light-dark(oklch(45% 0.16 27), oklch(78% 0.13 27));
+  --dts-priority-high: light-dark(oklch(45% 0.105 70), oklch(82% 0.11 75));
+
+  /* ----------------------------------------------------------------------------------------------
    * SHAPE SCALE
    * -------------------------------------------------------------------------------------------- */
   --md-shape-none: 0px;
@@ -691,6 +731,18 @@
   --color-scrim: var(--md-scrim);
   --color-scrim-veil: var(--md-scrim-veil);
 
+  /* The workflow signal scale, as `bg-signal-wait` / `text-on-signal-wait` and friends. */
+  --color-signal-wait: var(--dts-signal-wait);
+  --color-on-signal-wait: var(--dts-on-signal-wait);
+  --color-signal-move: var(--dts-signal-move);
+  --color-on-signal-move: var(--dts-on-signal-move);
+  --color-signal-done: var(--dts-signal-done);
+  --color-on-signal-done: var(--dts-on-signal-done);
+  --color-signal-closed: var(--dts-signal-closed);
+  --color-on-signal-closed: var(--dts-on-signal-closed);
+  --color-priority-urgent: var(--dts-priority-urgent);
+  --color-priority-high: var(--dts-priority-high);
+
   /* Tonal elevation as backgrounds: `bg-elevation-2`. No shadow utility required. */
   --color-elevation-0: var(--md-elevation-0);
   --color-elevation-1: var(--md-elevation-1);
@@ -829,6 +881,14 @@
   --spacing-section: var(--md-density-section-gap);
   --height-control: var(--md-density-control-h);
   --size-control: var(--md-density-control-h);
+  /*
+   * `h-row` for a table row. It existed as a token from the start but had no utility bound to it,
+   * which is most of why density "did not really work": Button and Card read their tokens, and the
+   * tables — the thing a clerk actually stares at all day, and the whole reason Compact exists —
+   * carried hardcoded padding and never moved.
+   */
+  --height-row: var(--md-density-row-h);
+  --spacing-row: var(--md-density-row-h);
 }
 
 @layer base {
@@ -857,7 +917,79 @@
   }
 }
 
+/*
+ * Disclosure. Radix measures the panel and publishes its height as
+ * `--radix-collapsible-content-height`, which is the only way to animate to `auto` — a height
+ * transition needs two numbers and `auto` is not one. Decelerate open, accelerate shut, like every
+ * other surface that appears and leaves.
+ */
+@keyframes md3-collapsible-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+
+@keyframes md3-collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
 @layer utilities {
+  /*
+   * THE APPEARANCE HANDOVER.
+   *
+   * Switching mode or density repaints most of the page at once, and an instant cut reads as a
+   * glitch rather than as a result — the user cannot tell what changed because nothing appeared to
+   * change, it was simply different. This transitions the whole tree through it, so the new theme
+   * arrives as a movement the eye can follow.
+   *
+   * Applied as a class for the length of the change and then removed, NOT left on permanently.
+   * A standing `transition` on every element in the document would make every hover, focus and
+   * state layer in the app inherit a 300ms lag, which is the opposite of responsive — the one
+   * place a cut is correct is the control the user is pointing at.
+   *
+   * Density is in the property list as well as colour: half the point of Compact is watching the
+   * rows close up, and a height that jumps has not shown the user what it did.
+   */
+  .md3-appearance-switching,
+  .md3-appearance-switching *,
+  .md3-appearance-switching *::before,
+  .md3-appearance-switching *::after {
+    transition-property:
+      background-color, border-color, color, fill, stroke, box-shadow, outline-color, height,
+      min-height, width, padding, margin, gap, font-size, line-height;
+    transition-duration: var(--md-duration-medium-2);
+    transition-timing-function: var(--md-ease-standard);
+  }
+
+  /*
+   * Honour the OS setting, the same way the state layer does: reduced, not removed. The movement
+   * goes, the handover still happens.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .md3-appearance-switching,
+    .md3-appearance-switching *,
+    .md3-appearance-switching *::before,
+    .md3-appearance-switching *::after {
+      transition-duration: 1ms;
+    }
+  }
+
+  .animate-collapsible-down {
+    animation: md3-collapsible-down var(--md-duration-medium-1) var(--md-ease-standard-decelerate);
+  }
+
+  .animate-collapsible-up {
+    animation: md3-collapsible-up var(--md-duration-short-4) var(--md-ease-standard-accelerate);
+  }
+
   /*
    * THE STATE LAYER — one utility instead of a hover colour per variant.
    *

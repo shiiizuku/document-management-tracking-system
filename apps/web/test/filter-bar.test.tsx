@@ -32,11 +32,18 @@ const renderBar = (overrides: Partial<FilterBarProps> = {}) =>
     />,
   );
 
+/**
+ * The filters live behind an "Advanced search" disclosure, collapsed unless something is already
+ * filtered — so a test that wants a control has to open the panel the way a user would.
+ */
+const openAdvanced = () => userEvent.click(screen.getByRole('button', { name: /Advanced search/ }));
+
 describe('FilterBar', () => {
   it('applies a dropdown choice immediately', async () => {
     const onSelectChange = vi.fn();
     renderBar({ onSelectChange });
 
+    await openAdvanced();
     await userEvent.click(screen.getByLabelText('Status'));
     await userEvent.click(screen.getByRole('option', { name: 'Pending' }));
 
@@ -66,6 +73,7 @@ describe('FilterBar', () => {
     const onSubmit = vi.fn();
     renderBar({ search: { value: '', placeholder: 'Search', onChange, onSubmit } });
 
+    await openAdvanced();
     await userEvent.type(screen.getByLabelText('Search'), 'memo');
     expect(onSubmit).not.toHaveBeenCalled();
     expect(onChange).toHaveBeenCalled();
@@ -86,5 +94,24 @@ describe('FilterBar', () => {
   it('offers Clear for a filter it does not own, so no screen can get stuck filtered', () => {
     renderBar({ hasOtherActiveFilters: true });
     expect(screen.getByRole('button', { name: /Clear/ })).toBeInTheDocument();
+  });
+
+  /*
+   * The panel is collapsed by default and open when the screen is already filtered. The second
+   * half is the one that matters: the Archive nav item is `/documents?status=ARCHIVED`, so landing
+   * there to a shut panel would mean a filtered list with no visible reason for it.
+   */
+  it('starts collapsed, but opens itself when a filter is already applied', () => {
+    const { unmount } = renderBar();
+    expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
+    unmount();
+
+    renderBar({ values: { status: 'PENDING' } });
+    expect(screen.getByLabelText('Status')).toBeInTheDocument();
+  });
+
+  it('counts the active filters on the collapsed trigger', () => {
+    renderBar({ values: { status: 'PENDING' } });
+    expect(screen.getByRole('button', { name: /1 filter active/ })).toBeInTheDocument();
   });
 });

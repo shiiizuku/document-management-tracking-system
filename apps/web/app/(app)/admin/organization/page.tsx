@@ -3,7 +3,7 @@ import { OrganizationScreen } from '@/features/org/organization-screen';
 import { RequireCapability } from '@/features/session/require-capability';
 
 export const metadata: Metadata = {
-  title: 'Organization · DTS',
+  title: 'Divisions · DTS',
 };
 
 export default function OrganizationPage() {

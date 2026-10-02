@@ -100,6 +100,7 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
         <Field label="Sender" value={detail.sender} />
         <Field label="Company / agency" value={detail.company} />
         <Field label="External reference" value={detail.referenceNumber} />
+        <Field label="Email address" value={detail.email} />
         <Field label="Registered" value={new Date(detail.createdAt).toLocaleDateString()} />
         <DueField document={detail} />
         {detail.releaseMethod === null ? null : (

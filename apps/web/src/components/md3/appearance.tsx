@@ -60,8 +60,31 @@ function read(): Appearance {
   }
 }
 
-function apply(next: Appearance) {
+/**
+ * The class that makes the repaint a movement rather than a cut, and the timer that takes it off.
+ *
+ * It has to come off: see md3-theme.css — left on, it would put a 300ms transition on every
+ * element in the document and every hover in the app would lag behind the pointer. The timer is
+ * module-level and cleared on each call so that flipping the switch twice quickly extends one
+ * handover instead of ending it early with the first change still mid-flight.
+ */
+const SWITCHING_CLASS = 'md3-appearance-switching';
+const SWITCH_MS = 300;
+let switchingTimer: number | undefined;
+
+function beginSwitch(root: HTMLElement) {
+  root.classList.add(SWITCHING_CLASS);
+  window.clearTimeout(switchingTimer);
+  switchingTimer = window.setTimeout(() => {
+    root.classList.remove(SWITCHING_CLASS);
+  }, SWITCH_MS);
+}
+
+function apply(next: Appearance, animate = false) {
   const root = document.documentElement;
+  // Added BEFORE the attributes change, so the transition is already in force when the values it
+  // is meant to carry are swapped. After, and the first frame has already cut.
+  if (animate) beginSwitch(root);
   root.dataset.accent = next.accent;
   root.dataset.density = next.density;
   // `system` means *no* attribute, which is what lets the `prefers-color-scheme` block in
@@ -114,7 +137,7 @@ export function AppearanceProvider({ children }: Readonly<{ children: React.Reac
   const set = React.useCallback((patch: Partial<Appearance>) => {
     setAppearance((current) => {
       const next = { ...current, ...patch };
-      apply(next);
+      apply(next, true);
       try {
         window.localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(next));
       } catch {
@@ -125,7 +148,7 @@ export function AppearanceProvider({ children }: Readonly<{ children: React.Reac
   }, []);
 
   const reset = React.useCallback(() => {
-    apply(DEFAULT_APPEARANCE);
+    apply(DEFAULT_APPEARANCE, true);
     setAppearance(DEFAULT_APPEARANCE);
     try {
       window.localStorage.removeItem(APPEARANCE_STORAGE_KEY);

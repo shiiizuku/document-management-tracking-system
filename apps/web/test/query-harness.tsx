@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, type RenderResult } from '@testing-library/react';
 import { AppearanceProvider } from '../src/components/md3/appearance';
+import { TooltipProvider } from '../src/components/ui/tooltip';
 
 /**
  * Renders a component tree with its own query cache and the appearance context.
@@ -15,6 +16,10 @@ import { AppearanceProvider } from '../src/components/md3/appearance';
  * component that silently fell back to the default theme would be a worse bug than a loud one. It
  * holds no cross-test state: each render reads localStorage fresh, and jsdom gives every file its
  * own.
+ *
+ * The tooltip provider is here for the same reason and with the same rule: Radix throws without
+ * it, so any component that labels an icon button needs it in scope, and mirroring the real
+ * nesting here means a test never has to know which of them does.
  */
 export function renderWithQuery(ui: ReactNode): RenderResult & { client: QueryClient } {
   const client = new QueryClient({
@@ -27,7 +32,9 @@ export function renderWithQuery(ui: ReactNode): RenderResult & { client: QueryCl
     client,
     ...render(
       <QueryClientProvider client={client}>
-        <AppearanceProvider>{ui}</AppearanceProvider>
+        <AppearanceProvider>
+          <TooltipProvider>{ui}</TooltipProvider>
+        </AppearanceProvider>
       </QueryClientProvider>,
     ),
   };

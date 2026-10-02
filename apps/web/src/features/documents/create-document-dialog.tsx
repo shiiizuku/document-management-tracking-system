@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertCircle, Loader2, Plus } from 'lucide-react';
+import { AlertCircle, Loader2, Paperclip, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import type { z } from 'zod';
 import {
@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { documentTypeLabel } from '@/components/dts/status-badge';
+import { useUploadAttachmentToDocument } from '@/features/attachments/queries';
 import { useDivisions, useSections } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { applyServerErrors } from '@/lib/forms';
@@ -76,6 +77,15 @@ export function CreateDocumentDialog() {
   const { user } = useSession();
   const create = useCreateDocument();
   const [formError, setFormError] = useState<string | null>(null);
+  /*
+   * Files chosen before the document exists. Plain `File` objects held in state, not uploaded:
+   * there is nothing to upload them to until the server assigns an id, and a temporary document
+   * to hold them would be a row that has to be cleaned up when the user presses Cancel.
+   */
+  const [staged, setStaged] = useState<File[]>([]);
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const uploadToDocument = useUploadAttachmentToDocument();
+  const busy = create.isPending || uploadingIndex !== null;
 
   const form = useForm<CreateFormValues, unknown, CreateDocumentInput>({
     resolver: zodResolver(createDocumentSchema),
@@ -106,17 +116,55 @@ export function CreateDocumentDialog() {
     if (fallback) form.setValue('divisionId', fallback);
   }, [divisionId, divisions.data, form, user]);
 
-  const onSubmit = (values: CreateDocumentInput) => {
+  /*
+   * Register, then upload, then go.
+   *
+   * Attachments cannot be posted before the document exists — the endpoint is
+   * `/documents/:id/attachments` and the id is assigned by the server — so files picked here are
+   * held in component state and sent once the record comes back.
+   *
+   * The two halves fail differently, and it matters. A failed CREATE means nothing happened: the
+   * dialog stays open with the server's field errors on it. A failed UPLOAD means the document is
+   * already registered and has a tracking number, so unwinding is not an option and pretending
+   * otherwise would be worse — the record is reported as created, the files that did not attach
+   * are named, and the user lands on the record where the Upload control is waiting. That is why
+   * this awaits each upload rather than firing them in parallel: the first failure is reported
+   * with the filename that caused it, not as one opaque rejection out of five.
+   */
+  const onSubmit = async (values: CreateDocumentInput) => {
     setFormError(null);
-    create.mutate(values, {
-      onSuccess: (document) => {
-        setOpen(false);
-        form.reset();
-        toast.success(`Registered ${document.trackingNumber}`, { description: document.title });
-        router.push(`/documents/${document.id}`);
-      },
-      onError: (error) => setFormError(applyServerErrors(form, error)),
-    });
+
+    let document: Awaited<ReturnType<typeof create.mutateAsync>>;
+    try {
+      document = await create.mutateAsync(values);
+    } catch (error) {
+      setFormError(applyServerErrors(form, error));
+      return;
+    }
+
+    const failed: string[] = [];
+    for (const [index, file] of staged.entries()) {
+      setUploadingIndex(index);
+      try {
+        await uploadToDocument.mutateAsync({ documentId: document.id, file });
+      } catch {
+        failed.push(file.name);
+      }
+    }
+    setUploadingIndex(null);
+
+    setOpen(false);
+    form.reset();
+    setStaged([]);
+
+    if (failed.length === 0) {
+      toast.success(`Registered ${document.trackingNumber}`, { description: document.title });
+    } else {
+      toast.warning(`Registered ${document.trackingNumber}, but some files did not attach`, {
+        description: `${failed.join(', ')} — upload ${failed.length === 1 ? 'it' : 'them'} again from the record.`,
+      });
+    }
+    router.push(`/documents/${document.id}`);
   };
 
   return (
@@ -127,8 +175,8 @@ export function CreateDocumentDialog() {
           Register document
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="max-h-[90vh] gap-3 overflow-y-auto sm:max-w-3xl">
+        <DialogHeader className="gap-0.5">
           <p className="eyebrow">New registry entry</p>
           <DialogTitle>Register document</DialogTitle>
           <DialogDescription>
@@ -137,9 +185,15 @@ export function CreateDocumentDialog() {
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 sm:grid-cols-2">
+          {/*
+            Three columns, not two. Nine of the eleven fields are a short select or a one-line
+            input, and at two columns each of those claimed half the dialog's width while using a
+            fraction of it — the form ran well past a screen for no reason. Grouped by what a clerk
+            holds in mind at once: what the document IS, where it GOES, who it is FROM.
+          */}
+          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3 sm:grid-cols-3">
             {formError === null ? null : (
-              <Alert variant="destructive" className="sm:col-span-2">
+              <Alert variant="destructive" className="sm:col-span-3">
                 <AlertCircle />
                 <AlertTitle>Could not register this document</AlertTitle>
                 <AlertDescription>{formError}</AlertDescription>
@@ -150,7 +204,7 @@ export function CreateDocumentDialog() {
               control={form.control}
               name="title"
               render={({ field }) => (
-                <FormItem className="sm:col-span-2">
+                <FormItem className="sm:col-span-3">
                   <FormLabel>Title</FormLabel>
                   <FormControl>
                     <Input maxLength={240} {...field} />
@@ -305,6 +359,31 @@ export function CreateDocumentDialog() {
 
             <FormField
               control={form.control}
+              name="dueAt"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Target date (optional)</FormLabel>
+                  <FormControl>
+                    {/*
+                      A day in, an instant out. The contract types `dueAt` as a datetime, but the
+                      deadline a clerk sets is a date, so `dueDateToIso` pins it to the end of that
+                      day — see features/documents/due-date.ts for why the end rather than the start.
+                    */}
+                    <Input
+                      type="date"
+                      value={isoToDueDate(field.value)}
+                      onChange={(event) => field.onChange(dueDateToIso(event.target.value))}
+                      onBlur={field.onBlur}
+                      name={field.name}
+                      ref={field.ref}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
               name="sender"
               render={({ field }) => (
                 <FormItem>
@@ -336,39 +415,25 @@ export function CreateDocumentDialog() {
 
             <FormField
               control={form.control}
-              name="referenceNumber"
+              name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>External reference</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="dueAt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Target date (optional)</FormLabel>
+                  <FormLabel>Email address (optional)</FormLabel>
                   <FormControl>
                     {/*
-                      A day in, an instant out. The contract types `dueAt` as a datetime, but the
-                      deadline a clerk sets is a date, so `dueDateToIso` pins it to the end of that
-                      day — see features/documents/due-date.ts for why the end rather than the start.
+                      `type="email"` for the keyboard it brings up on a phone and for the browser's
+                      own hint; the contract validates it properly either way, because a type
+                      attribute is a convenience and not a check.
                     */}
                     <Input
-                      type="date"
-                      value={isoToDueDate(field.value)}
-                      onChange={(event) => field.onChange(dueDateToIso(event.target.value))}
-                      onBlur={field.onBlur}
-                      name={field.name}
-                      ref={field.ref}
+                      type="email"
+                      autoComplete="off"
+                      placeholder="sender@agency.gov.ph"
+                      {...field}
+                      value={field.value ?? ''}
                     />
                   </FormControl>
+                  <FormDescription>Where replies about this document should go.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -378,28 +443,144 @@ export function CreateDocumentDialog() {
               control={form.control}
               name="description"
               render={({ field }) => (
-                <FormItem className="sm:col-span-2">
+                <FormItem className="sm:col-span-3">
                   <FormLabel>Description</FormLabel>
                   <FormControl>
-                    <Textarea rows={4} {...field} value={field.value ?? ''} />
+                    <Textarea rows={3} {...field} value={field.value ?? ''} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            <DialogFooter className="sm:col-span-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <FormItem className="sm:col-span-3">
+              <FormLabel htmlFor="register-attachments">Attachments (optional)</FormLabel>
+              <StagedFiles
+                id="register-attachments"
+                files={staged}
+                onAdd={(added) => setStaged((current) => [...current, ...added])}
+                onRemove={(index) => setStaged((current) => current.filter((_, i) => i !== index))}
+                disabled={busy}
+              />
+              <FormDescription>
+                Files upload once the record exists and the tracking number is assigned.
+              </FormDescription>
+            </FormItem>
+
+            <DialogFooter className="sm:col-span-3">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" disabled={create.isPending}>
-                {create.isPending ? <Loader2 className="animate-spin" /> : null}
-                Register document
+              <Button type="submit" disabled={busy}>
+                {busy ? <Loader2 className="animate-spin" /> : null}
+                {uploadingIndex === null
+                  ? 'Register document'
+                  : `Uploading ${uploadingIndex + 1} of ${staged.length}`}
               </Button>
             </DialogFooter>
           </form>
         </Form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Bytes as a person reads them. Base-10 units, because that is what a file manager shows. */
+const fileSize = (bytes: number): string => {
+  if (bytes < 1000) return `${bytes} B`;
+  const units = ['kB', 'MB', 'GB'];
+  let value = bytes / 1000;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+};
+
+/**
+ * The file picker for registration: choose files now, uploaded after the record is created.
+ *
+ * A list the user can remove from rather than a bare `<input multiple>`, because the native
+ * control REPLACES its selection on every use — picking a second file after the first would
+ * silently drop the first. Appending to our own array and clearing the input is what makes
+ * "choose files" mean add, and what makes picking the same filename twice fire a change event
+ * at all.
+ */
+function StagedFiles({
+  id,
+  files,
+  onAdd,
+  onRemove,
+  disabled,
+}: Readonly<{
+  id: string;
+  files: readonly File[];
+  onAdd: (files: File[]) => void;
+  onRemove: (index: number) => void;
+  disabled: boolean;
+}>) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <input
+        ref={inputRef}
+        id={id}
+        type="file"
+        multiple
+        className="sr-only"
+        disabled={disabled}
+        onChange={(event) => {
+          const picked = Array.from(event.target.files ?? []);
+          if (picked.length > 0) onAdd(picked);
+          event.target.value = '';
+        }}
+      />
+      <div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={() => inputRef.current?.click()}
+        >
+          <Paperclip aria-hidden />
+          Choose files
+        </Button>
+      </div>
+
+      {files.length === 0 ? null : (
+        <ul className="flex flex-col gap-1">
+          {files.map((file, index) => (
+            <li
+              key={`${file.name}-${file.size}-${String(file.lastModified)}`}
+              className="flex items-center gap-2 rounded-md3-sm border border-border px-2 py-1.5"
+            >
+              <Paperclip className="size-4 shrink-0 text-on-surface-variant" aria-hidden />
+              <span className="min-w-0 flex-1 truncate text-body-small">{file.name}</span>
+              <span className="shrink-0 text-label-small text-on-surface-variant">
+                {fileSize(file.size)}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                disabled={disabled}
+                aria-label={`Remove ${file.name}`}
+                onClick={() => onRemove(index)}
+              >
+                <X aria-hidden />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

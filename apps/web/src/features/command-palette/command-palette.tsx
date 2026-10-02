@@ -224,18 +224,23 @@ function PaletteTrigger({ onClick }: Readonly<{ onClick: () => void }>) {
   const chord = useChordLabel();
 
   return (
+    /*
+     * Shaped like the search field it stands in for rather than like a button, and sized to fill
+     * the topbar's centre column: at this width it reads as the place you type, which is the
+     * point — the palette IS the app's search, and a small button beside the notifications bell
+     * does not say so.
+     */
     <Button
       type="button"
       variant="outline"
-      size="sm"
       onClick={onClick}
       aria-label={`Open the command palette (${chord})`}
-      className="gap-2 text-muted-foreground"
+      className="h-control w-full max-w-md justify-start gap-2 rounded-full px-4 font-normal text-muted-foreground"
     >
       <Search aria-hidden />
-      <span className="hidden sm:inline">Search</span>
+      <span className="flex-1 truncate text-left">Search documents and actions</span>
       <kbd
-        className="hidden rounded border border-border bg-muted px-1.5 py-0.5 font-sans text-[10px] font-semibold text-muted-foreground sm:inline"
+        className="hidden shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-sans text-[10px] font-semibold text-muted-foreground sm:inline"
         aria-hidden
       >
         {chord}

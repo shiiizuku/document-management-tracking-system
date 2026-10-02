@@ -79,6 +79,7 @@ export interface DocumentMetadataPatch {
   sender?: string | null;
   company?: string | null;
   referenceNumber?: string | null;
+  email?: string | null;
   confidential?: boolean;
   dueAt?: Date | null;
 }
