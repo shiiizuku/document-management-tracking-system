@@ -47,14 +47,17 @@
  *
  * Matching `[data-accent]` as well re-runs the derivation on that element, so a `data-accent` put
  * on a span re-seeds the whole palette for that span and `bg-primary` inside it is a true preview.
- * The nine presets below are also `[data-accent='…']`, equal specificity but later in the file, so
- * a named preset still beats the Sage defaults declared here.
+ *
+ * `:where()` is what keeps the nine presets below winning. They are `[data-accent='…']` — the same
+ * specificity this selector would otherwise carry, which would leave source order as the only thing
+ * deciding whether a chosen accent or the Sage defaults applied. Zeroing this block's specificity
+ * makes the presets beat it structurally, so moving the preset blocks (they read like seeds and
+ * invite tidying) can no longer silently paint the whole app Sage.
  *
  * Only the colour-derived tokens live in this block. Shape, motion and density follow in a
  * `:root`-only block, because a swatch has no business re-declaring the app's density.
  */
-:root,
-[data-accent] {
+:where(:root, [data-accent]) {
   /* ----------------------------------------------------------------------------------------------
    * PALETTE SEEDS — six palettes, two numbers each. Everything in the next section is derived.
    * `[data-accent]` overrides these; the defaults here are the Sage (brand) preset.
@@ -614,7 +617,14 @@
   --border: var(--md-outline-variant);
   --input: var(--md-outline);
   --ring: var(--md-primary);
+}
 
+/*
+ * `--radius` is shape, not colour, so it stays on `:root` alone — the block above re-runs on every
+ * accented element, and an accent preview re-declaring the app's corner radius for its own subtree
+ * is the same cross-axis leak the palette split exists to avoid.
+ */
+:root {
   --radius: var(--md-shape-md);
 }
 

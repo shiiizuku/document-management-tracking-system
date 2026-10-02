@@ -29,24 +29,39 @@ const MODE_ICON = { light: Sun, dark: Moon, system: Monitor } as const;
  * Accent swatch.
  *
  * The payoff of generating palettes from a hue: `data-accent` is a bare attribute selector in
- * md3-theme.css, not `:root[data-accent]`, so putting it on this span re-seeds the palette for this
- * span alone. The swatch then paints itself with ordinary `bg-primary` / `bg-secondary-container` /
- * `bg-tertiary` utilities and is a true preview — three real roles from the palette the user is
- * about to pick, in the mode they are currently in. No hardcoded hex list to drift out of sync with
- * the stylesheet.
+ * md3-theme.css, not `:root[data-accent]`, so putting it on an element re-seeds the palette for
+ * that element's subtree. The swatch then paints itself with ordinary `bg-primary` / `bg-tertiary`
+ * utilities and is a true preview — two real roles from the palette the user is about to pick, in
+ * the mode they are currently in. No hardcoded hex list to drift out of sync with the stylesheet.
+ *
+ * Two things about the ring, both learned the hard way.
+ *
+ * It sits OUTSIDE the re-seeded element. Inside it, every ring colour would resolve from the
+ * palette being previewed, so the nine hairlines would each be a different hue instead of one
+ * consistent edge, and "selected" would be spoken in the colour of the thing being described
+ * rather than in the page's own.
+ *
+ * And the selected ring is offset rather than inset. `ring-primary` is by definition the colour of
+ * whichever swatch is selected — the selected accent IS the page accent — so an inset ring was
+ * always drawn in exactly the colour of the half beneath it and never showed. Offsetting it onto
+ * the menu surface is what makes it a mark. (The radio dot and `aria-checked` carry the state
+ * regardless; this is the reinforcement, not the signal.)
  */
 function Swatch({ accent, selected }: { accent: Accent; selected: boolean }) {
   return (
     <span
-      data-accent={accent}
       aria-hidden
       className={cn(
-        'flex size-5 shrink-0 overflow-hidden rounded-full ring-1 ring-outline-variant ring-inset',
-        selected && 'ring-2 ring-primary',
+        'flex size-5 shrink-0 overflow-hidden rounded-full',
+        selected
+          ? 'ring-2 ring-primary ring-offset-2 ring-offset-popover'
+          : 'ring-1 ring-outline-variant ring-inset',
       )}
     >
-      <span className="h-full w-1/2 bg-primary" />
-      <span className="h-full w-1/2 bg-tertiary" />
+      <span data-accent={accent} className="flex h-full w-full">
+        <span className="h-full w-1/2 bg-primary" />
+        <span className="h-full w-1/2 bg-tertiary" />
+      </span>
     </span>
   );
 }

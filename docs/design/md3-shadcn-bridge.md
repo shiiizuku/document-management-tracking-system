@@ -240,6 +240,15 @@ and six tokens per density. They are independent *by construction*: palettes der
 chroma so an accent needs no per-mode definition, and density only ever touches spacing. Keep it
 that way — a rule that reads two axes at once is the first crack.
 
+There is exactly one sanctioned exception, and it is worth understanding before you add a second.
+The accent *previews* in the appearance menu put `data-accent` on an element inside the page, which
+re-seeds the palette for that element's subtree — that is how a swatch paints itself in the accent
+it is offering. Because a nested `[data-accent]` re-declares the light roles (they share a block
+with the tonal ramps it needs), the dark blocks carry `.dark [data-accent]` and
+`[data-theme='dark'] [data-accent]` so a preview follows the page's scheme. Those three selectors
+do read mode × accent together. The axes stay independent for the page itself; only a nested
+preview is mode-aware, and only because it has to be.
+
 **Two files own everything.** `app/md3-theme.css` holds the tokens; `tailwind.config.js` mirrors
 them for tooling and is *not* the build's source of truth (this project is Tailwind v4 — `@theme`
 is). If you change one, change both.
