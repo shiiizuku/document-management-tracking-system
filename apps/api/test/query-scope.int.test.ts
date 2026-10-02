@@ -8,10 +8,11 @@ import { Pool } from 'pg';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AuthorizationActor } from '../src/modules/authorization/authorization.policy.js';
-import { documentScopeFor } from '../src/modules/authorization/query-scope.js';
+import { documentIsPending, documentScopeFor } from '../src/modules/authorization/query-scope.js';
 import {
   divisions,
   documentAssignments,
+  documentRoutes,
   documentShares,
   documents,
   sections,
@@ -169,5 +170,73 @@ describe('documentScopeFor / scopeToActor against a real database', () => {
         actor({ id: STAFF_B, role: 'STAFF_MEMBER', divisionId: DIV_B, sectionId: SEC_B1 }),
       ),
     ).toEqual([DOC_B, DOC_ASSIGNED, DOC_SHARED].sort());
+  });
+
+  /**
+   * `PENDING` is the one status with no column behind it: it is the existence of an unaccepted
+   * route (ADR-0005). Every list, dashboard rollup and report that offers it as a filter composes
+   * `documentIsPending`, so this pins what that predicate means against real Postgres — including
+   * that the complement is its exact inverse, which is what stops a "pending" filter and an
+   * "everything else" filter from together showing a document twice or not at all.
+   *
+   * Nested inside the scope suite so it shares its fixtures and its connection pool.
+   */
+  describe('documentIsPending', () => {
+    const pendingIds = async (pending: boolean): Promise<string[]> => {
+      const rows = await db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(documentIsPending(pending));
+      return rows.map((row) => row.id).sort();
+    };
+
+    beforeAll(async () => {
+      // One hop per document: accepted on the section document, outstanding on the division one,
+      // and a for-information copy on the division document that must not change the answer.
+      await db.insert(documentRoutes).values([
+        {
+          documentId: DOC_A_SECTION,
+          toDivisionId: DIV_A,
+          toSectionId: SEC_A1,
+          routedById: CREATOR,
+          acceptedAt: new Date('2026-10-02T08:00:00Z'),
+          acceptedById: CREATOR,
+        },
+        {
+          documentId: DOC_A_DIVISION,
+          toDivisionId: DIV_A,
+          routedById: CREATOR,
+        },
+        {
+          documentId: DOC_B,
+          toDivisionId: DIV_B,
+          toSectionId: SEC_B1,
+          routedById: CREATOR,
+          forInformation: true,
+        },
+      ]);
+    });
+
+    it('counts a document with any unaccepted hop as pending', async () => {
+      // DOC_B's only hop is a for-information copy and is unaccepted: it is an outstanding
+      // acknowledgement, and the document is pending at it. Only the *lead* route gates progress,
+      // which is the workflow engine's concern rather than this predicate's.
+      expect(await pendingIds(true)).toEqual([DOC_A_DIVISION, DOC_B].sort());
+    });
+
+    it('excludes documents whose hops are all accepted, and those with no hops at all', async () => {
+      expect(await pendingIds(false)).toEqual(
+        [DOC_A_SECTION, DOC_A_CONFIDENTIAL, DOC_ASSIGNED, DOC_SHARED].sort(),
+      );
+    });
+
+    it('partitions the table exactly, so the two halves can never disagree', async () => {
+      const [pending, settled, all] = await Promise.all([
+        pendingIds(true),
+        pendingIds(false),
+        db.select({ id: documents.id }).from(documents),
+      ]);
+      expect([...pending, ...settled].sort()).toEqual(all.map((row) => row.id).sort());
+    });
   });
 });

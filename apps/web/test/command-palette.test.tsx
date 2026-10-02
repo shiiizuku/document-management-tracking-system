@@ -198,7 +198,7 @@ describe('CommandPalette', () => {
       await openWithKeyboard();
 
       await waitFor(() =>
-        expect(screen.getByRole('option', { name: 'Accept & begin' })).toBeVisible(),
+        expect(screen.getByRole('option', { name: 'Accept custody' })).toBeVisible(),
       );
       expect(screen.getByRole('option', { name: 'Archive' })).toBeVisible();
       expect(screen.queryByRole('option', { name: /Release document/ })).not.toBeInTheDocument();
@@ -210,7 +210,7 @@ describe('CommandPalette', () => {
       await openWithKeyboard();
 
       await waitFor(() => expect(screen.getByRole('option', { name: 'Reports' })).toBeVisible());
-      expect(screen.queryByRole('option', { name: 'Accept & begin' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: 'Accept custody' })).not.toBeInTheDocument();
     });
 
     it('runs an action that needs no input, with the version it was shown', async () => {
@@ -218,7 +218,7 @@ describe('CommandPalette', () => {
       renderWithQuery(<CommandPalette />);
       await openWithKeyboard();
 
-      await userEvent.click(await screen.findByRole('option', { name: 'Accept & begin' }));
+      await userEvent.click(await screen.findByRole('option', { name: 'Accept custody' }));
 
       await waitFor(() =>
         expect(apiMock).toHaveBeenCalledWith('/documents/doc-1/actions/ACCEPT', {
@@ -267,7 +267,7 @@ describe('CommandPalette', () => {
       await typeInPalette('archive');
 
       await waitFor(() => expect(screen.getByRole('option', { name: 'Archive' })).toBeVisible());
-      expect(screen.queryByRole('option', { name: 'Accept & begin' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: 'Accept custody' })).not.toBeInTheDocument();
     });
   });
 });

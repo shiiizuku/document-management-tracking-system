@@ -22,6 +22,7 @@ if (process.env.ALLOW_DATABASE_RESET !== 'true')
 
 const RECORDS_PASSWORD = 'RecordsPass1234!';
 const STAFF_PASSWORD = 'StaffPass12345!';
+const HEAD_PASSWORD = 'BetaHeadPass12!';
 
 // Two divisions, so "pending by division" has something to divide. The staff member sits in one
 // section of DIV_A and can therefore see strictly less than the records officer.
@@ -65,6 +66,7 @@ describe('scoped dashboard summary against real Postgres', () => {
   let app: INestApplication;
   let records: Session;
   let staff: Session;
+  let betaHead: Session;
   const server = (): Server => app.getHttpServer() as Server;
 
   const login = async (email: string, password: string): Promise<Session> => {
@@ -154,9 +156,24 @@ describe('scoped dashboard summary against real Postgres', () => {
       sectionId: SEC_A,
       canAccessConfidential: false,
     });
+    /*
+     * Beta's own head. Needed because accepting custody is positional: only the unit a hop was
+     * handed to can take it on, so there is no way to produce a workflow event on a Beta document
+     * without someone in Beta — the records officer has office-wide *read* scope and no placement.
+     */
+    await users.insert({
+      email: 'beta-head@dts.local',
+      displayName: 'Beta Head',
+      passwordHash: hashSync(HEAD_PASSWORD, 4),
+      role: 'DIVISION_HEAD',
+      divisionId: DIV_B,
+      sectionId: null,
+      canAccessConfidential: false,
+    });
 
     records = await login('records@dts.local', RECORDS_PASSWORD);
     staff = await login('staff@dts.local', STAFF_PASSWORD);
+    betaHead = await login('beta-head@dts.local', HEAD_PASSWORD);
 
     // Two pending in Alpha/Alpha Section, one pending in Beta. Everything is registered by the
     // records officer, who works across the whole office.
@@ -206,9 +223,10 @@ describe('scoped dashboard summary against real Postgres', () => {
 
   it('feeds recent activity, newest first, naming who acted', async () => {
     const target = await createDoc(DIV_A, SEC_A, 'Alpha three');
+    // Accepted by Alpha's own staff: only the unit a hop was handed to can take it on.
     await request(server())
       .post(`/api/v1/documents/${target.id}/actions/ACCEPT`)
-      .set('Cookie', records.cookies)
+      .set('Cookie', staff.cookies)
       .send({ expectedVersion: target.version })
       .expect(201);
 
@@ -218,7 +236,7 @@ describe('scoped dashboard summary against real Postgres', () => {
       documentId: target.id,
       trackingNumber: target.trackingNumber,
       action: 'ACCEPT',
-      actorName: 'Records Officer',
+      actorName: 'Alpha Staff',
     });
 
     const timestamps = summary.recentActivity.map((entry) => Date.parse(entry.occurredAt));
@@ -233,7 +251,7 @@ describe('scoped dashboard summary against real Postgres', () => {
     const beta = await createDoc(DIV_B, undefined, 'Beta two');
     await request(server())
       .post(`/api/v1/documents/${beta.id}/actions/ACCEPT`)
-      .set('Cookie', records.cookies)
+      .set('Cookie', betaHead.cookies)
       .send({ expectedVersion: beta.version })
       .expect(201);
 

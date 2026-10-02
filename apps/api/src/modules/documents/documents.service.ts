@@ -30,7 +30,12 @@ import {
   WorkflowService,
   type ReleaseMethod,
   type WorkflowAction,
+  type WorkflowActor,
+  type WorkflowDocument,
+  type RouteCustody,
 } from '../workflow/workflow.service.js';
+// The presented vocabulary, which includes the derived `PENDING`; see `TimelineEntry`.
+import type { WorkflowStatus } from '@dts/contracts';
 import {
   DocumentsRepository,
   type DashboardActivityEntry,
@@ -38,6 +43,7 @@ import {
   type DashboardDivisionPending,
   type DocumentMetadataPatch,
   type DocumentRow,
+  type DocumentRouteRow,
   type DocumentSearchFilters,
 } from './documents.repository.js';
 
@@ -77,8 +83,14 @@ export interface TimelineEntry {
   sequence: number;
   actorId: string;
   action: string;
-  fromStatus: DocumentRow['status'] | null;
-  toStatus: DocumentRow['status'];
+  /*
+   * Read as the presented vocabulary, not as the column's. `workflow_events` preserves the status
+   * names that were in force when the event happened, so a hop recorded before the 2026-10-02
+   * revision still says `PENDING` — which is a truthful account of that moment and is why these
+   * columns are free text rather than the live enum.
+   */
+  fromStatus: WorkflowStatus | null;
+  toStatus: WorkflowStatus;
   remarks: string | null;
   occurredAt: Date;
 }
@@ -98,6 +110,14 @@ export interface RouteEntry {
   toSectionId: string | null;
   routedById: string;
   remarks: string | null;
+  /*
+   * The hop's own receipt. `acceptedAt === null` is what makes the document pending at this hop,
+   * and the pair is what the routing slip prints as DATE-TIME RECEIVED — so it is read straight
+   * off the route rather than inferred from the timeline (ADR-0005).
+   */
+  forInformation: boolean;
+  acceptedAt: Date | null;
+  acceptedById: string | null;
   createdAt: Date;
 }
 
@@ -258,7 +278,7 @@ export class DocumentsService {
           description: input.description ?? null,
           priority: input.priority,
           direction: input.direction,
-          status: 'PENDING',
+          status: 'IN_PROCESS',
           sender: input.sender ?? null,
           company: input.company ?? null,
           email: input.email ?? null,
@@ -267,6 +287,25 @@ export class DocumentsService {
           createdById: actor.id,
           confidential: input.confidential,
           dueAt: input.dueAt ? new Date(input.dueAt) : null,
+        },
+        tx,
+      );
+      /*
+       * Registration is not acceptance, and creating a document confers no custody
+       * (decision 154). The unaccepted route row is what records that: it is handed to the
+       * division it was registered for, and the document reads as pending — to that unit, on the
+       * dashboard and in the registry — until someone there takes it on. Writing it here rather
+       * than leaving the document route-less is what makes the derived condition true from the
+       * first second, instead of a document appearing already in hand.
+       */
+      await this.repository.insertRoute(
+        {
+          documentId: created.id,
+          fromDivisionId: null,
+          toDivisionId: created.divisionId,
+          toSectionId: created.sectionId,
+          routedById: actor.id,
+          remarks: null,
         },
         tx,
       );
@@ -311,16 +350,25 @@ export class DocumentsService {
 
   async getDocument(actor: RequestUser, id: string): Promise<DocumentDetail> {
     const row = await this.requireReadable(actor, id);
-    const [timeline, assigneeUserIds, sharedUserIds, releaseMethod, routes, signatures, clean] =
-      await Promise.all([
-        this.repository.listTimeline(id),
-        this.repository.listActiveAssigneeIds(id),
-        this.repository.listSharedUserIds(id),
-        this.repository.findReleaseMethod(id),
-        this.repository.listRoutes(id),
-        this.repository.listSignatures(id),
-        this.cleanFlag(row),
-      ]);
+    const [
+      timeline,
+      assigneeUserIds,
+      sharedUserIds,
+      releaseMethod,
+      routes,
+      signatures,
+      clean,
+      ord,
+    ] = await Promise.all([
+      this.repository.listTimeline(id),
+      this.repository.listActiveAssigneeIds(id),
+      this.repository.listSharedUserIds(id),
+      this.repository.findReleaseMethod(id),
+      this.repository.listRoutes(id),
+      this.repository.listSignatures(id),
+      this.cleanFlag(row),
+      this.repository.isOrdDivision(row.divisionId),
+    ]);
     return {
       ...this.toPublic(row, releaseMethod, clean),
       assigneeUserIds,
@@ -338,6 +386,9 @@ export class DocumentsService {
         toSectionId: route.toSectionId,
         routedById: route.routedById,
         remarks: route.remarks,
+        forInformation: route.forInformation,
+        acceptedAt: route.acceptedAt,
+        acceptedById: route.acceptedById,
         createdAt: route.createdAt,
       })),
       timeline: timeline.map((event) => ({
@@ -345,12 +396,16 @@ export class DocumentsService {
         sequence: event.sequence,
         actorId: event.actorId,
         action: event.action,
-        fromStatus: event.fromStatus,
-        toStatus: event.toStatus,
+        // The vocabulary in force when the event was written; see `TimelineEntry`.
+        fromStatus: event.fromStatus as WorkflowStatus | null,
+        toStatus: event.toStatus as WorkflowStatus,
         remarks: event.remarks,
         occurredAt: event.occurredAt,
       })),
-      allowedActions: this.workflowActionsFor(actor, row),
+      allowedActions: this.workflowActionsFor(actor, row, {
+        ...this.workflowShape(row, clean, ord),
+        routes: routes.map((route) => this.toRouteCustody(route)),
+      }),
     };
   }
 
@@ -369,7 +424,7 @@ export class DocumentsService {
   async allowedActions(actor: RequestUser, id: string): Promise<WorkflowAction[]> {
     const row = await this.repository.findReadableById(actor, id);
     if (row === null) return [];
-    return this.workflowActionsFor(actor, row);
+    return this.workflowActionsFor(actor, row, await this.toWorkflowDocument(row));
   }
 
   // -------------------------------------------------------------- metadata edit
@@ -533,17 +588,67 @@ export class DocumentsService {
 
     try {
       const result = this.workflow.execute(
-        {
-          id: current.id,
-          status: current.status,
-          version: current.version,
-          direction: current.direction,
-          hasCleanCurrentAttachment: currentClean,
-          currentAttachmentVersionId: current.currentFileVersionId,
-          signedAttachmentVersionId: current.signedFileVersionId,
-        },
+        await this.toWorkflowDocument(current),
+        this.toWorkflowActor(actor),
         { action, actorId: actor.id, ...input },
       );
+
+      /*
+       * Acceptance is custody, not lifecycle. It stamps a route row and stops — the document's
+       * status and version are untouched, because nothing about the document changed: a hop that
+       * was outstanding is now taken on (ADR-0005). It is also the one action with a second writer
+       * racing it, so the conditional update is the real guard and this is where it happens.
+       */
+      if (result.acceptedRouteId !== null) {
+        return await this.database.transaction(async (tx) => {
+          const accepted = await this.repository.acceptRoute(result.acceptedRouteId!, actor.id, tx);
+          if (accepted === null)
+            throw new UnprocessableEntityException({
+              code: 'ROUTE_ALREADY_ACCEPTED',
+              message: 'This hop has already been accepted',
+            });
+          /*
+           * Accepting still belongs on the timeline. The status does not move, so the event's
+           * from and to are the same — but "received by the pilot division at 09:14" is exactly
+           * what the slip prints and what the timeline exists to show (decisions 30, 63).
+           */
+          const sequence = await this.repository.nextWorkflowSequence(id, tx);
+          await this.repository.insertWorkflowEvent(
+            {
+              documentId: id,
+              sequence,
+              actorId: actor.id,
+              action,
+              fromStatus: current.status,
+              toStatus: current.status,
+              remarks: result.event.remarks,
+            },
+            tx,
+          );
+          await this.audit.write(
+            {
+              actorId: actor.id,
+              action: 'document.custody-accepted',
+              targetType: 'document',
+              targetId: id,
+              outcome: 'SUCCESS',
+              summary: { routeId: accepted.id, toDivisionId: accepted.toDivisionId },
+            },
+            tx,
+          );
+          await this.outbox.enqueue(
+            {
+              aggregateType: 'document',
+              aggregateId: id,
+              eventType: 'document.custody-accepted',
+              payload: { documentId: id, routeId: accepted.id },
+              idempotencyKey: `document.custody-accepted:${accepted.id}`,
+            },
+            tx,
+          );
+          return this.toPublic(current, null, currentClean);
+        });
+      }
 
       const patch = {
         status: result.document.status,
@@ -918,24 +1023,88 @@ export class DocumentsService {
     return row;
   }
 
-  private workflowActionsFor(actor: RequestUser, row: DocumentRow): WorkflowAction[] {
+  /**
+   * The actions this actor may take on a document, filtered a second time by the authorization
+   * policy.
+   *
+   * The prepared {@link WorkflowDocument} is a required argument rather than something assembled
+   * here: it carries the custody facts, and a stubbed-out `routes: []` would silently report that
+   * nothing is outstanding — offering onward actions on a document nobody has accepted, which is
+   * the exact failure the revision exists to prevent.
+   */
+  private workflowActionsFor(
+    actor: RequestUser,
+    row: DocumentRow,
+    document: WorkflowDocument,
+  ): WorkflowAction[] {
     if (actor.role === 'VIEWER') return [];
     return this.workflow
-      .allowedActions(
-        {
-          id: row.id,
-          status: row.status,
-          version: row.version,
-          direction: row.direction,
-          hasCleanCurrentAttachment: false,
-          currentAttachmentVersionId: row.currentFileVersionId,
-          signedAttachmentVersionId: row.signedFileVersionId,
-        },
-        actor.capabilities,
-      )
+      .allowedActions(document, this.toWorkflowActor(actor))
       .filter((action) =>
         this.authorization.can(actor, this.asResource(row), WORKFLOW_ACTION_CAPABILITIES[action]),
       );
+  }
+
+  /** Everything the engine needs from a document row except its custody hops. */
+  private workflowShape(
+    row: DocumentRow,
+    clean: boolean,
+    ownerDivisionIsOrd: boolean,
+  ): Omit<WorkflowDocument, 'routes'> {
+    return {
+      id: row.id,
+      status: row.status,
+      version: row.version,
+      direction: row.direction,
+      ownerDivisionIsOrd,
+      hasCleanCurrentAttachment: clean,
+      currentAttachmentVersionId: row.currentFileVersionId,
+      signedAttachmentVersionId: row.signedFileVersionId,
+    };
+  }
+
+  private toRouteCustody(route: DocumentRouteRow): RouteCustody {
+    return {
+      id: route.id,
+      toDivisionId: route.toDivisionId,
+      toSectionId: route.toSectionId,
+      forInformation: route.forInformation,
+      acceptedAt: route.acceptedAt,
+    };
+  }
+
+  /**
+   * The actor as the workflow engine sees them.
+   *
+   * Placement is carried alongside capabilities because accepting custody is inherently positional:
+   * a route is handed to a division (or a section within it), and only the unit it names can take
+   * it on. Capabilities alone answer "may this person accept things at all", which is a different
+   * question from "is this one theirs".
+   */
+  private toWorkflowActor(actor: RequestUser): WorkflowActor {
+    return {
+      id: actor.id,
+      divisionId: actor.divisionId,
+      sectionId: actor.sectionId,
+      capabilities: actor.capabilities,
+    };
+  }
+
+  /**
+   * The document as the workflow engine sees it — its two orthogonal axes plus the guards the
+   * release and ORD rules need. Resolved here rather than inside the engine so that service stays
+   * a pure function of its inputs and stays testable without a database.
+   */
+  private async toWorkflowDocument(row: DocumentRow): Promise<WorkflowDocument> {
+    const [clean, routes, ord] = await Promise.all([
+      this.releasableFlag(row),
+      this.repository.listRoutes(row.id),
+      this.repository.isOrdDivision(row.divisionId),
+    ]);
+    return {
+      ...this.workflowShape(row, clean, ord),
+      routes: routes.map((route) => this.toRouteCustody(route)),
+    };
   }
 
   // The row is already proven readable by `findReadableById`, so its confidential/division/

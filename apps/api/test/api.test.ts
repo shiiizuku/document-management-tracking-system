@@ -80,20 +80,37 @@ describe('REST /api/v1 public seam', () => {
       })
       .expect(201);
 
-    expect(created.body.data).toMatchObject({ status: 'PENDING', version: 1 });
+    /*
+     * Registration enters the trunk at IN_PROCESS and confers no custody (decision 154): the
+     * document is *presented* as pending because the route it was registered against is
+     * unaccepted, but the stored status never says so (ADR-0005).
+     */
+    expect(created.body.data).toMatchObject({ status: 'IN_PROCESS', version: 1 });
 
     const allowed = await request(app.getHttpServer())
       .get(`/api/v1/documents/${created.body.data.id}/allowed-actions`)
       .set('Cookie', cookie)
       .expect(200);
-    expect(allowed.body.data).toContain('ACCEPT');
+    // Nothing else is offered while the hop is outstanding — accepting is the way out of it.
+    expect(allowed.body.data).toEqual(['ACCEPT']);
 
     const accepted = await request(app.getHttpServer())
       .post(`/api/v1/documents/${created.body.data.id}/actions/ACCEPT`)
       .set('Cookie', cookie)
       .send({ expectedVersion: 1 })
       .expect(201);
-    expect(accepted.body.data).toMatchObject({ status: 'IN_PROCESS', version: 2 });
+    /*
+     * Acceptance stamps the route and leaves the document alone, so the version does not move.
+     * This is the behaviour that lets several divisions accept the same document independently.
+     */
+    expect(accepted.body.data).toMatchObject({ status: 'IN_PROCESS', version: 1 });
+
+    const afterAccept = await request(app.getHttpServer())
+      .get(`/api/v1/documents/${created.body.data.id}/allowed-actions`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(afterAccept.body.data).not.toContain('ACCEPT');
+    expect(afterAccept.body.data).toContain('COMPLY');
   });
 
   it('never returns inaccessible cross-division documents in search totals', async () => {

@@ -215,14 +215,16 @@ describe('REST /api/v1 document attachments', () => {
       .send({ status: 'CLEAN' })
       .expect(201); // scan does not bump the document version
 
-    await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // -> 3
-    await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 3 }).expect(201); // -> 4
-    const signed = await act(cookie, created.id, 'SIGN', { expectedVersion: 4 }).expect(201); // -> 5
+    // Accepting custody stamps the route row and leaves the document untouched, so the version
+    // does not move here — every expectedVersion below is one lower than before the revision.
+    await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
+    await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
+    const signed = await act(cookie, created.id, 'SIGN', { expectedVersion: 3 }).expect(201); // -> 4
     expect(signed.body.data.signedAttachmentVersionId).toBe(versionId);
-    await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 5 }).expect(201); // -> 6
+    await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 4 }).expect(201); // -> 5
 
     const released = await act(cookie, created.id, 'RELEASE', {
-      expectedVersion: 6,
+      expectedVersion: 5,
       releaseMethod: 'MAILED',
     }).expect(201);
     expect(released.body.data).toMatchObject({ status: 'RELEASED', releaseMethod: 'MAILED' });
@@ -244,18 +246,18 @@ describe('REST /api/v1 document attachments', () => {
       .send({ status: 'CLEAN' })
       .expect(201);
 
-    await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // -> 3
-    await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 3 }).expect(201); // -> 4
-    await act(cookie, created.id, 'SIGN', { expectedVersion: 4 }).expect(201); // -> 5, signs v1
+    await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
+    await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
+    await act(cookie, created.id, 'SIGN', { expectedVersion: 3 }).expect(201); // -> 4, signs v1
 
     // A second version of the same attachment supersedes the signed one and resets clean-state.
     await uploadFile(cookie, created.id, PDF, 'v2.pdf', 'application/pdf', attachmentId).expect(
       201,
-    ); // -> 6
-    await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 6 }).expect(201); // -> 7
+    ); // -> 5
+    await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 5 }).expect(201); // -> 6
 
     const blocked = await act(cookie, created.id, 'RELEASE', {
-      expectedVersion: 7,
+      expectedVersion: 6,
       releaseMethod: 'MAILED',
     }).expect(422);
     expect(blocked.body.error.code).toBe('RELEASE_BLOCKED');
@@ -342,13 +344,13 @@ describe('REST /api/v1 document attachments', () => {
       .send({ status: 'CLEAN' })
       .expect(201);
 
-    await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // -> 3
-    await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 3 }).expect(201); // -> 4
-    await act(cookie, created.id, 'SIGN', { expectedVersion: 4 }).expect(201); // -> 5
-    await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 5 }).expect(201); // -> 6
+    await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
+    await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
+    await act(cookie, created.id, 'SIGN', { expectedVersion: 3 }).expect(201); // -> 4
+    await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 4 }).expect(201); // -> 5
 
     const blocked = await act(cookie, created.id, 'RELEASE', {
-      expectedVersion: 6,
+      expectedVersion: 5,
       releaseMethod: 'MAILED',
     }).expect(422);
     expect(blocked.body.error.code).toBe('RELEASE_BLOCKED');

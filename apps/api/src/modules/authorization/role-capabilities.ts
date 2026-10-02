@@ -23,10 +23,12 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'DOCUMENT_ACCEPT',
     'DOCUMENT_REQUEST_REVISION',
     'DOCUMENT_RESUBMIT',
+    'DOCUMENT_INITIAL',
     'DOCUMENT_SUBMIT_FOR_SIGNATURE',
     'DOCUMENT_SIGN',
     'DOCUMENT_PREPARE_RELEASE',
     'DOCUMENT_RELEASE',
+    'DOCUMENT_COMPLY',
     'DOCUMENT_ARCHIVE',
     // Logical deletion and its reversal are paired and administrator-only (policy register P-11,
     // provisional): the records office has not yet delegated deletion, so it stays with the admin
@@ -51,25 +53,33 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'DOCUMENT_SIGN',
     'DOCUMENT_PREPARE_RELEASE',
     'DOCUMENT_RELEASE',
+    'DOCUMENT_COMPLY',
     'DOCUMENT_ARCHIVE',
     'DOCUMENT_ASSIGN',
     'REPORT_VIEW',
     'FILE_SCAN_RECORD',
   ],
+  // `DOCUMENT_INITIAL` is a division head's endorsement of an outgoing draft, taken before the
+  // Director signs it (ADR-0006). It is held here and nowhere else below: the whole point of
+  // splitting it out of `DOCUMENT_SIGN` is that the two acts belong to two authorities.
   DIVISION_HEAD: [
     'DOCUMENT_CREATE',
     'DOCUMENT_EDIT',
     'DOCUMENT_ACCEPT',
     'DOCUMENT_REQUEST_REVISION',
     'DOCUMENT_RESUBMIT',
+    'DOCUMENT_INITIAL',
     'DOCUMENT_SUBMIT_FOR_SIGNATURE',
     'DOCUMENT_SIGN',
     'DOCUMENT_PREPARE_RELEASE',
     'DOCUMENT_RELEASE',
+    'DOCUMENT_COMPLY',
     'DOCUMENT_ARCHIVE',
     'DOCUMENT_ASSIGN',
     'REPORT_VIEW',
   ],
+  // Complying is recorded by the unit holding the document (decision 163), which is usually the
+  // section staff who actually acted on it.
   STAFF_MEMBER: [
     'DOCUMENT_CREATE',
     'DOCUMENT_EDIT',
@@ -77,6 +87,7 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'DOCUMENT_REQUEST_REVISION',
     'DOCUMENT_RESUBMIT',
     'DOCUMENT_SUBMIT_FOR_SIGNATURE',
+    'DOCUMENT_COMPLY',
   ],
   VIEWER: [],
 };

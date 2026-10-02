@@ -32,7 +32,7 @@ describe('DocumentActions', () => {
       <DocumentActions document={documentDetail({ allowedActions: ['ACCEPT', 'ARCHIVE'] })} />,
     );
 
-    expect(screen.getByRole('button', { name: 'Accept & begin' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accept custody' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Release/ })).not.toBeInTheDocument();
   });
@@ -46,7 +46,7 @@ describe('DocumentActions', () => {
     apiMock.mockResolvedValue(documentDetail({ status: 'IN_PROCESS', version: 4 }));
     renderWithQuery(<DocumentActions document={documentDetail({ version: 3 })} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Accept & begin' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Accept custody' }));
 
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith('/documents/doc-1/actions/ACCEPT', {
@@ -115,7 +115,7 @@ describe('DocumentActions', () => {
     );
     renderWithQuery(<DocumentActions document={documentDetail()} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Accept & begin' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Accept custody' }));
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
@@ -131,10 +131,10 @@ describe('DocumentActions', () => {
     );
     renderWithQuery(<DocumentActions document={documentDetail()} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Accept & begin' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Accept custody' }));
 
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith('Accept & begin failed', {
+      expect(toastError).toHaveBeenCalledWith('Accept custody failed', {
         description: 'Attachment is not signed',
       }),
     );
