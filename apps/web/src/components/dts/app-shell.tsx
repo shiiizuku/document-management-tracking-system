@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { LogOut, Menu } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,7 @@ import { NotificationsSheet } from '@/features/notifications/notifications-sheet
 import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
 import { useLogout, useSession, type SessionUser } from '@/features/session/queries';
 import { cn, enumLabel } from '@/lib/utils';
-import { isNavItemActive, navSections } from './nav-items';
+import { activeNavHref, navSections, visibleNavItems } from './nav-items';
 
 /**
  * The frame every signed-in screen renders inside: brand, primary navigation, and the account
@@ -109,8 +109,16 @@ function Brand() {
  */
 function SidebarNav({ onNavigate = () => undefined }: Readonly<{ onNavigate?: () => void }>) {
   const pathname = usePathname();
+  const search = useSearchParams();
   const { can } = useSession();
   const sections = navSections(can);
+  // Resolved once over the whole visible list, because which item is "current" depends on the
+  // others: the registry and the archive share a path and are told apart by the query.
+  const active = activeNavHref(
+    pathname,
+    new URLSearchParams(search.toString()),
+    visibleNavItems(can),
+  );
 
   return (
     <nav aria-label="Primary" className="flex-1 space-y-4 p-3">
@@ -127,16 +135,16 @@ function SidebarNav({ onNavigate = () => undefined }: Readonly<{ onNavigate?: ()
             </p>
           )}
           {group.items.map((item) => {
-            const active = isNavItemActive(pathname, item.href);
+            const isCurrent = active === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={onNavigate}
-                aria-current={active ? 'page' : undefined}
+                aria-current={isCurrent ? 'page' : undefined}
                 className={cn(
                   'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  active
+                  isCurrent
                     ? 'bg-secondary text-secondary-foreground'
                     : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                 )}

@@ -3,6 +3,7 @@ import type { Capability } from '@dts/contracts';
 import {
   ADMIN_SECTION,
   NAV_ITEMS,
+  activeNavHref,
   isNavItemActive,
   navSections,
   visibleNavItems,
@@ -76,5 +77,42 @@ describe('navigation grouping', () => {
     const can = holding('REPORT_VIEW', 'AUDIT_VIEW', 'USER_MANAGE');
     const grouped = navSections(can).flatMap((group) => group.items);
     expect(grouped).toEqual(visibleNavItems(can));
+  });
+});
+
+/*
+ * The registry and the archive are the same list at the same path, told apart only by the query.
+ * That is why "which item is current" is answered over the whole list rather than per item: on
+ * `/documents?status=ARCHIVED` both items match the path, and only the more specific one is open.
+ */
+describe('activeNavHref', () => {
+  const items = NAV_ITEMS.filter(
+    (item) => item.href === '/documents' || item.href === '/documents?status=ARCHIVED',
+  );
+
+  it('picks the archive when its filter is the one applied', () => {
+    expect(activeNavHref('/documents', new URLSearchParams('status=ARCHIVED'), items)).toBe(
+      '/documents?status=ARCHIVED',
+    );
+  });
+
+  it('picks the plain registry when no filter is applied', () => {
+    expect(activeNavHref('/documents', new URLSearchParams(), items)).toBe('/documents');
+  });
+
+  it('leaves the archive alone under a different filter', () => {
+    expect(activeNavHref('/documents', new URLSearchParams('status=PENDING'), items)).toBe(
+      '/documents',
+    );
+  });
+
+  // A record opened from either list still highlights a list, and the unfiltered one is the
+  // honest answer: the detail route carries no status in its URL.
+  it('keeps a destination highlighted on a document route', () => {
+    expect(activeNavHref('/documents/doc-1', new URLSearchParams(), items)).toBe('/documents');
+  });
+
+  it('matches nothing on an unrelated route', () => {
+    expect(activeNavHref('/reports', new URLSearchParams(), items)).toBeNull();
   });
 });

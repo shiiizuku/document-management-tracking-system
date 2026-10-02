@@ -46,6 +46,7 @@ import { documentTypeLabel } from '@/components/dts/status-badge';
 import { useDivisions, useSections } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { applyServerErrors } from '@/lib/forms';
+import { dueDateToIso, isoToDueDate } from './due-date';
 import { DOCUMENT_TYPES, useCreateDocument } from './queries';
 
 /** Radix cannot hold `''` as a select value, and "no section" is a real choice. */
@@ -341,6 +342,32 @@ export function CreateDocumentDialog() {
                   <FormLabel>External reference</FormLabel>
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="dueAt"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Target date (optional)</FormLabel>
+                  <FormControl>
+                    {/*
+                      A day in, an instant out. The contract types `dueAt` as a datetime, but the
+                      deadline a clerk sets is a date, so `dueDateToIso` pins it to the end of that
+                      day — see features/documents/due-date.ts for why the end rather than the start.
+                    */}
+                    <Input
+                      type="date"
+                      value={isoToDueDate(field.value)}
+                      onChange={(event) => field.onChange(dueDateToIso(event.target.value))}
+                      onBlur={field.onBlur}
+                      name={field.name}
+                      ref={field.ref}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

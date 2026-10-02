@@ -73,6 +73,8 @@ export function PriorityLabel({ priority }: Readonly<{ priority: DocumentPriorit
 /** `FOI_REQUEST` reads as "FOI request"; `SPECIAL_ORDER` as "Special order". */
 export const documentTypeLabel = (type: string): string => {
   if (type === 'FOI_REQUEST') return 'FOI request';
+  // Two initialisms and a number that sentence-casing would mangle into "Denr 8888 action center".
+  if (type === 'DENR_8888_ACTION_CENTER') return 'DENR 8888 Action Center';
   const words = type.replaceAll('_', ' ').toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
