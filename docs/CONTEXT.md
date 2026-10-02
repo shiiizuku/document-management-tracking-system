@@ -2,7 +2,7 @@
 
 ## Purpose and authority
 
-This document consolidates the 151 architecture and product decisions agreed during the planning interview, the attached DTS specification, and the available prior project snapshot. It is the working source of truth for implementation planning; it does not assert that the prior prototype already satisfies these decisions.
+This document consolidates the architecture and product decisions agreed during the planning interview, the attached DTS specification, the available prior project snapshot, and the 2026-10-02 core workflow revision. It is the working source of truth for implementation planning; it does not assert that the prior prototype already satisfies these decisions.
 
 When sources appear to differ, apply them in this order:
 
@@ -14,7 +14,7 @@ The schedule is deliberately capacity-based rather than deadline-based. “Week�
 
 ## Product outcome
 
-The DTS replaces paper routing slips and fragmented email tracking with one accountable record of each incoming or outgoing document. The MVP is a complete predefined-workflow vertical slice used by the Records Office and one pilot division on an organization-hosted environment. It includes secure immutable file versions, metadata search, PDF/XLSX core reports, persistent realtime in-app notifications, end-to-end acceptance, and verified backup/recovery.
+The DTS replaces paper routing slips and fragmented email tracking with one accountable record of each incoming or outgoing document. The MVP is a complete predefined-workflow vertical slice used by the Records Unit and one pilot division on an organization-hosted environment. It includes secure immutable file versions, metadata search, PDF/XLSX core reports, persistent realtime in-app notifications, end-to-end acceptance, and verified backup/recovery.
 
 ## Canonical language
 
@@ -26,11 +26,15 @@ The DTS replaces paper routing slips and fragmented email tracking with one acco
 
 **Section**: A work unit within a division to which a user and document may be assigned.
 
-**Records Office**: The records function responsible for intake, registration, outgoing release, organization-wide visibility, and core reporting.
+**Office of the Regional Director (ORD)**: The Director’s office, modelled as a Division. It is the intake gate for incoming correspondence: an incoming document is not worked anywhere until the ORD has accepted it and routed it onward. The Regional Director, the one signatory for outgoing correspondence, belongs here.
+
+**Records Unit**: The records function, modelled as a Section within the ORD. It is responsible for intake and registration, outgoing release, organization-wide visibility, and core reporting. It takes custody of records; it does not sign or approve their content. Formerly called “Records Office” — that term is retired, because “Office” now means the ORD.
 
 **User**: An approved person with an active account, one organizational placement, and one or more authorized capabilities.
 
-**Role**: A named bundle of capabilities. Role determines what a user may do; organizational scope determines where they may do it.
+**Role**: A named bundle of capabilities. Role determines what a user may do; organizational scope determines where they may do it. The roles are Administrator, Director, Records Staff, Division Head, Staff Member and Viewer.
+
+**Director**: The one signatory for outgoing correspondence, placed in the ORD. Holds office-wide read scope in order to review what it signs, and little else. Deliberately distinct from Administrator, which is technical break-glass access and not a signing authority. See ADR-0006.
 
 **Organizational scope**: The divisions, sections, assigned items, or explicitly shared items a user may access.
 
@@ -44,7 +48,11 @@ The DTS replaces paper routing slips and fragmented email tracking with one acco
 
 **Tracking number**: The system-generated stable identifier for a Document.
 
-**Reference number**: The external sender reference for incoming correspondence or the organization-issued identifier for outgoing correspondence. It is distinct from the Tracking number.
+**Sender's reference number**: The reference the originating office put on an *incoming* letter. Free text, supplied at registration, never generated. Retained verbatim; it is how a reply is matched to the letter it answers. Shown only on incoming documents.
+
+**Reference number**: The organization-issued identifier for an *outgoing* Document, allocated per division per year from the division's code. Server-generated and read-only — a user cannot type it. Shown only on outgoing documents.
+
+**Reference Document**: An *incoming* Document that an outgoing Document answers, recorded as a link to that Document rather than as text. Outgoing-only, and may name more than one incoming Document. The inverse relation is read from the incoming side as its replies. Distinct from both reference numbers above: those are strings, this is a relationship.
 
 **Attachment**: A logical file associated with a Document.
 
@@ -58,25 +66,31 @@ The DTS replaces paper routing slips and fragmented email tracking with one acco
 
 **Workflow definition**: The predefined state machine and transition rules used by the MVP. Ad-hoc workflow design is outside the MVP.
 
-**Workflow state**: One of Pending, In Process, For Revision, For Signature, Signed, For Release, Released, or Archived.
+**Workflow state**: One of Pending, In Process, For Revision, For Initial, For Signature, Signed, For Release, Released, Complied, or Archived. Pending is **derived, not stored**: a Document is pending while any route handed to a recipient remains unaccepted. Every other state is a stored business state. See ADR-0005.
 
 **Custody**: The division/section currently responsible for action on a Document.
 
+**Acceptance**: A recipient's recorded acknowledgement that it has taken custody of a Document handed to it. Recorded on the route, not as a state change, so a Document routed to several divisions can be accepted by some and not others. Required at every custody hop: the ORD accepting incoming correspondence, each division accepting what the ORD routed to it, and each section accepting what its division assigned.
+
 **Assignment**: Responsibility given to a specific section or user without changing the Document’s identity.
 
-**Route**: A recorded transfer of custody to a division or section.
+**Route**: A recorded transfer of custody to a division or section, pending that recipient's Acceptance.
 
-**Forward**: A recorded collaboration route to one or more additional divisions while preserving the originating workflow context.
+**Forward**: A recorded route to more than one division at once. Exactly one recipient is the **lead** — it takes custody and the workflow progresses on its action alone. The others are **for information**: they may read and remark but take no workflow action, they are division-level only, and they stay attached to the hop that consulted them rather than following the Document onward. An unaccepted information copy is an outstanding acknowledgement, never a block.
 
 **Transition**: An authorized move between legal workflow states, recorded atomically with its event and any required remarks.
 
 **Revision**: A return from active review/signature processing to For Revision, followed by a new immutable file version and resubmission.
 
-**Signature record**: The recorded authorization action, actor, time, and related file version. The MVP does not imply a public-key digital-signature service unless separately approved.
+**Initial**: A division head's recorded endorsement of an outgoing draft, taken before the Director signs it. A distinct act by a distinct authority, not a lesser signature. See ADR-0006.
+
+**Signature record**: The recorded authorization action, actor, time, and related file version. Only the Director signs. The MVP does not imply a public-key digital-signature service unless separately approved.
 
 **Release**: The recorded dispatch of an outgoing Document using an allowed delivery method.
 
-**Archive**: Removal from active work while preserving the Document, versions, history, and authorized retrieval. Restore returns an archived Document to Released.
+**Complied**: The terminal state of an *incoming* Document — acted upon, with remarks, by the unit holding it. Incoming correspondence is never Released, so Complied is its counterpart: the two are the only states from which a Document may be Archived. Linking a reply through Reference Document is evidence of compliance, not the act of it; some incoming documents need no reply and some need several.
+
+**Archive**: Removal from active work while preserving the Document, versions, history, and authorized retrieval. Restore returns an archived Document to the terminal state it came from — Released for outgoing, Complied for incoming.
 
 **Audit event**: An append-only record of a meaningful action, actor, time, affected Document, before/after facts where applicable, and request context.
 
@@ -96,11 +110,11 @@ The DTS replaces paper routing slips and fragmented email tracking with one acco
 
 **Routing slip**: A printable, branded view of the Document’s journey, states, actors, timestamps, and remarks.
 
-**Pilot**: A separately hosted organization environment used by the Records Office and one division with real acceptance scenarios, operational ownership, backup, and recovery checks.
+**Pilot**: A separately hosted organization environment used by the Records Unit and one division with real acceptance scenarios, operational ownership, backup, and recovery checks.
 
-## Decision register (1–151)
+## Decision register (1–175)
 
-The wording below is normalized for implementation. Decisions 1–75 retain the attached functional intent; 76–137 consolidate the recorded project architecture and security posture; 138–151 capture the final MVP, pilot, sequencing, and open-policy decisions.
+The wording below is normalized for implementation. Decisions 1–75 retain the attached functional intent; 76–137 consolidate the recorded project architecture and security posture; 138–151 capture the final MVP, pilot, sequencing, and open-policy decisions; 152–175 record the 2026-10-02 core workflow revision and the decisions it amended.
 
 ### Product and workflow decisions (1–45)
 
@@ -125,12 +139,12 @@ The wording below is normalized for implementation. Decisions 1–75 retain the 
 19. Metadata search covers title, tracking/reference number, sender, and company.
 20. Lists can filter by status, priority, type, direction, division, and section.
 21. Lists can sort by date, priority, and status.
-22. Document lists are server-paginated.
+22. Document lists are server-paginated. **Amended 2026-10-02:** the API remains server-paginated, but moves to keyset/cursor pages and the registry and my-work lists present them as continuous scroll rather than numbered pages. Offset paging double-shows rows when documents change state mid-scroll, which in this system is constant. Users, account requests and audit keep numbered pages.
 23. Authorized division leadership can route work to a division or section.
-24. Authorized leadership can forward a Document to multiple divisions for parallel collaboration.
+24. Authorized leadership can forward a Document to multiple divisions for parallel collaboration. **Amended 2026-10-02:** exactly one recipient is the lead and takes custody; the rest are for-information, read-and-remark only, division-level only. Progress gates on the lead alone. See ADR-0005.
 25. Authorized signatories can record a signature action tied to the relevant file version.
 26. Authorized reviewers can return a Document for revision with remarks.
-27. Authorized releasing staff record release method as mailed, emailed, picked up, delivered, or another configured allowed method.
+27. Authorized releasing staff record release method as mailed, emailed, picked up, delivered, or another configured allowed method. **Amended 2026-10-02:** release methods move from a hard-coded database enum to configurable rows, as this decision always required but the schema never implemented. Seeded with Emailed, Postal, LBC, JRS, Picked Up and Personally Delivered — a flat list, not couriers nested under Mailed. A method may be flagged as requiring a tracking reference, which is then mandatory at release.
 28. Authorized staff can archive a completed Document without destroying it.
 29. “Delete” is administrative logical removal/quarantine, not destruction of files, versions, or audit evidence.
 30. Each Document exposes its full authorized timeline.
@@ -141,9 +155,9 @@ The wording below is normalized for implementation. Decisions 1–75 retain the 
 35. Incoming correspondence has a dedicated records view.
 36. Outgoing correspondence has a division-grouped view.
 37. Outgoing release requires both an attachment and a signature record.
-38. The predefined lifecycle is Pending → In Process ↔ For Revision → For Signature → Signed → For Release → Released → Archived.
+38. The predefined lifecycle is Pending → In Process ↔ For Revision → For Signature → Signed → For Release → Released → Archived. **Amended 2026-10-02:** the outgoing path gains For Initial between In Process and For Signature; incoming correspondence terminates at Complied rather than Released; and Pending becomes a derived condition rather than a stored state. The lifecycle is therefore two paths sharing a trunk — outgoing: In Process ↔ For Revision → For Initial → For Signature → Signed → For Release → Released → Archived; incoming: In Process → Complied → Archived. See ADR-0005 and ADR-0006.
 39. The server rejects illegal state transitions regardless of client behavior.
-40. Authorized administrators can restore Archived Documents to Released.
+40. Authorized administrators can restore Archived Documents to Released. **Amended 2026-10-02:** restore returns a Document to the terminal state it came from — Released for outgoing, Complied for incoming. An archived incoming document was never released, and restoring it to Released would falsify its routing slip.
 41. The UI and API expose only allowed next actions for the current state and user.
 42. Workflow transition and its audit event commit in one database transaction.
 43. Route/assignment changes and their audit events commit atomically.
@@ -155,7 +169,7 @@ The wording below is normalized for implementation. Decisions 1–75 retain the 
 46. Administrators maintain divisions and sections to match the approved organization structure.
 47. Division leadership can delegate downward to sections in its scope.
 48. A user has a specific section placement where applicable.
-49. Administrators and Records Office roles have organization-wide document visibility.
+49. Administrators and Records Office roles have organization-wide document visibility. **Amended 2026-10-02:** read “Records Unit” for “Records Office,” and add the Director, who must be able to review any division's work in order to sign it. Records staff see everything and sign nothing; the Director sees everything and signs. The two must not be collapsed. See ADR-0006.
 50. Division leadership can manage only documents in its authorized division scope, except explicit shares.
 51. Staff process only documents in their division/section scope, assignments, or explicit shares.
 52. Viewer access is read-only within authorized scope.
@@ -164,7 +178,7 @@ The wording below is normalized for implementation. Decisions 1–75 retain the 
 55. Assignment creates a persistent notification for the recipient.
 56. The application displays an unread-notification count.
 57. A user can mark their notifications as read.
-58. User-initiated actions return immediate success/error feedback; domain notifications are not replaced by transient toasts.
+58. User-initiated actions return immediate success/error feedback; domain notifications are not replaced by transient toasts. **Clarified 2026-10-02:** toasts are for the result of an action the reader themselves just took, and appear bottom-right. Anything caused by another user goes to the persistent notification centre and never to a toast alone. Error toasts do not auto-dismiss.
 59. Records staff can generate monthly totals for incoming, outgoing, FOI requests, and special orders.
 60. Core reports filter by month and year and respect authorization scope.
 61. Core reports can be printed and exported.
@@ -197,7 +211,7 @@ The wording below is normalized for implementation. Decisions 1–75 retain the 
 85. The server, not the client, generates and enforces uniqueness of tracking/reference numbers.
 86. The workflow is represented as an explicit finite-state machine.
 87. Workflow authorization combines capability, scope, current state, and record-specific conditions.
-88. Records Office visibility is modeled explicitly and is not conflated with unrestricted technical administration.
+88. Records Unit visibility is modeled explicitly and is not conflated with unrestricted technical administration.
 89. Roles and permissions are centrally defined and deny by default.
 90. Division/section scope is centrally enforced before data reaches controllers or export/render paths.
 91. Explicit shares are modeled and auditable rather than implemented as scope bypasses.
@@ -253,24 +267,53 @@ The wording below is normalized for implementation. Decisions 1–75 retain the 
 138. The MVP is one complete predefined-workflow vertical slice, not a collection of disconnected screens or endpoints.
 139. The MVP covers both incoming registration and the outgoing path needed to complete release and archival within the predefined workflow.
 140. The MVP includes secure immutable file versions; a mutable upload directory alone does not satisfy acceptance.
-141. The MVP includes metadata search and the recorded filters, sorting, and pagination needed for pilot work.
+141. The MVP includes metadata search and the recorded filters, sorting, and pagination needed for pilot work. **Amended 2026-10-02:** see decision 22 — paginated API, continuous-scroll registry.
 142. The MVP includes PDF and XLSX core reports plus the printable routing slip.
 143. The MVP includes persistent realtime in-app notifications with unread/read behavior and reconnect catch-up.
-144. The MVP includes role-and-scope enforcement for Records Office and one pilot division, including section assignment and read-only access.
+144. The MVP includes role-and-scope enforcement for Records Unit and one pilot division, including section assignment and read-only access.
 145. The MVP includes local Docker Compose development and a separate organization-hosted pilot environment.
-146. Pilot readiness requires end-to-end acceptance by the Records Office and one division using agreed scenarios and representative data.
+146. Pilot readiness requires end-to-end acceptance by the Records Unit and one division using agreed scenarios and representative data.
 147. Pilot readiness requires automated backup plus a successfully timed and evidenced recovery rehearsal for database and file/version storage.
 148. Security and operations work needed to prevent obvious loss, unauthorized access, or evidence mutation is MVP work; broader hardening is explicitly phased later.
 149. Estimates assume one full-stack developer at 20–25 hours/week and reserve 20–30% contingency rather than imposing a fixed deadline.
 150. Emergency evidence retention/hold behavior remains an unresolved question and must not be silently implemented as ordinary archive/delete behavior.
 151. Indefinite audit retention is not yet an approved operational rule; retention duration, legal basis, storage budget, access, and disposal require organizational policy validation.
 
+### Core workflow revision (152–175)
+
+Agreed 2026-10-02. This round **amends** decisions 22, 24, 27, 38, 40, 49, 58 and 141 in place — each carries its own amendment note — and adds the following. Where this section and an unamended earlier decision conflict, this section governs.
+
+152. The Office of the Regional Director is modelled as a Division, and the Records Unit as a Section within it. The previously seeded standalone records division is deactivated, never deleted: division codes are embedded in reference numbers already issued.
+153. The ORD division code is `ORD`, so outgoing correspondence registered there carries `ORD-<year>-<sequence>` permanently.
+154. Records Unit staff register incoming correspondence. Registration is not acceptance, and creating a document confers no custody.
+155. An incoming document is worked nowhere until the ORD has accepted it and routed it onward.
+156. Acceptance is required at every custody hop — ORD, then each division, then each section — and is recorded on the route rather than as a workflow state change.
+157. Pending is derived from the existence of an unaccepted route, not stored on the document.
+158. ORD acceptance and onward routing are one user action that commits two audit events in a single transaction, so the slip can show both the time received and the time released.
+159. A forward names exactly one lead recipient, which takes custody and on whose action the workflow progresses.
+160. Other recipients of a forward are for-information: read and remark only, division-level only, attached to the hop that consulted them, and never a block on progress.
+161. Outgoing drafts pass For Initial, endorsed by the division head, before For Signature.
+162. Only the Director holds signing authority. Records staff and division heads do not sign.
+163. Incoming correspondence terminates at Complied, recorded with remarks by the unit holding it.
+164. Restore returns an archived document to the terminal state it came from.
+165. An outgoing document may name one or more incoming documents as Reference Documents, and the incoming document shows the replies that name it.
+166. A Reference Document resolves through the reader's own authorization scope; a reference the reader may not read is indistinguishable from one that does not exist.
+167. A Reference Document opens as a modal showing the referenced record and its attachments, with file preview inline in that same modal.
+168. Incoming documents retain the sender's reference number as free text, enterable at registration rather than only afterwards.
+169. The outgoing reference number is server-generated and read-only in the interface.
+170. The routing slip opens inline for preview instead of downloading. Viewing and exporting it are audited as distinct actions.
+171. The routing slip layout follows the bureau form: a header block, an eight-row metadata table, and a routing table with FROM / DATE-TIME RECEIVED / TO / DATE-TIME RELEASED / ACTION TAKEN, carrying the approved seal.
+172. Interface type is Inter, self-hosted, for both body and headings. The serif display face is retired.
+173. Appearance density remains a global control over control sizes. A separate List view control — card, table, or single line — scopes to document lists only and persists per device.
+174. The document detail view places available actions and the timeline in a sticky right rail, the timeline scrolling within it.
+175. The administrator's user form shows, read-only, the capabilities a selected role grants. Capabilities remain server-defined and are not editable per user.
+
 ## MVP acceptance boundary
 
 ### Included in MVP
 
 - Approved account onboarding, authentication, inactivity handling, and deactivation.
-- Role/capability plus division/section/document scope for Records Office and one pilot division.
+- Role/capability plus division/section/document scope for Records Unit and one pilot division.
 - Incoming and outgoing registration, required metadata, generated identifiers, predefined legal transitions, revision, signature record, release, archive, and restore.
 - Atomic routing, assignment, transition, audit, and persistent notification behavior.
 - Multiple attachments with immutable file versions, safe preview/download, digest verification, and no overwrite path.
@@ -304,7 +347,7 @@ These items are valuable but are not allowed to displace the complete MVP slice 
 - **Audit retention:** “Indefinite” must not be treated as a settled requirement. Legal/records owners must validate the retention schedule, lawful basis, access rules, cost, backup implications, and authorized disposal process.
 - **Holiday/SLA calendar:** Weekend-only calculations are insufficient for a formal compliance claim. The authoritative holiday/workday calendar and ownership of updates require approval.
 - **Signature meaning:** The MVP records an authorized signature action. A cryptographic or regulated electronic-signature provider requires a separate policy and integration decision.
-- **Organization structure and branding:** Final division/section names, document types, reference formats, release methods, seal asset, report layout, and pilot users require Records Office sign-off before configuration is frozen.
+- **Organization structure and branding:** Final division/section names, document types, reference formats, release methods, seal asset, report layout, and pilot users require Records Unit sign-off before configuration is frozen.
 
 ## Delivery assumptions
 
@@ -313,7 +356,7 @@ These items are valuable but are not allowed to displace the complete MVP slice 
 - Indicative elapsed range is therefore about 29–32 active development weeks at a sustainable average, with a wider 24–41-week mathematical range depending on weekly capacity and contingency actually consumed. This is a forecast, not a deadline.
 - A week may slide without changing sequence. Phase exit criteria, not calendar dates, authorize dependent work.
 - Existing code is reused only after tests establish its behavior; representative UI data and README claims are not acceptance evidence.
-- Organization staff provide a product owner/Records Office representative, one pilot-division representative, and an infrastructure contact for timely reviews.
+- Organization staff provide a product owner/Records Unit representative, one pilot-division representative, and an infrastructure contact for timely reviews.
 
 ## Dependency-aware implementation roadmap
 
@@ -347,7 +390,7 @@ These items are valuable but are not allowed to displace the complete MVP slice 
 
 - Complete account request/approval/direct creation, login/refresh/logout, inactivity behavior, profile photo, deactivation, and session revocation.
 - Centralize deny-by-default capability and organizational-scope predicates.
-- Test cross-division, cross-section, viewer, Records Office, confidential-record, deactivated-user, and direct-object-reference cases.
+- Test cross-division, cross-section, viewer, Records Unit, confidential-record, deactivated-user, and direct-object-reference cases.
 
 **Week 5 — Workflow engine and concurrency (20–25h)**
 
@@ -485,7 +528,7 @@ These items are valuable but are not allowed to displace the complete MVP slice 
 
 ### Phase 7 — User acceptance, contingency, and handover (Weeks 24–25+, as needed)
 
-**Week 24 — Records Office acceptance (20–25h)**
+**Week 24 — Records Unit acceptance (20–25h)**
 
 - Facilitate role-based acceptance using real working scenarios: incoming registration, assignment, revision/versioning, signature, outgoing release, search, reports, routing slip, notifications, archive/restore, and audit investigation.
 - Capture severity, owner, evidence, and retest expectation for each finding.
@@ -493,7 +536,7 @@ These items are valuable but are not allowed to displace the complete MVP slice 
 **Week 25 — Pilot division acceptance and handover (20–25h)**
 
 - Repeat scope-specific acceptance with the pilot division, including attempted out-of-scope access and mobile/keyboard use.
-- Complete operator, administrator, Records Office, user quick-start, backup/recovery, deployment/rollback, and support documentation.
+- Complete operator, administrator, Records Unit, user quick-start, backup/recovery, deployment/rollback, and support documentation.
 - Record policy deferrals and later-phase backlog without silently treating them as accepted risks.
 
 **Contingency — 20–30% across or after phases**
@@ -501,13 +544,13 @@ These items are valuable but are not allowed to displace the complete MVP slice 
 - Reserve roughly 5–8 developer-weeks (100–190h), equivalent to 20–30% of the 25-week phase plan, for discovered legacy defects, review turnaround, data/configuration correction, infrastructure access, security fixes, performance tuning, UAT findings, and recovery rehearsal issues.
 - Consume contingency where the dependency occurs; do not wait until the end while knowingly carrying a blocking defect.
 
-**Final MVP exit criteria:** Records Office and one division sign off the end-to-end scenarios; critical authorization/evidence-loss defects are closed; PDF/XLSX and routing slip are accepted; realtime notifications are persistent; production-like backup/recovery evidence exists; operational ownership and known policy gaps are documented.
+**Final MVP exit criteria:** Records Unit and one division sign off the end-to-end scenarios; critical authorization/evidence-loss defects are closed; PDF/XLSX and routing slip are accepted; realtime notifications are persistent; production-like backup/recovery evidence exists; operational ownership and known policy gaps are documented.
 
 ## Validation strategy and evidence
 
 - **Unit:** State machine, guards, number generation, due-date calculations, report calculations, scope predicates, and serialization/sanitization.
 - **Integration:** Authentication/session lifecycle, account approval, every document transition, atomic audit/notification behavior, immutable version rules, upload failure cleanup, search scope, and export authorization.
-- **End-to-end:** Role-specific browser journeys for Records Office, division head, section staff, viewer, and administrator across the complete vertical slice.
+- **End-to-end:** Role-specific browser journeys for Records Unit, division head, section staff, viewer, and administrator across the complete vertical slice.
 - **Security:** Cross-scope/IDOR attempts, deactivated sessions, login abuse, upload/preview/download controls, confidential records, export injection, runtime database grants, and secret/log inspection.
 - **Reliability:** Concurrent actions, retry/idempotency behavior, database/storage interruption, realtime reconnect, application restart, and backup restore with digest sampling.
 - **Performance:** Representative pilot data and agreed concurrent pilot activity; measure search/list/dashboard/report response and export memory/runtime before optimization.

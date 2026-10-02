@@ -10,6 +10,8 @@ immutable once `Accepted`: to change a decision, add a new ADR and set the old o
 | [0002](0002-session-transport.md)          | Signed JWT in an HTTP-only session cookie | Accepted |
 | [0003](0003-identifier-strategy.md)        | UUID surrogate keys + allocated refs      | Accepted |
 | [0004](0004-deployment-model.md)           | Single-host Docker Compose deployment     | Accepted |
+| [0005](0005-custody-acceptance-on-the-route-row.md) | Custody acceptance on the route, not the status | Accepted |
+| [0006](0006-director-role-signing-authority.md) | Signing authority is its own role         | Accepted |
 
 **Template**
 
