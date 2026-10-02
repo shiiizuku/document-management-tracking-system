@@ -14,7 +14,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import type { AuthorizationActor } from '../authorization/authorization.policy.js';
-import { documentScopeFor } from '../authorization/query-scope.js';
+import { documentIsPending, documentScopeFor } from '../authorization/query-scope.js';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
 import type { DatabaseExecutor } from '../../database/executor.js';
@@ -34,6 +34,10 @@ import {
   workflowEvents,
 } from '../../database/schema.js';
 import { workflowStatuses, type ReleaseMethod } from '../workflow/workflow.service.js';
+// The presented vocabulary, which includes the derived `PENDING` — what a filter accepts and a
+// timeline row may carry. The engine's narrower stored set is a different type on purpose.
+import type { WorkflowStatus } from '@dts/contracts';
+import { ORD_DIVISION_CODE } from '../organization/organization.constants.js';
 
 export type DocumentRow = typeof documents.$inferSelect;
 export type WorkflowEventRow = typeof workflowEvents.$inferSelect;
@@ -45,7 +49,12 @@ export type NewDocument = typeof documents.$inferInsert;
 /** Status totals for the dashboard tiles. */
 export interface DashboardCounts {
   total: number;
-  byStatus: Record<DocumentRow['status'], number>;
+  /*
+   * Keyed by the *presented* vocabulary, so `PENDING` has a tile. It is counted from the route
+   * rows rather than the status column, and it overlaps the other counts rather than partitioning
+   * them — a pending document also has a lifecycle status. `total` is the document count.
+   */
+  byStatus: Record<WorkflowStatus, number>;
   overdue: number;
 }
 
@@ -63,8 +72,9 @@ export interface DashboardActivityEntry {
   trackingNumber: string;
   title: string;
   action: string;
-  fromStatus: DocumentRow['status'] | null;
-  toStatus: DocumentRow['status'];
+  /** The vocabulary in force when the event happened, not the column's — see `TimelineEntry`. */
+  fromStatus: WorkflowStatus | null;
+  toStatus: WorkflowStatus;
   actorId: string;
   actorName: string;
   occurredAt: Date;
@@ -92,7 +102,12 @@ export interface DocumentActionPatch {
 
 export interface DocumentSearchFilters {
   search?: string | undefined;
-  status?: DocumentRow['status'] | undefined;
+  /*
+   * The presented vocabulary, not the column's: `PENDING` is a filter users apply and a status they
+   * read off a badge, even though the column holds no such value — see `search`, which resolves it
+   * to the derived unaccepted-route predicate.
+   */
+  status?: WorkflowStatus | undefined;
   priority?: DocumentRow['priority'] | undefined;
   type?: string | undefined;
   direction?: DocumentRow['direction'] | undefined;
@@ -285,7 +300,14 @@ export class DocumentsRepository {
       );
       if (matches) conditions.push(matches);
     }
-    if (filters.status) conditions.push(eq(documents.status, filters.status));
+    /*
+     * `PENDING` is not a value this column can hold — it is the existence of an unaccepted route
+     * (ADR-0005) — so the one filter users think of as a status resolves to a different predicate
+     * entirely. Both go through `documentIsPending` so the registry, the dashboard and the reports
+     * cannot each decide for themselves what pending means.
+     */
+    if (filters.status === 'PENDING') conditions.push(documentIsPending());
+    else if (filters.status) conditions.push(eq(documents.status, filters.status));
     if (filters.priority) conditions.push(eq(documents.priority, filters.priority));
     if (filters.type) conditions.push(eq(documents.type, filters.type));
     if (filters.direction) conditions.push(eq(documents.direction, filters.direction));
@@ -293,7 +315,7 @@ export class DocumentsRepository {
     if (filters.sectionId) conditions.push(eq(documents.sectionId, filters.sectionId));
     const where = and(...conditions);
 
-    // The enum columns are declared LOW→URGENT and PENDING→ARCHIVED, so Postgres orders them
+    // The enum columns are declared LOW→URGENT and IN_PROCESS→ARCHIVED, so Postgres orders them
     // by the same rank the in-memory search used. `id` is the deterministic tiebreak that
     // keeps pagination stable across pages when the sort key ties.
     const direction = filters.order === 'asc' ? asc : desc;
@@ -563,10 +585,32 @@ export class DocumentsRepository {
       toSectionId: string | null;
       routedById: string;
       remarks: string | null;
+      forInformation?: boolean;
     },
     executor: DatabaseExecutor = this.database,
   ): Promise<void> {
     await executor.insert(documentRoutes).values(route);
+  }
+
+  /**
+   * Stamps a recipient's acceptance on one route row.
+   *
+   * The `accepted_at IS NULL` predicate is the concurrency control, the same shape
+   * `AccountRequestsRepository.close` uses: two recipients pressing Accept at once means one
+   * `UPDATE` matches and the other returns no row, so a double acceptance cannot overwrite the
+   * first received timestamp — which is evidence printed on the slip, not a cache.
+   */
+  async acceptRoute(
+    routeId: string,
+    acceptedById: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<DocumentRouteRow | null> {
+    const [row] = await executor
+      .update(documentRoutes)
+      .set({ acceptedAt: new Date(), acceptedById })
+      .where(and(eq(documentRoutes.id, routeId), isNull(documentRoutes.acceptedAt)))
+      .returning();
+    return row ?? null;
   }
 
   async listRoutes(documentId: string): Promise<DocumentRouteRow[]> {
@@ -575,6 +619,21 @@ export class DocumentsRepository {
       .from(documentRoutes)
       .where(eq(documentRoutes.documentId, documentId))
       .orderBy(asc(documentRoutes.createdAt));
+  }
+
+  /**
+   * Whether a division is the Office of the Regional Director, by code.
+   *
+   * The workflow needs this to decide whether an outgoing draft requires a division head's
+   * initial: the ORD's head is the Director, so requiring one there would have the same person
+   * initial and sign (ADR-0007).
+   */
+  async isOrdDivision(divisionId: string): Promise<boolean> {
+    const [row] = await this.database
+      .select({ code: divisions.code })
+      .from(divisions)
+      .where(eq(divisions.id, divisionId));
+    return row?.code === ORD_DIVISION_CODE;
   }
 
   async insertSignatureEvent(
@@ -659,9 +718,7 @@ export class DocumentsRepository {
       })
       .from(documents)
       .innerJoin(divisions, eq(divisions.id, documents.divisionId))
-      .where(
-        and(isNull(documents.deletedAt), documentScopeFor(actor), eq(documents.status, 'PENDING')),
-      )
+      .where(and(isNull(documents.deletedAt), documentScopeFor(actor), documentIsPending()))
       .groupBy(documents.divisionId, divisions.name)
       .orderBy(desc(count()), asc(divisions.name));
     return rows.map((row) => ({
@@ -683,7 +740,7 @@ export class DocumentsRepository {
     actor: AuthorizationActor,
     limit: number,
   ): Promise<DashboardActivityEntry[]> {
-    return this.database
+    const rows = await this.database
       .select({
         id: workflowEvents.id,
         documentId: workflowEvents.documentId,
@@ -702,6 +759,18 @@ export class DocumentsRepository {
       .where(and(isNull(documents.deletedAt), documentScopeFor(actor)))
       .orderBy(desc(workflowEvents.occurredAt))
       .limit(limit);
+
+    /*
+     * The events table keeps the status vocabulary that was in force when each row was written — a
+     * hop recorded before the 2026-10-02 revision truthfully says `PENDING`. Narrowed here rather
+     * than in the projection: the presented vocabulary is the wider of the two, and every name
+     * these columns can hold is a member of it.
+     */
+    return rows.map((row) => ({
+      ...row,
+      fromStatus: row.fromStatus as WorkflowStatus | null,
+      toStatus: row.toStatus as WorkflowStatus,
+    }));
   }
 
   async summary(actor: AuthorizationActor): Promise<DashboardCounts> {
@@ -721,15 +790,27 @@ export class DocumentsRepository {
           sql`${documents.dueAt} is not null and ${documents.dueAt} < now()`,
         ),
       );
-    const byStatus = Object.fromEntries(workflowStatuses.map((status) => [status, 0])) as Record<
-      DocumentRow['status'],
-      number
-    >;
+    /*
+     * `PENDING` is a tile on this dashboard and a filter in the registry, but it is not a value the
+     * status column holds — so it is counted separately, by the same `documentIsPending` predicate
+     * the registry filter uses (ADR-0005). Deliberately *not* folded into `total`: the pending
+     * documents are already counted under whatever lifecycle status they carry, and adding them
+     * again would make the tiles sum to more than the number of documents.
+     */
+    const [pendingRow] = await this.database
+      .select({ total: count() })
+      .from(documents)
+      .where(and(scoped, documentIsPending()));
+
+    const byStatus = Object.fromEntries(
+      [...workflowStatuses, 'PENDING' as const].map((status) => [status, 0]),
+    ) as Record<WorkflowStatus, number>;
     let total = 0;
     for (const row of statusRows) {
       byStatus[row.status] = row.total;
       total += row.total;
     }
+    byStatus.PENDING = pendingRow?.total ?? 0;
     return { total, byStatus, overdue: overdueRow?.total ?? 0 };
   }
 

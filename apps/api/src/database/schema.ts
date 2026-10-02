@@ -1,4 +1,5 @@
 import { relations, sql } from 'drizzle-orm';
+import { storedWorkflowStatusSchema, type StoredWorkflowStatus } from '@dts/contracts';
 import {
   boolean,
   index,
@@ -24,16 +25,20 @@ export const roleEnum = pgEnum('role', [
 ]);
 export const directionEnum = pgEnum('document_direction', ['INCOMING', 'OUTGOING']);
 export const priorityEnum = pgEnum('document_priority', ['LOW', 'NORMAL', 'HIGH', 'URGENT']);
-export const statusEnum = pgEnum('workflow_status', [
-  'PENDING',
-  'IN_PROCESS',
-  'FOR_REVISION',
-  'FOR_SIGNATURE',
-  'SIGNED',
-  'FOR_RELEASE',
-  'RELEASED',
-  'ARCHIVED',
-]);
+/*
+ * Derived from `@dts/contracts` rather than listed again: the status vocabulary used to be written
+ * out here, in the contracts package and in `WorkflowService`, and keeping three copies aligned was
+ * manual. `storedWorkflowStatusSchema` excludes `PENDING`, which ADR-0005 makes a derived condition
+ * (an unaccepted route row) rather than a column value — so the database cannot hold it at all.
+ *
+ * The cast restores the non-empty-tuple shape `pgEnum` requires; zod widens `.exclude()` to a
+ * plain array, and the values themselves are exactly `StoredWorkflowStatus`.
+ */
+const storedStatuses = storedWorkflowStatusSchema.options as unknown as readonly [
+  StoredWorkflowStatus,
+  ...StoredWorkflowStatus[],
+];
+export const statusEnum = pgEnum('workflow_status', storedStatuses);
 export const scanStatusEnum = pgEnum('scan_status', [
   'PENDING',
   'PENDING_RETRY',
@@ -174,7 +179,13 @@ export const documents = pgTable(
     description: text('description'),
     priority: priorityEnum('priority').notNull(),
     direction: directionEnum('direction').notNull(),
-    status: statusEnum('status').notNull().default('PENDING'),
+    /*
+     * The business lifecycle only. Custody — who holds the document and whether they have taken
+     * it on — lives on `document_routes` (ADR-0005), which is why there is no `PENDING` here:
+     * registration confers no custody (decision 154), so a new document enters the trunk at
+     * IN_PROCESS and is *presented* as pending until its route is accepted.
+     */
+    status: statusEnum('status').notNull().default('IN_PROCESS'),
     sender: varchar('sender', { length: 240 }),
     company: varchar('company', { length: 240 }),
     /*
@@ -257,23 +268,55 @@ export const documentShares = pgTable(
   (table) => [primaryKey({ columns: [table.documentId, table.userId] })],
 );
 
-export const documentRoutes = pgTable('document_routes', {
-  ...identityColumns(),
-  documentId: uuid('document_id')
-    .notNull()
-    .references(() => documents.id),
-  fromDivisionId: uuid('from_division_id').references(() => divisions.id),
-  toDivisionId: uuid('to_division_id')
-    .notNull()
-    .references(() => divisions.id),
-  toSectionId: uuid('to_section_id').references(() => sections.id),
-  routedById: uuid('routed_by_id')
-    .notNull()
-    .references(() => users.id),
-  remarks: text('remarks'),
-  completedAt: timestamp('completed_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+/*
+ * One row per custody hop. This table — not `documents.status` — answers "who is sitting on this,
+ * and since when" (ADR-0005), which is the operational question the system exists to answer and the
+ * layout the bureau's routing slip is printed in.
+ *
+ * `acceptedAt` / `acceptedById` are the recipient's recorded acknowledgement that it has taken the
+ * document on. A row with a null `acceptedAt` is what makes a document *pending*: the condition is
+ * derived from these rows, so a document routed to three divisions can be accepted by two of them,
+ * which one status column could never express.
+ */
+export const documentRoutes = pgTable(
+  'document_routes',
+  {
+    ...identityColumns(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id),
+    fromDivisionId: uuid('from_division_id').references(() => divisions.id),
+    toDivisionId: uuid('to_division_id')
+      .notNull()
+      .references(() => divisions.id),
+    toSectionId: uuid('to_section_id').references(() => sections.id),
+    routedById: uuid('routed_by_id')
+      .notNull()
+      .references(() => users.id),
+    /*
+     * A forward names exactly one lead recipient, which takes custody and on whose action the
+     * workflow progresses; the rest are consulted for information only — read and remark, no
+     * workflow action, and never a block on progress (decisions 159–160). The default is false
+     * because a plain route of one is a lead route.
+     */
+    forInformation: boolean('for_information').notNull().default(false),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    acceptedById: uuid('accepted_by_id').references(() => users.id),
+    remarks: text('remarks'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    /*
+     * Backs the derived-pending `EXISTS` probe. ADR-0005 notes that a derived condition cannot be
+     * indexed as a column; a partial index on the unaccepted rows is the equivalent, and it stays
+     * small because rows leave it as soon as they are accepted.
+     */
+    index('document_routes_unaccepted_idx')
+      .on(table.documentId)
+      .where(sql`${table.acceptedAt} is null`),
+  ],
+);
 
 export const workflowEvents = pgTable(
   'workflow_events',
@@ -287,8 +330,15 @@ export const workflowEvents = pgTable(
       .notNull()
       .references(() => users.id),
     action: varchar('action', { length: 60 }).notNull(),
-    fromStatus: statusEnum('from_status'),
-    toStatus: statusEnum('to_status').notNull(),
+    /*
+     * Free text, not the live `workflow_status` enum. These columns record what the vocabulary was
+     * when the event happened, so a row written before the 2026-10-02 revision still reads
+     * 'PENDING' — which is the truth about that hop. Binding history to a type that each
+     * vocabulary change rewrites would make the timeline something a migration edits, and the
+     * timeline is evidence. `action` has always been varchar for the same reason.
+     */
+    fromStatus: varchar('from_status', { length: 40 }),
+    toStatus: varchar('to_status', { length: 40 }).notNull(),
     remarks: text('remarks'),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
   },

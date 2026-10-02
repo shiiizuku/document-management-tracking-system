@@ -12,6 +12,7 @@ immutable once `Accepted`: to change a decision, add a new ADR and set the old o
 | [0004](0004-deployment-model.md)           | Single-host Docker Compose deployment     | Accepted |
 | [0005](0005-custody-acceptance-on-the-route-row.md) | Custody acceptance on the route, not the status | Accepted |
 | [0006](0006-director-role-signing-authority.md) | Signing authority is its own role         | Accepted |
+| [0007](0007-ord-drafts-skip-the-division-initial.md) | ORD drafts skip the division initial | Accepted |
 
 **Template**
 

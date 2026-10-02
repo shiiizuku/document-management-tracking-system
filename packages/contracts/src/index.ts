@@ -1,23 +1,49 @@
 import { z } from 'zod';
 
+/**
+ * Every workflow status a user sees, filters on, or reads off a badge.
+ *
+ * This is the one place the vocabulary is written down. It used to be written three times — here,
+ * as a `pgEnum` in the API's schema, and as a `const` tuple in `WorkflowService` — with nothing but
+ * care keeping them aligned. The database enum and the workflow engine now both derive from this
+ * list, so a status cannot exist in one layer and be unknown to another.
+ *
+ * `PENDING` is a member here and *not* a storable value: ADR-0005 makes it derived from the
+ * existence of an unaccepted route, while keeping it a status to users and a filter in lists. See
+ * {@link storedWorkflowStatusSchema}.
+ */
 export const workflowStatusSchema = z.enum([
   'PENDING',
   'IN_PROCESS',
   'FOR_REVISION',
+  'FOR_INITIAL',
   'FOR_SIGNATURE',
   'SIGNED',
   'FOR_RELEASE',
   'RELEASED',
+  'COMPLIED',
   'ARCHIVED',
 ]);
+
+/**
+ * What `documents.status` may actually hold — the business lifecycle, minus the derived condition.
+ *
+ * Derived from the presented set rather than listed again (the same shape as
+ * {@link fileScanStatusSchema} below), so adding a status above forces a decision about whether it
+ * is a stored state or a computed one instead of silently widening the column.
+ */
+export const storedWorkflowStatusSchema = workflowStatusSchema.exclude(['PENDING']);
+
 export const workflowActionSchema = z.enum([
   'ACCEPT',
   'REQUEST_REVISION',
   'RESUBMIT',
+  'INITIAL',
   'SUBMIT_FOR_SIGNATURE',
   'SIGN',
   'PREPARE_RELEASE',
   'RELEASE',
+  'COMPLY',
   'ARCHIVE',
   'RESTORE',
 ]);
@@ -48,10 +74,17 @@ export const capabilitySchema = z.enum([
   'DOCUMENT_ACCEPT',
   'DOCUMENT_REQUEST_REVISION',
   'DOCUMENT_RESUBMIT',
+  // A division head's endorsement of an outgoing draft, taken before the Director signs it
+  // (ADR-0006). Distinct from DOCUMENT_SIGN, and deliberately held by a different role: if one
+  // person holds both, the two-step approval records nothing the one-step version did not.
+  'DOCUMENT_INITIAL',
   'DOCUMENT_SUBMIT_FOR_SIGNATURE',
   'DOCUMENT_SIGN',
   'DOCUMENT_PREPARE_RELEASE',
   'DOCUMENT_RELEASE',
+  // Recording an incoming document as acted upon, with remarks — its terminal state, and the
+  // counterpart to releasing an outgoing one (decision 163).
+  'DOCUMENT_COMPLY',
   'DOCUMENT_ARCHIVE',
   'DOCUMENT_DELETE',
   'DOCUMENT_RESTORE',
@@ -325,6 +358,7 @@ export const fileScanStatusSchema = scanStatusSchema.exclude(['PENDING']);
 export const recordScanSchema = z.object({ status: fileScanStatusSchema });
 
 export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
+export type StoredWorkflowStatus = z.infer<typeof storedWorkflowStatusSchema>;
 export type WorkflowAction = z.infer<typeof workflowActionSchema>;
 export type Role = z.infer<typeof roleSchema>;
 export type Capability = z.infer<typeof capabilitySchema>;

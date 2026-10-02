@@ -55,6 +55,15 @@ export class InMemoryDocumentsRepository {
   >();
   private readonly releaseMethods = new Map<string, ReleaseMethod>();
   private readonly routes = new Map<string, DocumentRouteRow[]>();
+  /*
+   * Division ids that stand in for the Office of the Regional Director.
+   *
+   * `division-records` is seeded because that is already what it models: the revision makes the
+   * Records Unit a *Section within the ORD* (decision 152), so the fixtures' `division-records` /
+   * `section-intake` pair is the ORD and its Records Unit under the older names. Renaming the
+   * fixture ids belongs with the organization restructure, not with the workflow engine.
+   */
+  private readonly ordDivisionIds = new Set<string>(['division-records']);
   private readonly signatures = new Map<string, SignatureEventRow[]>();
   private trackingCounter = 0;
   private readonly referenceCounters = new Map<string, number>();
@@ -93,7 +102,7 @@ export class InMemoryDocumentsRepository {
       description: values.description ?? null,
       priority: values.priority,
       direction: values.direction,
-      status: values.status ?? 'PENDING',
+      status: values.status ?? 'IN_PROCESS',
       sender: values.sender ?? null,
       company: values.company ?? null,
       divisionId: values.divisionId,
@@ -125,14 +134,24 @@ export class InMemoryDocumentsRepository {
   }
 
   search(actor: AuthorizationActor, filters: DocumentSearchFilters): Promise<DocumentSearchPage> {
+    /*
+     * `PENDING` is derived from unaccepted route rows, so it is resolved here rather than handed to
+     * the search service — which sees no routes and types its filter as the stored vocabulary for
+     * exactly that reason. Applying it as a pre-filter mirrors what `documentIsPending` does in SQL,
+     * so an HTTP test against this repository agrees with the real one.
+     */
+    const pendingOnly = filters.status === 'PENDING';
     const searchable: (SearchableDocument & { row: DocumentRow })[] = [...this.documents.values()]
       .filter((row) => row.deletedAt === null)
+      .filter((row) => !pendingOnly || this.hasUnacceptedRoute(row.id))
       .map((row) => ({ ...this.searchable(row), row }));
     // Drop `undefined` keys so the query matches the search service's optional-property shape
     // under exactOptionalPropertyTypes; the values themselves are passed through unchanged.
     const query: DocumentSearchQuery = {
       ...(filters.search !== undefined ? { search: filters.search } : {}),
-      ...(filters.status !== undefined ? { status: filters.status } : {}),
+      ...(filters.status !== undefined && !pendingOnly
+        ? { status: filters.status as SearchableDocument['status'] }
+        : {}),
       ...(filters.priority !== undefined ? { priority: filters.priority } : {}),
       ...(filters.type !== undefined ? { type: filters.type } : {}),
       ...(filters.direction !== undefined ? { direction: filters.direction } : {}),
@@ -303,11 +322,47 @@ export class InMemoryDocumentsRepository {
     toSectionId: string | null;
     routedById: string;
     remarks: string | null;
+    forInformation?: boolean;
   }): Promise<void> {
     const list = this.routes.get(route.documentId) ?? [];
-    list.push({ id: randomUUID(), completedAt: null, createdAt: now(), ...route });
+    list.push({
+      id: randomUUID(),
+      completedAt: null,
+      createdAt: now(),
+      forInformation: false,
+      acceptedAt: null,
+      acceptedById: null,
+      ...route,
+    });
     this.routes.set(route.documentId, list);
     return Promise.resolve();
+  }
+
+  /** Mirrors the SQL predicate: an already-accepted route matches no row and yields null. */
+  acceptRoute(routeId: string, acceptedById: string): Promise<DocumentRouteRow | null> {
+    for (const list of this.routes.values()) {
+      const route = list.find((candidate) => candidate.id === routeId);
+      if (route === undefined) continue;
+      if (route.acceptedAt !== null) return Promise.resolve(null);
+      route.acceptedAt = now();
+      route.acceptedById = acceptedById;
+      return Promise.resolve(route);
+    }
+    return Promise.resolve(null);
+  }
+
+  /** The in-memory twin of the `documentIsPending` SQL predicate. */
+  private hasUnacceptedRoute(documentId: string): boolean {
+    return (this.routes.get(documentId) ?? []).some((route) => route.acceptedAt === null);
+  }
+
+  isOrdDivision(divisionId: string): Promise<boolean> {
+    return Promise.resolve(this.ordDivisionIds.has(divisionId));
+  }
+
+  /** Test seam: marks a division as the ORD so the `FOR_INITIAL` exemption can be exercised. */
+  markAsOrd(divisionId: string): void {
+    this.ordDivisionIds.add(divisionId);
   }
 
   listRoutes(documentId: string): Promise<DocumentRouteRow[]> {

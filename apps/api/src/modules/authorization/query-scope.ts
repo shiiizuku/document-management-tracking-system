@@ -1,6 +1,11 @@
 import { and, eq, exists, or, sql, type SQL } from 'drizzle-orm';
 import type { AuthorizationActor } from './authorization.policy.js';
-import { documentAssignments, documents, documentShares } from '../../database/schema.js';
+import {
+  documentAssignments,
+  documentRoutes,
+  documents,
+  documentShares,
+} from '../../database/schema.js';
 
 /**
  * The SQL twin of `AuthorizationPolicy.canRead`. Every repository that lists, counts or
@@ -50,10 +55,34 @@ export const documentScopeFor = (actor: AuthorizationActor): SQL => {
   return and(confidentialityGate, or(...reachable))!;
 };
 
-/** A query builder narrow enough to accept a scoping predicate. */
+/**
+ * A query builder narrow enough to accept a scoping predicate.
+ */
 interface Scopable<TSelf> {
   where(condition: SQL): TSelf;
 }
+
+/**
+ * The derived `PENDING` condition: a document is pending while any route handed to a recipient
+ * remains unaccepted (decision 157, ADR-0005).
+ *
+ * `PENDING` is a status to users and a filter in lists, but it is deliberately not a column — one
+ * column cannot say that two of three divisions have accepted. Because it cannot be indexed as a
+ * column either, every list, dashboard rollup and report that asks the question composes *this*
+ * expression, rather than each growing its own `EXISTS` and drifting apart. The partial index
+ * `document_routes_unaccepted_idx` backs the probe.
+ *
+ * Pass `false` for the complement — documents with nothing outstanding — so the two halves of the
+ * filter can never disagree about what pending means.
+ */
+export const documentIsPending = (pending = true): SQL => {
+  const outstanding = exists(
+    sql`(select 1 from ${documentRoutes}
+         where ${documentRoutes.documentId} = ${documents.id}
+           and ${documentRoutes.acceptedAt} is null)`,
+  );
+  return pending ? outstanding : sql`not ${outstanding}`;
+};
 
 /**
  * Applies {@link documentScopeFor} to a query builder. The `scopeToActor(query, actor)` form

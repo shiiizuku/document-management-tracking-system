@@ -25,10 +25,12 @@ const STATUS_LABELS: Record<WorkflowStatus, string> = {
   PENDING: 'Pending',
   IN_PROCESS: 'In process',
   FOR_REVISION: 'For revision',
+  FOR_INITIAL: 'For initial',
   FOR_SIGNATURE: 'For signature',
   SIGNED: 'Signed',
   FOR_RELEASE: 'For release',
   RELEASED: 'Released',
+  COMPLIED: 'Complied',
   ARCHIVED: 'Archived',
 };
 
@@ -36,11 +38,15 @@ const STATUS_LABELS: Record<WorkflowStatus, string> = {
 const STATUS_TONES: Record<WorkflowStatus, string> = {
   PENDING: 'bg-signal-wait text-on-signal-wait',
   FOR_REVISION: 'bg-signal-wait text-on-signal-wait',
+  // Waiting on a named authority to act, like For signature — not stalled, but not moving either.
+  FOR_INITIAL: 'bg-signal-wait text-on-signal-wait',
   IN_PROCESS: 'bg-signal-move text-on-signal-move',
   FOR_SIGNATURE: 'bg-signal-move text-on-signal-move',
   FOR_RELEASE: 'bg-signal-move text-on-signal-move',
   SIGNED: 'bg-signal-done text-on-signal-done',
   RELEASED: 'bg-signal-done text-on-signal-done',
+  // The incoming counterpart to Released: the work is finished, the record is not yet closed.
+  COMPLIED: 'bg-signal-done text-on-signal-done',
   ARCHIVED: 'bg-signal-closed text-on-signal-closed',
 };
 

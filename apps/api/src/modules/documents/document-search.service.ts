@@ -23,6 +23,11 @@ export interface SearchableDocument extends AuthorizationResource {
 
 export interface DocumentSearchQuery {
   search?: string;
+  /*
+   * A stored status only. `PENDING` is derived from unaccepted route rows (ADR-0005), which this
+   * service does not see — filtering on it is the SQL path's job, where the rows live. Typing the
+   * field as the stored vocabulary is what stops a caller passing a filter this cannot honour.
+   */
   status?: WorkflowStatus;
   priority?: DocumentPriority;
   type?: string;
@@ -50,14 +55,15 @@ const priorityRank: Record<DocumentPriority, number> = {
 };
 
 const statusRank: Record<WorkflowStatus, number> = {
-  PENDING: 0,
-  IN_PROCESS: 1,
-  FOR_REVISION: 2,
+  IN_PROCESS: 0,
+  FOR_REVISION: 1,
+  FOR_INITIAL: 2,
   FOR_SIGNATURE: 3,
   SIGNED: 4,
   FOR_RELEASE: 5,
   RELEASED: 6,
-  ARCHIVED: 7,
+  COMPLIED: 7,
+  ARCHIVED: 8,
 };
 
 export class DocumentSearchService {

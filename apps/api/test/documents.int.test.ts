@@ -178,7 +178,7 @@ describe('document registry REST against a real database', () => {
     expect(incoming.trackingNumber).toMatch(/^DTS-\d{4}-\d{6}$/);
     // Incoming keeps whatever external reference the sender used.
     expect(incoming.referenceNumber).toBe('EXT-2026-42');
-    expect(incoming).toMatchObject({ status: 'PENDING', version: 1 });
+    expect(incoming).toMatchObject({ status: 'IN_PROCESS', version: 1 });
 
     const outgoing = dataOf<DocumentPayload>(
       await registerDocument(records, {
@@ -297,15 +297,33 @@ describe('document registry REST against a real database', () => {
       }).expect(201),
     );
 
+    /*
+     * Accepted by the division's own staff, not by the records officer who registered it.
+     * Registration hands the document to a unit; that unit takes it on (decisions 154–156), and
+     * the records officer — who has no placement — is the recipient of nothing.
+     */
     const accept = (expectedVersion: number) =>
       request(server())
         .post(`/api/v1/documents/${created.id}/actions/ACCEPT`)
-        .set('Cookie', records.cookies)
-        .set('x-csrf-token', records.csrf)
+        .set('Cookie', staff.cookies)
+        .set('x-csrf-token', staff.csrf)
         .send({ expectedVersion });
 
+    const refusedForRecords = await request(server())
+      .post(`/api/v1/documents/${created.id}/actions/ACCEPT`)
+      .set('Cookie', records.cookies)
+      .set('x-csrf-token', records.csrf)
+      .send({ expectedVersion: 1 })
+      .expect(422);
+    expect(refusedForRecords.body.error.code).toBe('ROUTE_NOT_FOR_ACTOR');
+
     const accepted = dataOf<DocumentPayload>(await accept(1).expect(201));
-    expect(accepted).toMatchObject({ status: 'IN_PROCESS', version: 2 });
+    /*
+     * Accepting stamps the route row, so the document itself is untouched: the status was already
+     * IN_PROCESS from registration and the version does not move (ADR-0005). What changes is that
+     * the hop is no longer outstanding, which is what the derived `PENDING` reads.
+     */
+    expect(accepted).toMatchObject({ status: 'IN_PROCESS', version: 1 });
 
     const detail = await request(server())
       .get(`/api/v1/documents/${created.id}`)
@@ -315,9 +333,18 @@ describe('document registry REST against a real database', () => {
     expect(timeline).toHaveLength(1);
     expect(timeline[0]).toMatchObject({ action: 'ACCEPT', toStatus: 'IN_PROCESS' });
 
-    // Replaying the accept against the now-stale version conflicts rather than double-applying.
-    const conflict = await accept(1).expect(409);
-    expect(conflict.body.error.code).toBe('WORKFLOW_CONFLICT');
+    const routes = dataOf<{ routes: { acceptedAt: string | null }[] }>(detail).routes;
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.acceptedAt).not.toBeNull();
+
+    /*
+     * Replaying the accept is a rule violation, not a version conflict. The version is unchanged
+     * — so there is nothing stale about the request — and the thing that stops it is the route
+     * row already carrying a received timestamp, which must not be overwritten: it is evidence
+     * printed on a slip that travelled with a physical document.
+     */
+    const replayed = await accept(1).expect(422);
+    expect(replayed.body.error.code).toBe('ROUTE_ALREADY_ACCEPTED');
   }, 30_000);
 
   it('lets an assignment reach a document a staff member is otherwise out of scope for', async () => {
@@ -440,7 +467,13 @@ describe('document registry REST against a real database', () => {
         .expect(201),
     );
     expect(routed.divisionId).toBe(DIV_B);
-    expect(routed.routes).toHaveLength(1);
+    /*
+     * Two hops, not one: registration writes the first — handing the document to the division it
+     * was registered for, unaccepted, because registering confers no custody (decision 154) — and
+     * routing writes the second. The route table is now the document's custody history rather
+     * than a log of forwards only.
+     */
+    expect(routed.routes).toHaveLength(2);
     expect(routed.version).toBe(2);
 
     // The forward moved the document out of the Division A staff member's scope.

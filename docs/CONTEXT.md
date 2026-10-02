@@ -82,7 +82,7 @@ The DTS replaces paper routing slips and fragmented email tracking with one acco
 
 **Revision**: A return from active review/signature processing to For Revision, followed by a new immutable file version and resubmission.
 
-**Initial**: A division head's recorded endorsement of an outgoing draft, taken before the Director signs it. A distinct act by a distinct authority, not a lesser signature. See ADR-0006.
+**Initial**: A division head's recorded endorsement of an outgoing draft, taken before the Director signs it. A distinct act by a distinct authority, not a lesser signature. Not required of correspondence drafted in the ORD itself, whose head is the Director — see ADR-0006 and ADR-0007.
 
 **Signature record**: The recorded authorization action, actor, time, and related file version. Only the Director signs. The MVP does not imply a public-key digital-signature service unless separately approved.
 
@@ -292,7 +292,7 @@ Agreed 2026-10-02. This round **amends** decisions 22, 24, 27, 38, 40, 49, 58 an
 158. ORD acceptance and onward routing are one user action that commits two audit events in a single transaction, so the slip can show both the time received and the time released.
 159. A forward names exactly one lead recipient, which takes custody and on whose action the workflow progresses.
 160. Other recipients of a forward are for-information: read and remark only, division-level only, attached to the hop that consulted them, and never a block on progress.
-161. Outgoing drafts pass For Initial, endorsed by the division head, before For Signature.
+161. Outgoing drafts pass For Initial, endorsed by the division head, before For Signature. **Amended 2026-10-02:** outgoing correspondence drafted in the ORD goes straight to For Signature. The ORD is a Division whose head is the Director, so requiring an initial there would have one person perform both acts — the arrangement decision 162 and ADR-0006 exist to prevent. Every other division's outgoing correspondence still requires its head's initial. See ADR-0007.
 162. Only the Director holds signing authority. Records staff and division heads do not sign.
 163. Incoming correspondence terminates at Complied, recorded with remarks by the unit holding it.
 164. Restore returns an archived document to the terminal state it came from.

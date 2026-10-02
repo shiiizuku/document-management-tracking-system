@@ -45,7 +45,7 @@ describe('DocumentDetailScreen', () => {
     expect(screen.getByText('Regional Office')).toBeInTheDocument();
     // The action button and the timeline entry for the same action share one label, so the user
     // is not matching an enum name against the control they pressed.
-    expect(screen.getAllByText('Accept & begin')).toHaveLength(2);
+    expect(screen.getAllByText('Accept custody')).toHaveLength(2);
     expect(screen.getByText('Logged at the front desk.')).toBeInTheDocument();
   });
 

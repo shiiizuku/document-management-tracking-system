@@ -25,10 +25,12 @@ const summary = (overrides: Partial<DashboardSummary> = {}): DashboardSummary =>
     PENDING: 5,
     IN_PROCESS: 3,
     FOR_REVISION: 1,
+    FOR_INITIAL: 1,
     FOR_SIGNATURE: 2,
     SIGNED: 1,
     FOR_RELEASE: 1,
     RELEASED: 2,
+    COMPLIED: 1,
     ARCHIVED: 1,
   },
   overdue: 2,
@@ -119,7 +121,7 @@ describe('DashboardScreen', () => {
     renderWithQuery(<DashboardScreen />);
 
     await waitFor(() =>
-      expect(screen.getByText(/Accept & begin by Ana Dela Cruz/)).toBeInTheDocument(),
+      expect(screen.getByText(/Accept custody by Ana Dela Cruz/)).toBeInTheDocument(),
     );
     expect(screen.getByRole('link', { name: /Incoming budget letter/ })).toHaveAttribute(
       'href',

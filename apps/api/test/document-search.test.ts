@@ -14,7 +14,7 @@ const documents: SearchableDocument[] = [
     sender: 'Alice Reyes',
     company: 'Alpha Agency',
     description: 'The hidden phrase exists only in body content.',
-    status: 'PENDING',
+    status: 'IN_PROCESS',
     priority: 'HIGH',
     type: 'MEMORANDUM',
     direction: 'INCOMING',

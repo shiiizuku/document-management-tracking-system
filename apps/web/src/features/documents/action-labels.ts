@@ -8,13 +8,21 @@ import type { WorkflowAction } from '@dts/contracts';
  * the control they pressed.
  */
 const ACTION_LABELS: Record<WorkflowAction, string> = {
-  ACCEPT: 'Accept & begin',
+  // Accepting is taking custody of a hop handed to your unit, not starting work on a new document
+  // — it happens at every hop and may happen several times on one document (ADR-0005).
+  ACCEPT: 'Accept custody',
   REQUEST_REVISION: 'Request revision',
   RESUBMIT: 'Resubmit',
+  // A division head's endorsement of an outgoing draft, before the Director signs it (ADR-0006).
+  // "Initial" as the bureau uses it — a distinct act by a distinct authority, not a lesser
+  // signature — so the label says so rather than reading as a smaller version of signing.
+  INITIAL: 'Record initial',
   SUBMIT_FOR_SIGNATURE: 'Submit for signature',
   SIGN: 'Record signature',
   PREPARE_RELEASE: 'Prepare release',
   RELEASE: 'Release document',
+  // The incoming terminal: acted upon, with remarks, by the unit holding it (decision 163).
+  COMPLY: 'Record compliance',
   ARCHIVE: 'Archive',
   RESTORE: 'Restore',
 };

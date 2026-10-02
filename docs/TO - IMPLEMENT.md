@@ -6,6 +6,50 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 
 ---
 
+## Core workflow revision (2026-10-02)
+
+The revision recorded in `CONTEXT.md` (decisions 152–175) and ADR-0005/0006/0007 is being delivered
+as six dependency-ordered slices. **Slices 1–2 are done**; the rest are not started.
+
+| Slice | Work | Status |
+| ----- | ---- | ------ |
+| 1 | Migration `0005` (custody columns on `document_routes`, derived `PENDING`, enum replacement) + one status vocabulary in `@dts/contracts` | ✅ done |
+| 2 | Workflow engine: `FOR_INITIAL`, `COMPLIED`, direction-branched matrix and `RESTORE`, re-entrant `ACCEPT` | ✅ done |
+| 3 | `DIRECTOR` role; remove `DOCUMENT_SIGN` from `RECORDS_STAFF` and `DIVISION_HEAD` | ⬜ not started |
+| 4 | Non-destructive routing: `relocate` must stop overwriting `documents.division_id`; scope resolves through accepted routes; multi-recipient forwards write `for_information` rows | ⬜ not started |
+| 5 | Reference Document join table (decisions 165–167) | ⬜ not started |
+| 6 | UI: detail-view right rail, reference-document modal, inline routing slip, list-view control, Inter | ⬜ not started |
+
+**What slices 1–2 changed that later slices inherit**
+
+- `documents.status` no longer holds `PENDING`; the enum type was replaced. `PENDING` is derived
+  from unaccepted `document_routes` rows through one predicate, `documentIsPending` in
+  `modules/authorization/query-scope.ts` — the registry filter, the dashboard tiles and
+  `pendingByDivision` all compose it. Any new list or report must too.
+- `@dts/contracts` is the single source for the status vocabulary. The database `pgEnum` and
+  `WorkflowService` both derive from it; `storedWorkflowStatusSchema` is the presented set minus
+  `PENDING`. A new status is added there and nowhere else.
+- `workflow_events.from_status` / `to_status` are `varchar`, not the enum: the timeline keeps the
+  vocabulary each row was written in, so pre-revision hops still read `PENDING`.
+- Registration writes an unaccepted route row (decision 154), so **`document_routes` is now custody
+  history, not a log of forwards** — code that assumed one row per forward needs checking.
+- `ACCEPT` does not bump `documents.version`; it stamps a route row under an
+  `accepted_at IS NULL` conditional update. Double acceptance is `422 ROUTE_ALREADY_ACCEPTED`, not
+  a version conflict.
+- Slice 3 is still owed: `DOCUMENT_SIGN` remains on `RECORDS_STAFF` and `DIVISION_HEAD`, because
+  removing it before the `DIRECTOR` role exists would leave outgoing documents unsignable.
+
+**Known gaps carried forward**
+
+- The seed (`apps/api/src/database/seed.ts`) still creates `RECORDS` / `PILOT` divisions. Decision
+  152 makes the ORD a Division with the Records Unit as a Section inside it, coded `ORD`; until
+  that lands, **no division is the ORD**, so every outgoing draft requires a division head's
+  initial. Safe but stricter than intended — see ADR-0007.
+- Release methods are still a database enum. Decision 27 as amended calls for configurable rows
+  seeded with Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered.
+
+---
+
 ## Phase status (updated 2026-10-01)
 
 | Phase                              | Backend            | Frontend      | Notes                                                                 |

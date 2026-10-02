@@ -85,7 +85,15 @@ describe('attachment files REST against a real database', () => {
     await migrate(database, {
       migrationsFolder: fileURLToPath(new URL('../drizzle', import.meta.url)),
     });
-    await database.insert(divisions).values({ id: DIV, code: 'FILE', name: 'Files Division' });
+    /*
+     * Coded ORD because this suite drives the outgoing path end to end as the records officer.
+     * The revision makes the Records Unit a Section within the Office of the Regional Director
+     * (decision 152), and an ORD draft skips the division head's initial — its head is the
+     * Director, so requiring one would have the same person initial and sign (ADR-0007).
+     */
+    await database
+      .insert(divisions)
+      .values({ id: DIV, code: 'ORD', name: 'Office of the Regional Director' });
     await database
       .insert(sections)
       .values({ id: SEC, divisionId: DIV, code: 'F1', name: 'Files Section' });
@@ -94,8 +102,10 @@ describe('attachment files REST against a real database', () => {
       displayName: 'Records Officer',
       passwordHash: hashSync(RECORDS_PASSWORD, 4),
       role: 'RECORDS_STAFF',
-      divisionId: null,
-      sectionId: null,
+      // Placed in the ORD's records section, so this officer is the recipient of the hop that
+      // registration creates and can therefore accept custody of what it registers.
+      divisionId: DIV,
+      sectionId: SEC,
       canAccessConfidential: true,
     });
 
@@ -190,11 +200,12 @@ describe('attachment files REST against a real database', () => {
         .post(`/api/v1/documents/${doc.id}/actions/${action}`)
         .set('Cookie', cookies)
         .send({ expectedVersion });
-    await act('ACCEPT', 2).expect(201); // v3
-    await act('SUBMIT_FOR_SIGNATURE', 3).expect(201); // v4
+    // Accepting stamps the route row and leaves the document's version alone.
+    await act('ACCEPT', 2).expect(201); // still v2
+    await act('SUBMIT_FOR_SIGNATURE', 2).expect(201); // v3
     const signed = dataOf<{ signedAttachmentVersionId: string | null }>(
-      await act('SIGN', 4).expect(201),
-    ); // v5
+      await act('SIGN', 3).expect(201),
+    ); // v4
     expect(signed.signedAttachmentVersionId).toBe(version.id);
 
     const detail = dataOf<{ signatures: { fileVersionId: string }[] }>(
