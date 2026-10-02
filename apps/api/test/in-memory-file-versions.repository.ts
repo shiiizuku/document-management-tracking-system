@@ -6,6 +6,7 @@ import type {
   FileVersionRow,
   NewFileVersion,
 } from '../src/modules/files/file-versions.repository.js';
+import { RELEASABLE_ATTACHMENT_MEDIA_TYPES } from '../src/modules/files/media-types.js';
 
 const isFinalScanStatus = (status: FileScanStatus): boolean =>
   status === 'CLEAN' || status === 'INFECTED';
@@ -102,5 +103,12 @@ export class InMemoryFileVersionsRepository {
 
   isClean(versionId: string): Promise<boolean> {
     return Promise.resolve(this.versions.get(versionId)?.scanStatus === 'CLEAN');
+  }
+
+  isReleasable(versionId: string): Promise<boolean> {
+    const version = this.versions.get(versionId);
+    return Promise.resolve(
+      version?.scanStatus === 'CLEAN' && RELEASABLE_ATTACHMENT_MEDIA_TYPES.has(version.mediaType),
+    );
   }
 }

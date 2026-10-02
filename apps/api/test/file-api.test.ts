@@ -5,6 +5,7 @@ import { type INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { strToU8, zipSync } from 'fflate';
 import { AppModule } from '../src/app.module.js';
 import { AuditWriter } from '../src/modules/audit/audit.writer.js';
 import { OutboxWriter } from '../src/modules/audit/outbox.writer.js';
@@ -37,6 +38,32 @@ const dataOf = <T>(response: { body: unknown }): T => (response.body as { data: 
 // are genuinely detectable; the "spoof" buffer is plain text wearing a application/pdf label.
 const PDF = Buffer.from('%PDF-1.7\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
 const SPOOF = Buffer.from('this is definitely not a pdf, just plain text pretending to be one');
+
+/**
+ * Minimal but genuine OOXML containers.
+ *
+ * Built rather than inlined as base64 because the single byte-level difference that matters here
+ * is the ContentType string in `[Content_Types].xml`: that is what makes one of these a `.docx`
+ * and the other a macro-enabled `.docm`, and it is what the sniffer reads. A fixture blob would
+ * hide the thing under test.
+ */
+const ooxml = (contentType: string, dir: string): Buffer =>
+  Buffer.from(
+    zipSync({
+      '[Content_Types].xml': strToU8(
+        `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/${dir}/document.xml" ContentType="${contentType}"/></Types>`,
+      ),
+      '_rels/.rels': strToU8('<?xml version="1.0"?><Relationships/>'),
+      [`${dir}/document.xml`]: strToU8('<?xml version="1.0"?><w:document/>'),
+    }),
+  );
+
+const DOCX = ooxml(
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
+  'word',
+);
+const DOCM = ooxml('application/vnd.ms-word.document.macroEnabled.main+xml', 'word');
+const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 describe('REST /api/v1 document attachments', () => {
   let app: INestApplication;
@@ -245,6 +272,86 @@ describe('REST /api/v1 document attachments', () => {
       'application/pdf',
     ).expect(400);
     expect(rejected.body.error.code).toBe('EMPTY_FILE');
+  });
+
+  /*
+   * Policy register P-06: Office documents are storable. The two OOXML types are named
+   * explicitly, which is what keeps their macro-enabled twins out without a second rule.
+   */
+  it('accepts a Word document', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const created = await createOutgoing(cookie);
+
+    const uploaded = await uploadFile(cookie, created.id, DOCX, 'draft.docx', DOCX_TYPE).expect(
+      201,
+    );
+    expect(dataOf<{ mediaType: string }>(uploaded).mediaType).toBe(DOCX_TYPE);
+  });
+
+  it('refuses a macro-enabled Word document, and says what to do instead', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const created = await createOutgoing(cookie);
+
+    // Declared as a plain .docx; the sniffer reads the bytes and finds the macro-enabled type,
+    // which the allow-list does not name.
+    const refused = await uploadFile(cookie, created.id, DOCM, 'draft.docx', DOCX_TYPE).expect(415);
+    expect(refused.body.error.message).toMatch(/Convert other Office documents to PDF/);
+  });
+
+  /*
+   * D-82 promises inline preview for clean PDFs and images only. Office documents are storable
+   * but not renderable, which is why the previewable set is no longer the allow-list itself.
+   */
+  it('refuses to preview a Word document even when it is clean', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const created = await createOutgoing(cookie);
+    const uploaded = await uploadFile(cookie, created.id, DOCX, 'draft.docx', DOCX_TYPE).expect(
+      201,
+    );
+    const versionId = dataOf<{ id: string }>(uploaded).id;
+
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/attachments/${versionId}/scan`)
+      .set('Cookie', cookie)
+      .send({ status: 'CLEAN' })
+      .expect(201);
+
+    await request(server())
+      .get(`/api/v1/documents/${created.id}/attachments/${versionId}/content`)
+      .set('Cookie', cookie)
+      .expect(415);
+  });
+
+  /*
+   * D-83 with D-71: a release has to be evidenced by a fixed artefact. A .docx can be perfectly
+   * clean and still be the wrong thing to release, because two people holding it can read
+   * different text.
+   */
+  it('blocks release when the current clean attachment is editable', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const created = await createOutgoing(cookie); // version 1
+
+    const uploaded = await uploadFile(cookie, created.id, DOCX, 'letter.docx', DOCX_TYPE).expect(
+      201,
+    ); // -> 2
+    const versionId = dataOf<{ id: string }>(uploaded).id;
+
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/attachments/${versionId}/scan`)
+      .set('Cookie', cookie)
+      .send({ status: 'CLEAN' })
+      .expect(201);
+
+    await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // -> 3
+    await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 3 }).expect(201); // -> 4
+    await act(cookie, created.id, 'SIGN', { expectedVersion: 4 }).expect(201); // -> 5
+    await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 5 }).expect(201); // -> 6
+
+    const blocked = await act(cookie, created.id, 'RELEASE', {
+      expectedVersion: 6,
+      releaseMethod: 'MAILED',
+    }).expect(422);
+    expect(blocked.body.error.code).toBe('RELEASE_BLOCKED');
   });
 
   it('rejects a file whose real bytes do not match an allowed media type', async () => {
