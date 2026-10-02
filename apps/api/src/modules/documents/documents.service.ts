@@ -19,7 +19,7 @@ import { AuditWriter } from '../audit/audit.writer.js';
 import { OutboxWriter } from '../audit/outbox.writer.js';
 import { AuthorizationPolicy } from '../authorization/authorization.policy.js';
 import { NotificationsRepository } from '../notifications/notifications.repository.js';
-import type { MonthlyReport } from '../reports/monthly-report.service.js';
+import type { MonthlyReport } from '../reports/monthly-report.js';
 import { UsersRepository } from '../users/users.repository.js';
 import { FileVersionsRepository } from '../files/file-versions.repository.js';
 import {
