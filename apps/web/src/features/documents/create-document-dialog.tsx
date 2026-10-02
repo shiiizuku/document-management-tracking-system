@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertCircle, Loader2, Paperclip, Plus, X } from 'lucide-react';
+import { AlertCircle, ChevronRight, Loader2, Paperclip, Plus, X } from 'lucide-react';
+import { Collapsible as CollapsiblePrimitive } from 'radix-ui';
 import { toast } from 'sonner';
 import type { z } from 'zod';
 import {
@@ -47,6 +48,7 @@ import { useUploadAttachmentToDocument } from '@/features/attachments/queries';
 import { useDivisions, useSections } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { applyServerErrors } from '@/lib/forms';
+import { cn } from '@/lib/utils';
 import { dueDateToIso, isoToDueDate } from './due-date';
 import { DOCUMENT_TYPES, useCreateDocument } from './queries';
 
@@ -98,9 +100,32 @@ export function CreateDocumentDialog() {
       description: '',
       sender: '',
       company: '',
-      referenceNumber: '',
+      /*
+       * These three live in a collapsed panel, so they are not mounted when the form first
+       * renders — and `applyServerErrors` only attaches to names it finds in `getValues()`, which
+       * reads the registered fields plus these defaults. Leaving them out meant a server error on
+       * `email` could not be attached to the input, so it fell through to the form-level alert and
+       * the panel holding the offending field never opened.
+       */
+      email: '',
+      sectionId: undefined,
+      dueAt: undefined,
     },
   });
+
+  /*
+   * Which collapsed panel is the reason the form will not submit.
+   *
+   * Read from RHF's error map rather than tracked by hand, so it covers both halves: a client-side
+   * rule from the shared schema, and a field error the server sent back through
+   * `applyServerErrors`. Without it a rejected email sits in a shut panel and the dialog looks
+   * broken — it refuses to save and shows nothing.
+   */
+  const { errors } = form.formState;
+  const hasDetailErrors = Boolean(
+    errors.priority ?? errors.sectionId ?? errors.dueAt ?? errors.company ?? errors.email,
+  );
+  const hasContentErrors = Boolean(errors.description);
 
   const divisions = useDivisions();
   const divisionId = form.watch('divisionId');
@@ -175,7 +200,7 @@ export function CreateDocumentDialog() {
           Register document
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] gap-3 overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] gap-3 overflow-y-auto sm:max-w-xl">
         <DialogHeader className="gap-0.5">
           <p className="eyebrow">New registry entry</p>
           <DialogTitle>Register document</DialogTitle>
@@ -185,26 +210,26 @@ export function CreateDocumentDialog() {
         </DialogHeader>
 
         <Form {...form}>
-          {/*
-            Three columns, not two. Nine of the eleven fields are a short select or a one-line
-            input, and at two columns each of those claimed half the dialog's width while using a
-            fraction of it — the form ran well past a screen for no reason. Grouped by what a clerk
-            holds in mind at once: what the document IS, where it GOES, who it is FROM.
-          */}
-          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3 sm:grid-cols-3">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
             {formError === null ? null : (
-              <Alert variant="destructive" className="sm:col-span-3">
+              <Alert variant="destructive">
                 <AlertCircle />
                 <AlertTitle>Could not register this document</AlertTitle>
                 <AlertDescription>{formError}</AlertDescription>
               </Alert>
             )}
 
+            {/*
+              Essentials first. These five are what it takes to file something: everything else
+              either has a sensible default (priority is Normal, placement is the division the
+              clerk belongs to) or is genuinely optional, and putting all eleven on screen made the
+              common case look as demanding as the rare one.
+            */}
             <FormField
               control={form.control}
               name="title"
               render={({ field }) => (
-                <FormItem className="sm:col-span-3">
+                <FormItem>
                   <FormLabel>Title</FormLabel>
                   <FormControl>
                     <Input maxLength={240} {...field} />
@@ -214,174 +239,88 @@ export function CreateDocumentDialog() {
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="direction"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Direction</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {documentDirectionSchema.options.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option === 'INCOMING' ? 'Incoming' : 'Outgoing'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <FormField
+                control={form.control}
+                name="direction"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Direction</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {documentDirectionSchema.options.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option === 'INCOMING' ? 'Incoming' : 'Outgoing'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Type</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {DOCUMENT_TYPES.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {documentTypeLabel(option)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="divisionId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Division</FormLabel>
+                    <Select
+                      value={field.value}
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        // The chosen section belongs to the old division and would be rejected.
+                        form.setValue('sectionId', undefined);
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a division" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {(divisions.data ?? []).map((division) => (
+                          <SelectItem key={division.id} value={division.id}>
+                            {division.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
-            <FormField
-              control={form.control}
-              name="priority"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Priority</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {documentPrioritySchema.options.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Type</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {DOCUMENT_TYPES.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {documentTypeLabel(option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="divisionId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Division</FormLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={(value) => {
-                      field.onChange(value);
-                      // The chosen section belongs to the old division and would be rejected.
-                      form.setValue('sectionId', undefined);
-                    }}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a division" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {(divisions.data ?? []).map((division) => (
-                        <SelectItem key={division.id} value={division.id}>
-                          {division.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="sectionId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Section</FormLabel>
-                  <Select
-                    value={field.value ?? NO_SECTION}
-                    onValueChange={(value) =>
-                      field.onChange(value === NO_SECTION ? undefined : value)
-                    }
-                    disabled={(sections.data ?? []).length === 0}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value={NO_SECTION}>
-                        {(sections.data ?? []).length === 0
-                          ? 'No sections'
-                          : 'Division-level (no section)'}
-                      </SelectItem>
-                      {(sections.data ?? []).map((section) => (
-                        <SelectItem key={section.id} value={section.id}>
-                          {section.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="dueAt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Target date (optional)</FormLabel>
-                  <FormControl>
-                    {/*
-                      A day in, an instant out. The contract types `dueAt` as a datetime, but the
-                      deadline a clerk sets is a date, so `dueDateToIso` pins it to the end of that
-                      day — see features/documents/due-date.ts for why the end rather than the start.
-                    */}
-                    <Input
-                      type="date"
-                      value={isoToDueDate(field.value)}
-                      onChange={(event) => field.onChange(dueDateToIso(event.target.value))}
-                      onBlur={field.onBlur}
-                      name={field.name}
-                      ref={field.ref}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
             <FormField
               control={form.control}
               name="sender"
@@ -399,75 +338,183 @@ export function CreateDocumentDialog() {
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="company"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Company / agency</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/*
+              The rest, folded away. `defaultOpen` is driven by whether anything inside is in
+              error, which is the part that cannot be left out: a server-rejected email in a
+              collapsed panel is a form that refuses to submit and will not say why.
+            */}
+            <OptionalSection
+              title="More details"
+              summary="Priority, section, target date, company, email"
+              hasError={hasDetailErrors}
+            >
+              <div className="grid gap-3 sm:grid-cols-3">
+                <FormField
+                  control={form.control}
+                  name="priority"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Priority</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {documentPrioritySchema.options.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sectionId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Section</FormLabel>
+                      <Select
+                        value={field.value ?? NO_SECTION}
+                        onValueChange={(value) =>
+                          field.onChange(value === NO_SECTION ? undefined : value)
+                        }
+                        disabled={(sections.data ?? []).length === 0}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value={NO_SECTION}>
+                            {(sections.data ?? []).length === 0
+                              ? 'No sections'
+                              : 'Division-level (no section)'}
+                          </SelectItem>
+                          {(sections.data ?? []).map((section) => (
+                            <SelectItem key={section.id} value={section.id}>
+                              {section.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="dueAt"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Target date (optional)</FormLabel>
+                      <FormControl>
+                        {/*
+                          A day in, an instant out. The contract types `dueAt` as a datetime, but the
+                          deadline a clerk sets is a date, so `dueDateToIso` pins it to the end of that
+                          day — see features/documents/due-date.ts for why the end rather than the start.
+                        */}
+                        <Input
+                          type="date"
+                          value={isoToDueDate(field.value)}
+                          onChange={(event) => field.onChange(dueDateToIso(event.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="company"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Company / agency</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value ?? ''} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email address (optional)</FormLabel>
+                      <FormControl>
+                        {/*
+                          `type="email"` for the keyboard it brings up on a phone and for the browser's
+                          own hint; the contract validates it properly either way, because a type
+                          attribute is a convenience and not a check.
+                        */}
+                        <Input
+                          type="email"
+                          autoComplete="off"
+                          placeholder="sender@agency.gov.ph"
+                          {...field}
+                          value={field.value ?? ''}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Where replies about this document should go.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </OptionalSection>
 
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email address (optional)</FormLabel>
-                  <FormControl>
-                    {/*
-                      `type="email"` for the keyboard it brings up on a phone and for the browser's
-                      own hint; the contract validates it properly either way, because a type
-                      attribute is a convenience and not a check.
-                    */}
-                    <Input
-                      type="email"
-                      autoComplete="off"
-                      placeholder="sender@agency.gov.ph"
-                      {...field}
-                      value={field.value ?? ''}
-                    />
-                  </FormControl>
-                  <FormDescription>Where replies about this document should go.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <OptionalSection
+              title="Attachments and subject"
+              summary="Files to attach, and what the document is about"
+              hasError={hasContentErrors}
+            >
+              <FormItem>
+                <FormLabel htmlFor="register-attachments">Attachments (optional)</FormLabel>
+                <StagedFiles
+                  id="register-attachments"
+                  files={staged}
+                  onAdd={(added) => setStaged((current) => [...current, ...added])}
+                  onRemove={(index) =>
+                    setStaged((current) => current.filter((_, i) => i !== index))
+                  }
+                  disabled={busy}
+                />
+                <FormDescription>
+                  Files upload once the record exists and the tracking number is assigned.
+                </FormDescription>
+              </FormItem>
 
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem className="sm:col-span-3">
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea rows={3} {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormItem className="sm:col-span-3">
-              <FormLabel htmlFor="register-attachments">Attachments (optional)</FormLabel>
-              <StagedFiles
-                id="register-attachments"
-                files={staged}
-                onAdd={(added) => setStaged((current) => [...current, ...added])}
-                onRemove={(index) => setStaged((current) => current.filter((_, i) => i !== index))}
-                disabled={busy}
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Subject</FormLabel>
+                    <FormControl>
+                      <Textarea rows={3} {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              <FormDescription>
-                Files upload once the record exists and the tracking number is assigned.
-              </FormDescription>
-            </FormItem>
+            </OptionalSection>
 
-            <DialogFooter className="sm:col-span-3">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -582,5 +629,76 @@ function StagedFiles({
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * A fold for the fields that are not needed to file a document.
+ *
+ * Shut by default and opened by the user — or by the form, when something inside it is why the
+ * submit was refused. That second case is the whole reason this takes `hasError` rather than
+ * managing its own state alone: a validation message inside a closed panel is invisible, and a
+ * dialog that will not save without saying why is worse than one with eleven fields on show.
+ *
+ * `hasError` only ever forces it OPEN. Clearing the error does not shut it again — the user is
+ * mid-correction in there, and closing the panel under them would be the rudest possible moment.
+ */
+function OptionalSection({
+  title,
+  summary,
+  hasError,
+  children,
+}: Readonly<{
+  title: string;
+  summary: string;
+  hasError: boolean;
+  children: ReactNode;
+}>) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (hasError) setOpen(true);
+  }, [hasError]);
+
+  return (
+    <CollapsiblePrimitive.Root
+      open={open}
+      onOpenChange={setOpen}
+      className="rounded-md3-sm border border-border"
+    >
+      <CollapsiblePrimitive.Trigger asChild>
+        <button
+          type="button"
+          className="md3-state-layer flex w-full items-center gap-2 rounded-md3-sm px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ChevronRight
+            className={cn(
+              'size-4 shrink-0 text-on-surface-variant transition-transform duration-(--md-duration-short-2) ease-standard',
+              open && 'rotate-90',
+            )}
+            aria-hidden
+          />
+          <span className="min-w-0 flex-1">
+            <span className="block text-label-large">{title}</span>
+            {open ? null : (
+              <span className="block truncate text-label-small text-on-surface-variant">
+                {summary}
+              </span>
+            )}
+          </span>
+          {hasError ? (
+            <span className="shrink-0 text-label-small font-bold text-on-error-container">
+              Needs attention
+            </span>
+          ) : (
+            <span className="shrink-0 text-label-small text-on-surface-variant">Optional</span>
+          )}
+        </button>
+      </CollapsiblePrimitive.Trigger>
+
+      <CollapsiblePrimitive.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+        <div className="flex flex-col gap-3 border-t border-border p-3">{children}</div>
+      </CollapsiblePrimitive.Content>
+    </CollapsiblePrimitive.Root>
   );
 }
