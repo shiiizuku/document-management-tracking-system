@@ -48,6 +48,75 @@ as six dependency-ordered slices. **Slices 1–2 are done**; the rest are not st
 - Release methods are still a database enum. Decision 27 as amended calls for configurable rows
   seeded with Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered.
 
+### Slice 3 plan — the `DIRECTOR` role
+
+Planned 2026-10-02 for the next session. Implements ADR-0006. **This is a privilege reduction on
+two live roles**, so the order below matters: the role and its account must exist before signing is
+taken away from anyone, or outgoing correspondence becomes unsignable between two commits.
+
+**Why it is not just a table edit.** `DIRECTOR` is the first role that is *placed in a division yet
+reads the whole office*. Today placement narrows scope and the two roles with office-wide read
+(`ADMINISTRATOR`, `RECORDS_STAFF`) are the two whose placement is optional. The Director is placed
+in the ORD — ADR-0006 — and must still review any division's work in order to sign it. That breaks
+the implicit rule in both halves of the authorization layer, which is the real work of this slice.
+
+**Steps, in order**
+
+1. **Vocabulary and schema.** Add `DIRECTOR` to `roleSchema`
+   (`packages/contracts/src/index.ts`) and to the `role` pgEnum (`apps/api/src/database/schema.ts`,
+   derived by hand here — unlike the status enum, the role enum is still written out). Migration is
+   `ALTER TYPE "role" ADD VALUE 'DIRECTOR'`, which is additive and needs no backfill. Note that
+   Postgres will not let a newly added enum value be *used* in the same transaction that adds it,
+   so the seed must not run in that migration.
+2. **Membership rules.** `membershipRules` in `packages/contracts/src/index.ts` requires a division
+   for every role except `ADMINISTRATOR` and `RECORDS_STAFF`; `DIRECTOR` keeps that requirement
+   (it belongs to the ORD) and must **not** require a section. The same predicate is duplicated
+   server-side at `organization.service.ts:167` and in the web at `users-screen.tsx:90` and
+   `account-requests-screen.tsx:277` — all four change together or the form and the API disagree
+   about whether a Director needs a section.
+3. **Read scope — both halves together.** `AuthorizationPolicy.canRead`
+   (`authorization.policy.ts`) and its SQL twin `documentScopeFor` (`query-scope.ts`) each
+   special-case `ADMINISTRATOR || RECORDS_STAFF` for office-wide read. `DIRECTOR` joins that branch
+   **without** losing the confidentiality gate. ADR-0006 is explicit that records staff and the
+   Director must not be collapsed: records staff see everything and sign nothing, the Director sees
+   everything and signs.
+4. **Capabilities.** Add a `DIRECTOR` entry to `capabilitiesByRole`
+   (`role-capabilities.ts`) holding `DOCUMENT_SIGN` plus `REPORT_VIEW` — narrow by design. It does
+   **not** get `DOCUMENT_INITIAL`: initialling belongs to division heads, and under ADR-0007 an ORD
+   draft skips `FOR_INITIAL` entirely, so the Director never needs it.
+5. **Then remove `DOCUMENT_SIGN` from `RECORDS_STAFF` and `DIVISION_HEAD`.** Only after 1–4 and the
+   seeded account in 6 exist.
+6. **Seed a Director.** `apps/api/src/database/seed.ts` gains a `director@dts.local` account in the
+   ORD division. ADR-0006 makes this a deployment-ordering constraint, not a convenience: release
+   is gated on a signature record, so **no outgoing document can be released until a `DIRECTOR`
+   account exists**. This is coupled to the decision-152 org restructure — the ORD division itself
+   does not exist in the seed yet — so the two may be worth doing in one pass.
+7. **`user:read` for the Director?** Open question, not a blocker. `UserPolicy`
+   (`identity.policies.ts:37`) lets a `DIVISION_HEAD` read its own division's users so it can pick
+   assignees. The Director signs documents rather than assigning them, so the default of "needs
+   `USER_MANAGE`" is probably right — but the timeline and signature panels display actor names,
+   so check whether those resolve names through an endpoint the Director may not call.
+
+**Tests that will fail and are supposed to**
+
+- `role-capabilities.test.ts` asserts every contract capability is granted to at least one role —
+  it will pass only once `DIRECTOR` holds `DOCUMENT_SIGN`, which is the point.
+- `authorization.service.test.ts:13` hard-codes the five-role list for its matrix sweep; add
+  `DIRECTOR` there so the matrix actually covers it.
+- `query-scope.int.test.ts` should gain a Director case asserting office-wide read *and* that the
+  confidentiality gate still applies — the same shape as the existing records-staff case.
+- **Every test that signs as records staff breaks**: `files.int.test.ts` (whose fixture user is
+  `RECORDS_STAFF` in the ORD-coded division) and `file-api.test.ts` (`records@dts.local`). These
+  need a Director actor to perform `SIGN`, which is the clearest evidence the privilege reduction
+  actually took effect.
+- The web role pickers derive from `roleSchema.options`, so `DIRECTOR` appears in the admin forms
+  with no UI change. `apps/web/test/fixtures.ts` and `session.test.tsx` pin `RECORDS_STAFF` and are
+  unaffected.
+
+**Done when:** a Director account signs an outgoing document end to end; records staff and division
+heads are refused `SIGN` with a 403 and a negative test proves it; the authorization matrix passes
+for six roles; and the Director can read another division's document but not a confidential one.
+
 ---
 
 ## Phase status (updated 2026-10-01)
