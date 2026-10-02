@@ -1,10 +1,15 @@
 /*
- * The app's theme: Tailwind, plus the brand carried into the shadcn CSS variables.
+ * The app's theme.
  *
- * The `--dts-*` values are the brand itself, and are the palette the retired bespoke stylesheet
- * used — the rebuild is meant to be visually continuous with the screens it replaced, not to look
- * like stock shadcn. The shadcn semantic names below alias them, which is what lets a component
- * copied from the registry inherit the brand without being patched.
+ * This file used to alias the brand's `--dts-*` values straight onto shadcn's semantic names. It no
+ * longer does: md3-theme.css now owns the colour system, and it generates MD3 tonal palettes from a
+ * hue and a chroma rather than from a list of nine hex values.
+ *
+ * The brand did not change in the move. The green the bespoke stylesheet used, #175c43, measures
+ * L 42.5 / C 0.080 / H 164 in OKLCh — which is to say it already WAS tone 40 of a hue-164 palette,
+ * so it survives as the `sage` accent preset, and sage is the default. The `--dts-*` values are
+ * kept below because a handful of brand marks (the seal, the gold eyebrow rule, the priority flag)
+ * want the literal ink, not a role; everything structural should use a role.
  *
  * Imported once, by the root layout.
  */
@@ -13,9 +18,12 @@
 /* Supplies the enter/exit keyframes the Radix-driven components animate with (`animate-in`,
    `slide-in-from-*`, `fade-in-0`). Tailwind v4 dropped the plugin these used to come from. */
 @import 'tw-animate-css';
+/* The MD3 token layer: tonal palettes, accent presets, density presets, the light and dark role
+   assignments, the shadcn bridge, and the state-layer utility. */
+@import './md3-theme.css';
 
 :root {
-  /* Brand palette, verbatim from globals.css */
+  /* Brand marks. Literal ink, for the few places that want the mark rather than a role. */
   --dts-ink: #17231e;
   --dts-muted: #68756f;
   --dts-paper: #f4f3ed;
@@ -26,86 +34,66 @@
   --dts-pale: #e3eee8;
   --dts-gold: #c49a45;
   --dts-danger: #a63d3d;
-
-  /* shadcn semantic aliases */
-  --background: var(--dts-paper);
-  --foreground: var(--dts-ink);
-  --card: var(--dts-card);
-  --card-foreground: var(--dts-ink);
-  --popover: var(--dts-card);
-  --popover-foreground: var(--dts-ink);
-  --primary: var(--dts-green);
-  --primary-foreground: #fff;
-  --secondary: var(--dts-pale);
-  --secondary-foreground: var(--dts-green);
-  --muted: var(--dts-pale);
-  --muted-foreground: var(--dts-muted);
-  /*
-   * shadcn's `accent` is the hover/active SURFACE — ghost buttons, dropdown and select items, table
-   * row hover — not a brand accent colour. Pointing it at the gold would repaint every hover state
-   * gold; the pale green is what the screens it replaces actually use. The gold stays available as
-   * `--dts-gold` (utilities `bg-gold` / `text-gold`) for the places the brand really wants it: the
-   * seal, the eyebrow rules, the priority flag.
-   */
-  --accent: var(--dts-pale);
-  --accent-foreground: var(--dts-green);
-  --destructive: var(--dts-danger);
-  --destructive-foreground: #fff;
-  --border: var(--dts-line);
-  --input: var(--dts-line);
-  --ring: var(--dts-green2);
-  --radius: 0.625rem;
 }
 
-/*
- * `inline` resolves the var() at build time so utilities such as bg-background and text-primary
- * are generated from the aliases above.
- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-
-  /* Brand colours with no shadcn equivalent, exposed as utilities rather than inline styles. */
+  /* Brand marks as utilities, so they never need an inline style. Note that `gold` here is the
+   * literal brand gold; the MD3 `tertiary` role is the one that follows the accent preset. */
   --color-gold: var(--dts-gold);
   --color-ink: var(--dts-ink);
   --color-paper: var(--dts-paper);
 
   --font-sans: 'DM Sans', system-ui, sans-serif;
   --font-serif: 'DM Serif Display', Georgia, serif;
-
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
 }
 
 @layer base {
+  /*
+   * `color-scheme` is what makes the browser's own chrome — scrollbars, form controls, the
+   * autofill wash — follow the theme. Without it a dark app keeps light scrollbars.
+   */
+  :root {
+    color-scheme: light;
+  }
+
+  .dark,
+  [data-theme='dark'] {
+    color-scheme: dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']):not(.light) {
+      color-scheme: dark;
+    }
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+    /* MD3's body role, rather than Tailwind's 16px/1.5 default. */
+    font-size: var(--text-body-medium);
+    line-height: 1.25rem;
+    letter-spacing: 0.015625rem;
+    /*
+     * The theme can change under the user's feet when they pick an accent, a density or a mode, so
+     * the page cross-fades instead of cutting. Only colour transitions — never layout — and the
+     * standard curve, because this is ambient movement the user did not aim at a specific element.
+     */
+    transition:
+      background-color var(--md-duration-medium-1) var(--md-ease-standard),
+      color var(--md-duration-medium-1) var(--md-ease-standard);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body {
+      transition-duration: 1ms;
+    }
   }
 
   /*
-   * Headings carry the display serif, as they do on the screens being replaced. Set once here
-   * instead of adding `font-serif` to every heading in every route.
+   * Headings carry the display serif, as they do on the screens being replaced, and now sit on the
+   * MD3 type scale. Set once here instead of adding classes to every heading in every route.
    */
   h1,
   h2,
@@ -114,17 +102,44 @@
     font-weight: 400;
   }
 
+  h1 {
+    font-size: var(--text-headline-large);
+    line-height: 2.5rem;
+  }
+
+  h2 {
+    font-size: var(--text-headline-small);
+    line-height: 2rem;
+  }
+
+  h3 {
+    font-size: var(--text-title-large);
+    line-height: 1.75rem;
+  }
+
   /*
-   * The eyebrow — a small upper-case green label above a heading — appears above every page title
-   * and panel heading in this design. It is a type treatment, not a component, so it stays a base
-   * class rather than becoming a one-element React wrapper.
+   * The eyebrow — a small upper-case label above a heading — appears above every page title and
+   * panel heading in this design. It is a type treatment, not a component, so it stays a base class
+   * rather than becoming a one-element React wrapper. It now follows the accent: under `graphite`
+   * it reads as grey ink, which is the point of that preset.
    */
   .eyebrow {
     font-family: var(--font-sans);
-    font-size: 0.6875rem;
+    font-size: var(--text-label-small);
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--dts-green2);
+    color: var(--md-primary);
+  }
+
+  /*
+   * One focus treatment for the whole app, and it is a ring rather than MD3's 3px outline-offset
+   * block because the ring survives `overflow: hidden` on the state-layer host. 3:1 against the
+   * adjacent surface is WCAG 2.2 SC 1.4.11; `--md-primary` at tone 40 (light) / 80 (dark) clears it
+   * against every container tone in the scale, for every accent preset.
+   */
+  :focus-visible {
+    outline: 2px solid var(--md-primary);
+    outline-offset: 2px;
   }
 }
