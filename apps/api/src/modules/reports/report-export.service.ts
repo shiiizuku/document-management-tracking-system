@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { strToU8, zipSync } from 'fflate';
 import PDFDocument from 'pdfkit';
-import { sanitizeSpreadsheetCell, type MonthlyReport } from './monthly-report.service.js';
+import { sanitizeSpreadsheetCell, type MonthlyReport } from './monthly-report.js';
 import type { PublicDocument, TimelineEntry } from '../documents/documents.service.js';
 
 const escapeXml = (value: string): string =>
