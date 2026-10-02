@@ -208,6 +208,19 @@ export class DocumentsService {
       : false;
   }
 
+  /**
+   * Whether a document's current attachment could carry a release: clean **and** fixed-form.
+   *
+   * Distinct from {@link cleanFlag}, which is what the API reports as
+   * `hasCleanCurrentAttachment` and means exactly what it says. This one feeds the workflow's
+   * release rule, where a clean but editable `.docx` is not sufficient (D-83, D-71).
+   */
+  private async releasableFlag(row: DocumentRow): Promise<boolean> {
+    return row.currentFileVersionId !== null
+      ? this.fileVersions.isReleasable(row.currentFileVersionId)
+      : false;
+  }
+
   // ------------------------------------------------------------------- create
 
   async create(actor: RequestUser, input: CreateDocumentInput): Promise<PublicDocument> {
@@ -509,8 +522,10 @@ export class DocumentsService {
       throw new ForbiddenException('Action is not allowed');
 
     // Signing pins the version being signed; releasing checks that pin against the current
-    // clean attachment. Scan state is read from the persisted file version.
-    const currentClean = await this.cleanFlag(current);
+    // attachment. Scan state and media type are both read from the persisted file version: the
+    // workflow's release rule needs an attachment that is clean AND fixed-form, so an editable
+    // Office document cannot evidence a release (D-83).
+    const currentClean = await this.releasableFlag(current);
 
     try {
       const result = this.workflow.execute(

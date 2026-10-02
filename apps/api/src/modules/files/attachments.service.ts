@@ -24,28 +24,24 @@ import {
   type FileVersionRow,
 } from './file-versions.repository.js';
 import { StoragePort } from './storage.port.js';
+import {
+  ALLOWED_ATTACHMENT_MEDIA_TYPES,
+  MAX_ATTACHMENT_BYTES,
+  PREVIEWABLE_ATTACHMENT_MEDIA_TYPES,
+  UNSUPPORTED_MEDIA_TYPE_MESSAGE,
+} from './media-types.js';
 
-// Upload policy (decisions 107/117): only formats that can be stored safely and previewed
-// inline, each with a well-known magic-byte signature so the true content type is verified
-// from the bytes rather than trusting the client's declared header.
-export const ALLOWED_ATTACHMENT_MEDIA_TYPES: ReadonlySet<string> = new Set([
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-]);
-export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-
-/**
- * The formats a browser is asked to render in place rather than hand over as a file.
- *
- * Derived from the upload allow-list rather than listed again, because every format the system
- * accepts is one it accepted *because* it can be previewed safely (decision 117). As a derivation
- * a new upload format cannot quietly become previewable by omission — narrowing this set later is
- * then a deliberate edit.
- */
-export const PREVIEWABLE_ATTACHMENT_MEDIA_TYPES: ReadonlySet<string> =
-  ALLOWED_ATTACHMENT_MEDIA_TYPES;
+// The media-type policy (allow-list, previewable, releasable, and the refusal message) lives in
+// ./media-types.js so the file-versions repository can enforce the release gate without closing an
+// import cycle through this service. Re-exported here because callers already import it from the
+// service, and a format question has one answer whichever door it comes through.
+export {
+  ALLOWED_ATTACHMENT_MEDIA_TYPES,
+  MAX_ATTACHMENT_BYTES,
+  PREVIEWABLE_ATTACHMENT_MEDIA_TYPES,
+  RELEASABLE_ATTACHMENT_MEDIA_TYPES,
+  UNSUPPORTED_MEDIA_TYPE_MESSAGE,
+} from './media-types.js';
 
 /** Bytes leaving the service for a caller to render or save, with what they are and were called. */
 export interface AttachmentContent {
@@ -109,7 +105,7 @@ export class AttachmentsService {
     if (detected === undefined || !ALLOWED_ATTACHMENT_MEDIA_TYPES.has(detected.mime))
       throw new UnsupportedMediaTypeException({
         code: 'UNSUPPORTED_MEDIA_TYPE',
-        message: 'Attachment type is not one of the supported formats',
+        message: UNSUPPORTED_MEDIA_TYPE_MESSAGE,
       });
 
     // A provided attachmentId adds a version to an existing attachment of THIS document; a

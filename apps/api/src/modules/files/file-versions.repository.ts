@@ -4,6 +4,7 @@ import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
 import type { DatabaseExecutor } from '../../database/executor.js';
 import { fileRecords, fileVersions } from '../../database/schema.js';
+import { RELEASABLE_ATTACHMENT_MEDIA_TYPES } from './media-types.js';
 
 export type FileRecordRow = typeof fileRecords.$inferSelect;
 export type FileVersionRow = typeof fileVersions.$inferSelect;
@@ -154,5 +155,20 @@ export class FileVersionsRepository {
   async isClean(versionId: string): Promise<boolean> {
     const version = await this.findVersionById(versionId);
     return version?.scanStatus === 'CLEAN';
+  }
+
+  /**
+   * Whether this version can carry a release: scanned clean **and** in a fixed form.
+   *
+   * Separate from {@link isClean} because the two answer different questions, and the difference
+   * only appeared once Office documents became uploadable. A `.docx` can be perfectly clean and
+   * still be the wrong thing to evidence an outgoing record with, since it is editable — so the
+   * release gate asks this, and everything that only cares about malware asks `isClean`.
+   */
+  async isReleasable(versionId: string): Promise<boolean> {
+    const version = await this.findVersionById(versionId);
+    return (
+      version?.scanStatus === 'CLEAN' && RELEASABLE_ATTACHMENT_MEDIA_TYPES.has(version.mediaType)
+    );
   }
 }

@@ -57,7 +57,11 @@ services:
   clamav:
     image: clamav/clamav:stable
     ports: ['${CLAMAV_HOST_PORT:-3311}:3310']
-    volumes: ['clamav_data:/var/lib/clamav']
+    volumes:
+      - 'clamav_data:/var/lib/clamav'
+      # Pins the archive-scan limits and turns on AlertExceedsMax, so an archive clamd declines
+      # to scan in full is reported as a detection rather than as clean (policy register P-07).
+      - './infra/clamav/clamd.conf:/etc/clamav/clamd.conf:ro'
     healthcheck:
       test: ['CMD', '/usr/local/bin/clamdcheck.sh']
       interval: 30s
