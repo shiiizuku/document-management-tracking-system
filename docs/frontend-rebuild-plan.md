@@ -2,9 +2,9 @@
 
 _Agreed 2026-10-01. Task-level backlog: `docs/IMPLEMENTATION_STATUS.md` → **M7 · Frontend rebuild**._
 
-**Status: F0, F1 and F2 are done.** `DtsApp` and `globals.css` are gone; every screen below is on
-shadcn, routed, and served by the domain query modules. What remains is the ⌘K command palette under
-**Later**, plus the Phase 7 QA sweeps that decision 8 deferred.
+**Status: F0, F1, F2 and the ⌘K palette under _Later_ are done.** `DtsApp` and `globals.css` are
+gone; every screen below is on shadcn, routed, and served by the domain query modules. What remains
+is the Phase 7 QA sweeps that decision 8 deferred.
 
 The UI this replaced (PRs #50–#56) worked but lived in one 735-line client component (`DtsApp`)
 styled by a 1,198-line bespoke `globals.css`. It could not absorb the remaining surfaces (admin,
@@ -116,10 +116,29 @@ dashboard. Each is noted here because the plan said the remaining endpoints alre
   viewer that cannot say whether it is showing everything or the first page is worse than one that
   refuses to answer, and it matches the registry's page shape so both lists drive one `DataTable`.
 
-### Later (after F2)
+### Later (after F2) _(done)_
 
 - ⌘K command palette (shadcn `Command`): jump to a tracking number, run allowed actions. Satisfies
-  D-99's "discoverable" keyboard-shortcut requirement.
+  D-99's "discoverable" keyboard-shortcut requirement — the chord is printed on a real topbar
+  button, which also opens the palette, so it is never a shortcut the user has to be told about.
+
+It is mounted once in the app shell, which is what lets it offer actions on the document in view
+from anywhere on the page; the open document is read from the path, so no route knows the palette
+exists. Three things were worth recording:
+
+- **The action machinery moved into `useActionRunner`**, shared by the palette and the detail
+  page's action bar. The alternative — the palette posting the command itself — is a second copy of
+  the dialog-per-action rule, the optimistic-concurrency 409 and the toasts, and the 409 is the path
+  nobody exercises by hand.
+- **cmdk's own filter is off** (`shouldFilter={false}`). The document rows are the server's answer
+  to the same term, already scoped to what the user may read; letting the client re-score them would
+  silently hide matches. The two static groups are filtered in the component instead.
+- **`useRunAction` no longer seeds the detail cache from its response.** `POST
+  /documents/:id/actions/:action` answers with `PublicDocument` — the registry's row shape, with no
+  `allowedActions` — so seeding it wrote a summary into the detail entry and the detail screen threw
+  on the next render. It invalidates and refetches. This was a pre-existing F1 bug that the palette
+  simply ran into first; the component tests missed it because they mocked the response with a
+  detail-shaped fixture the API never sends.
 
 ### Testing
 

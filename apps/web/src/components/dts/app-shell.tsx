@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { CommandPalette } from '@/features/command-palette/command-palette';
 import { NotificationsSheet } from '@/features/notifications/notifications-sheet';
 import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
 import { useLogout, useSession, type SessionUser } from '@/features/session/queries';
@@ -65,6 +66,13 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
           <span className="font-serif text-base lg:hidden">Document Tracking System</span>
 
           <div className="ml-auto flex items-center gap-1">
+            {/*
+              The palette lives here, beside the other topbar controls, because its trigger is how
+              the ⌘K shortcut is discovered at all — mounting it invisibly would be the undiscoverable
+              shortcut D-99 rules out. It is in the shell rather than a route for the same reason
+              realtime is: one key listener for the whole signed-in app.
+            */}
+            <CommandPalette />
             <NotificationsSheet live={realtime.connected} />
             <AccountMenu user={user} />
           </div>
