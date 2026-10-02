@@ -10,7 +10,7 @@ import {
 } from '../src/features/documents/queries';
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
-import { documentDetail } from './fixtures';
+import { documentDetail, documentItem } from './fixtures';
 import { invalidatedKeys, requestBody } from './mock-api';
 
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
@@ -94,16 +94,37 @@ describe('invalidateDocument', () => {
 });
 
 describe('useRunAction', () => {
-  it('seeds the fresh document from the response instead of refetching it', async () => {
-    const updated = documentDetail({ status: 'IN_PROCESS', version: 4 });
-    apiMock.mockResolvedValue(updated);
-    const { client, wrapper } = harness();
+  /*
+   * The action endpoint answers with the document's SUMMARY — the registry's row shape — not the
+   * detail. Seeding the detail cache from it was the original implementation, and it put an object
+   * with no `allowedActions` where the detail screen reads one, so the screen crashed on the render
+   * straight after every successful action. The fixture here is the summary for that reason: a
+   * detail-shaped one hides the bug by supplying fields the server never sends.
+   */
+  it('refetches the detail rather than seeding it from a response that is only a summary', async () => {
+    const stale = documentDetail({ status: 'PENDING', version: 3 });
+    apiMock.mockResolvedValue(documentItem({ status: 'IN_PROCESS', version: 4 }));
+    const { client, invalidate, wrapper } = harness();
+    client.setQueryData(['documents', 'detail', 'doc-1'], stale);
     const { result } = renderHook(() => useRunAction('doc-1'), { wrapper });
 
     result.current.mutate({ action: 'ACCEPT', expectedVersion: 3 });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.getQueryData(['documents', 'detail', 'doc-1'])).toEqual(updated);
+    expect(invalidatedKeys(invalidate)).toContain(JSON.stringify(['documents', 'detail', 'doc-1']));
+    // Whatever is in the detail entry must still be a detail: never a summary without actions.
+    expect(client.getQueryData(['documents', 'detail', 'doc-1'])).toHaveProperty('allowedActions');
+  });
+
+  it('settles every cached list page, because the row has moved between filtered views', async () => {
+    apiMock.mockResolvedValue(documentItem({ status: 'IN_PROCESS', version: 4 }));
+    const { invalidate, wrapper } = harness();
+    const { result } = renderHook(() => useRunAction('doc-1'), { wrapper });
+
+    result.current.mutate({ action: 'ACCEPT', expectedVersion: 3 });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidatedKeys(invalidate)).toContain(JSON.stringify(['documents', 'list']));
   });
 
   /*

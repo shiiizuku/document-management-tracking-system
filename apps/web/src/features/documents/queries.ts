@@ -141,6 +141,9 @@ const documentKeys = {
   lists: () => [...documentKeys.all, 'list'] as const,
   list: (filters: DocumentFilters, page: number) =>
     [...documentKeys.lists(), { ...filters, page }] as const,
+  // Under `lists()` so that `invalidateDocument` settles it with every other cached list: a
+  // released document must not keep showing as pending in the palette either.
+  search: (term: string) => [...documentKeys.lists(), 'search', term] as const,
   detail: (id: string) => [...documentKeys.all, 'detail', id] as const,
   revisions: (id: string) => [...documentKeys.all, 'revisions', id] as const,
   deleted: () => [...documentKeys.all, 'deleted'] as const,
@@ -180,10 +183,46 @@ export function useDocuments(filters: DocumentFilters, page: number) {
   });
 }
 
-export function useDocument(id: string) {
+export function useDocument(id: string, enabled = true) {
   return useQuery({
     queryKey: documentKeys.detail(id),
     queryFn: () => api<DocumentDetail>(`/documents/${id}`),
+    enabled,
+  });
+}
+
+/** How many matches the command palette offers before telling the user to open the registry. */
+export const DOCUMENT_SEARCH_LIMIT = 6;
+
+/** Below this, a term is too short to be worth a request — two characters match almost anything. */
+export const DOCUMENT_SEARCH_MIN_LENGTH = 2;
+
+/**
+ * A handful of documents matching a typed term, for the command palette's jump-to.
+ *
+ * Deliberately not `useDocuments` with a search filter: that hook is the registry's, keyed on the
+ * full filter set and a page, and its cache entries are the rows a user navigates back to. This is
+ * keyed on the term alone and capped at {@link DOCUMENT_SEARCH_LIMIT}, because the palette is
+ * asking a different question — "which document do you mean" rather than "show me this view".
+ *
+ * `enabled` is the caller's, so a closed palette holds no subscription at all.
+ */
+export function useDocumentSearch(term: string, enabled: boolean) {
+  const search = term.trim();
+  return useQuery({
+    queryKey: documentKeys.search(search),
+    queryFn: () =>
+      api<DocumentPage>(
+        `/documents?${documentsQueryString(
+          { ...DEFAULT_DOCUMENT_FILTERS, search },
+          1,
+          DOCUMENT_SEARCH_LIMIT,
+        )}`,
+      ),
+    enabled: enabled && search.length >= DOCUMENT_SEARCH_MIN_LENGTH,
+    // Keeps the previous term's matches listed while the next request is in flight, so the list
+    // narrows as the user types instead of emptying between keystrokes.
+    placeholderData: (previous) => previous,
   });
 }
 
@@ -227,20 +266,24 @@ export interface WorkflowCommand {
   releaseMethod?: ReleaseMethod | undefined;
 }
 
-/** Runs one of the server-offered workflow actions against a document. */
+/**
+ * Runs one of the server-offered workflow actions against a document.
+ *
+ * The response is the document's summary — the same shape the registry lists — and **not** the
+ * detail: it carries no `allowedActions`, timeline or routes. So the detail is invalidated and
+ * refetched rather than seeded from it. Seeding looks like the cheaper option and is how this was
+ * first written, but it writes a summary into the detail cache entry, and the next render of the
+ * detail screen then reads `allowedActions` off an object that has none.
+ */
 export function useRunAction(id: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ action, ...body }: WorkflowCommand) =>
-      api<DocumentDetail>(`/documents/${id}/actions/${action}`, {
+      api<DocumentListItem>(`/documents/${id}/actions/${action}`, {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: (detail) => {
-      // The response is the fresh document, so seed it rather than refetching what we just got.
-      client.setQueryData(documentKeys.detail(id), detail);
-      invalidateDocument(client, undefined);
-    },
+    onSuccess: () => invalidateDocument(client, id),
     // A 409 means the caller's copy was stale. Refetch so the retry is against reality; the
     // screen only has to tell the user it changed.
     onError: () => invalidateDocument(client, id),

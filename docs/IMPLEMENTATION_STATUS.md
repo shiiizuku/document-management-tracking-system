@@ -61,11 +61,13 @@ history, forward/route; attachments with per-version scan badges, scan-gated dow
 PDF/image preview; the notifications sheet over the live WebSocket; monthly reports with XLSX/PDF
 export; the scope-aware dashboard (status totals, overdue, pending-by-division, recent activity, all
 from `GET /dashboard/summary`); `/my-work`; `/audit`; `/admin/requests`, `/admin/users`,
-`/admin/organization`; and capability-gated delete/restore plus the routing-slip download.
+`/admin/organization`; and capability-gated delete/restore plus the routing-slip download. The ⌘K
+command palette is in too, mounted in the app shell: jump to a document by tracking number over the
+server's scoped search, run the open document's `allowedActions`, or go to any destination the user
+holds the capability for.
 
-**What is left on the frontend is quality, not surface area:** the ⌘K command palette (D-99's
-discoverable-shortcut requirement), and the axe sweep, responsive/browser matrix and Playwright E2E
-that the rebuild plan's decision 8 deferred to Phase 7.
+**What is left on the frontend is quality, not surface area:** the axe sweep, responsive/browser
+matrix and Playwright E2E that the rebuild plan's decision 8 deferred to Phase 7.
 
 ### Module verdict
 
@@ -457,8 +459,15 @@ unticked _Frontend_ boxes in M1–M5: build those surfaces here, not in `DtsApp`
 
 **Later**
 
-- [ ] (2h) ⌘K command palette (jump to tracking number, run allowed actions). _Done-when:_ the
-      palette opens from the keyboard and is listed in the UI.
+- [x] (2h) ⌘K command palette (jump to tracking number, run allowed actions). _Done-when:_ the
+      palette opens from the keyboard and is listed in the UI. ✓ — mounted in the app shell beside
+      the notifications bell, opened with ⌘K/Ctrl+K **or** the topbar button that prints the chord
+      (D-99's discoverability half). Three groups: the open document's `allowedActions`, documents
+      matching the typed term over a capped server search, and the capability-filtered destinations
+      from the same table the sidebar renders. _Also:_ the workflow-action mutation no longer seeds
+      the detail cache from its response — that response is the document's **summary**, so seeding
+      it put an object with no `allowedActions` where the detail screen reads one and crashed the
+      screen after every successful action.
 
 ---
 
