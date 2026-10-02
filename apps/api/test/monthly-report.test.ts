@@ -87,6 +87,73 @@ describe('MonthlyReportService public seam', () => {
     expect(result.totals.total).toBe(1);
   });
 
+  /*
+   * The companion to the case above: being out of division is not the same as being out of reach.
+   * A division head assigned a document in another division may read it, so it belongs on their
+   * report — and `calculate` can only know that from the assignment its caller supplies. Pinned
+   * here because the arrays this depends on are the easiest thing for a caller to leave empty,
+   * and the result would be a report quietly missing rows rather than a failure.
+   *
+   * `documents.int.test.ts` asserts the same case over the shipped path and real SQL.
+   */
+  it('counts a document from another division that the actor is assigned to', () => {
+    const service = new MonthlyReportService(new AuthorizationPolicy());
+    const divisionHead = {
+      ...recordsActor,
+      id: 'head-1',
+      role: 'DIVISION_HEAD' as const,
+      divisionId: 'division-a',
+      sectionId: null,
+    };
+
+    const result = service.calculate(
+      divisionHead,
+      [
+        row({ id: 'own-division' }),
+        row({ id: 'assigned-elsewhere', divisionId: 'division-b', sectionId: 'section-b1' }),
+      ].map((document) =>
+        document.id === 'assigned-elsewhere'
+          ? { ...document, assigneeUserIds: [divisionHead.id] }
+          : document,
+      ),
+      2026,
+      9,
+    );
+
+    expect(result.documents.map((document) => document.id)).toEqual([
+      'own-division',
+      'assigned-elsewhere',
+    ]);
+    expect(result.totals.total).toBe(2);
+  });
+
+  it('counts a document from another division that was shared with the actor', () => {
+    const service = new MonthlyReportService(new AuthorizationPolicy());
+    const divisionHead = {
+      ...recordsActor,
+      id: 'head-1',
+      role: 'DIVISION_HEAD' as const,
+      divisionId: 'division-a',
+      sectionId: null,
+    };
+
+    const result = service.calculate(
+      divisionHead,
+      [
+        row({
+          id: 'shared-elsewhere',
+          divisionId: 'division-b',
+          sectionId: 'section-b1',
+          sharedUserIds: [divisionHead.id],
+        }),
+      ],
+      2026,
+      9,
+    );
+
+    expect(result.totals.total).toBe(1);
+  });
+
   it('creates a structurally valid XLSX with user text stored as literal cells', async () => {
     const service = new MonthlyReportService(new AuthorizationPolicy());
     const report = service.calculate(
