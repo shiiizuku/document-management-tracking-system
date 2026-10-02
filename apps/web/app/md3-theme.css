@@ -34,7 +34,30 @@
 
 @custom-variant dark (&:is(.dark *, .dark, [data-theme='dark'] *, [data-theme='dark']));
 
-:root {
+/*
+ * Everything from here to the end of the elevation block is declared for `:root` AND for any
+ * element carrying `data-accent` — which is the mechanism, not a flourish.
+ *
+ * A custom property is substituted once, on the element that declares it, and descendants inherit
+ * the RESULT. So `--md-primary-40: oklch(40% var(--md-chroma-primary) var(--md-hue-primary))`
+ * declared only at `:root` resolves there and nowhere else: a nested element may override
+ * `--md-hue-primary` all it likes, the ramp above it has already been computed and frozen. That is
+ * why the nine accent swatches in the appearance menu all painted the CURRENT accent — the hue
+ * changed per swatch and nothing downstream looked at it again.
+ *
+ * Matching `[data-accent]` as well re-runs the derivation on that element, so a `data-accent` put
+ * on a span re-seeds the whole palette for that span and `bg-primary` inside it is a true preview.
+ *
+ * `:where()` is what keeps the nine presets below winning. They are `[data-accent='…']` — the same
+ * specificity this selector would otherwise carry, which would leave source order as the only thing
+ * deciding whether a chosen accent or the Sage defaults applied. Zeroing this block's specificity
+ * makes the presets beat it structurally, so moving the preset blocks (they read like seeds and
+ * invite tidying) can no longer silently paint the whole app Sage.
+ *
+ * Only the colour-derived tokens live in this block. Shape, motion and density follow in a
+ * `:root`-only block, because a swatch has no business re-declaring the app's density.
+ */
+:where(:root, [data-accent]) {
   /* ----------------------------------------------------------------------------------------------
    * PALETTE SEEDS — six palettes, two numbers each. Everything in the next section is derived.
    * `[data-accent]` overrides these; the defaults here are the Sage (brand) preset.
@@ -174,6 +197,13 @@
   --md-inverse-surface: var(--md-neutral-20);
   --md-inverse-on-surface: var(--md-neutral-96);
   --md-scrim: var(--md-neutral-0);
+  /*
+   * The scrim as it is actually painted: MD3 puts it at 32%. This is a named token rather than a
+   * `bg-scrim/32` opacity modifier for a reason worth knowing — `--md-scrim` resolves through
+   * nested `var()`s, so Tailwind cannot statically rewrite it into a `color-mix`, and it drops the
+   * modifier instead of failing. `bg-scrim/32` emits a fully OPAQUE scrim and blacks out the page.
+   */
+  --md-scrim-veil: color-mix(in oklab, var(--md-neutral-0) 32%, transparent);
   --md-shadow: var(--md-neutral-0);
 
   /* ----------------------------------------------------------------------------------------------
@@ -214,6 +244,52 @@
   --md-shadow-5:
     0 4px 4px 0 color-mix(in oklab, var(--md-shadow) 30%, transparent),
     0 8px 12px 6px color-mix(in oklab, var(--md-shadow) 15%, transparent);
+}
+
+/*
+ * Scheme-independent scales. `:root` only: these do not derive from the accent, and an accent
+ * preview must not reset the app's density inside its own subtree.
+ */
+:root {
+  /* ----------------------------------------------------------------------------------------------
+   * THE WORKFLOW SIGNAL SCALE
+   *
+   * A document's status is a four-way traffic signal — waiting / moving / done / closed — and that
+   * is a distinction the accent palette deliberately cannot carry: the whole point of the accent
+   * presets is that `primary` means whatever the user picked, so status cannot be spoken in it.
+   * These four hues are therefore fixed, like `error` is, and for the same reason.
+   *
+   * What they were NOT, until now, is scheme-aware. They were literal light-mode hex values, so in
+   * dark mode a "Pending" pill stayed a pale cream blob on a near-black page, and the two priority
+   * colours failed WCAG AA outright: URGENT measured 2.73:1 and HIGH 4.22:1 against
+   * surface-container-high. (HIGH failed in light mode too, at 3.58:1.)
+   *
+   * `light-dark()` rather than a second block in each of the two dark scopes: `color-scheme` is
+   * already set per mode in theme.css, so the switch exists and one declaration can carry both
+   * values. The container/on-container tone pairs follow MD3's own light-vs-dark convention —
+   * tone 95 on tone 45 in light, tone 30 on tone 90 in dark.
+   * -------------------------------------------------------------------------------------------- */
+
+  /* Waiting on someone: PENDING, FOR_REVISION. */
+  --dts-signal-wait: light-dark(oklch(95% 0.055 85), oklch(32% 0.05 85));
+  --dts-on-signal-wait: light-dark(oklch(45% 0.09 85), oklch(90% 0.06 85));
+  /* Moving: IN_PROCESS, FOR_SIGNATURE, FOR_RELEASE. */
+  --dts-signal-move: light-dark(oklch(92% 0.028 240), oklch(32% 0.045 240));
+  --dts-on-signal-move: light-dark(oklch(45% 0.075 240), oklch(88% 0.05 240));
+  /* Complete: SIGNED, RELEASED. */
+  --dts-signal-done: light-dark(oklch(93% 0.032 160), oklch(32% 0.045 160));
+  --dts-on-signal-done: light-dark(oklch(45% 0.08 160), oklch(89% 0.05 160));
+  /* Closed: ARCHIVED. */
+  --dts-signal-closed: light-dark(oklch(92% 0.004 85), oklch(30% 0.004 85));
+  --dts-on-signal-closed: light-dark(oklch(45% 0.008 85), oklch(87% 0.005 85));
+
+  /*
+   * Priority, which is text on the page rather than a pill, so these are the ON-colours only and
+   * they have to clear 4.5:1 against `surface-container-high` in both schemes — the lightness
+   * stops below are picked for exactly that and are verified in the browser, not guessed.
+   */
+  --dts-priority-urgent: light-dark(oklch(45% 0.16 27), oklch(78% 0.13 27));
+  --dts-priority-high: light-dark(oklch(45% 0.105 70), oklch(82% 0.11 75));
 
   /* ----------------------------------------------------------------------------------------------
    * SHAPE SCALE
@@ -417,8 +493,16 @@
  * surface by adding white without washing it out, so MD3 lifts it by adding hue.
  * ============================================================================================== */
 
+/*
+ * The descendant selectors are for the accent previews. A nested `[data-accent]` re-declares the
+ * LIGHT roles above it (they share a block with the ramps it needs), so without these a swatch
+ * would paint light-scheme roles while the rest of the page is dark. `.dark [data-accent]` is
+ * (0,2,0) against the light block's (0,1,0), so the dark roles win on the swatch too.
+ */
 .dark,
-[data-theme='dark'] {
+[data-theme='dark'],
+.dark [data-accent],
+[data-theme='dark'] [data-accent] {
   --md-primary: var(--md-primary-80);
   --md-on-primary: var(--md-primary-20);
   --md-primary-container: var(--md-primary-30);
@@ -470,7 +554,9 @@
  * `data-theme` once the user has chosen, and this block stops applying.
  */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(.light) {
+  /* Same pairing as the explicit-dark block above, for the accent previews. */
+  :root:not([data-theme='light']):not(.light),
+  :root:not([data-theme='light']):not(.light) [data-accent] {
     --md-primary: var(--md-primary-80);
     --md-on-primary: var(--md-primary-20);
     --md-primary-container: var(--md-primary-30);
@@ -535,7 +621,15 @@
  *     quieter one, or the table turns into a grid of boxes.
  * ============================================================================================== */
 
-:root {
+/*
+ * `[data-accent]` for the same reason the palette block carries it: `--primary: var(--md-primary)`
+ * is substituted where it is declared, so a bridge declared only at `:root` would hand every
+ * descendant the root accent's colour no matter what `--md-primary` says locally — and `bg-primary`
+ * goes through this alias, not through `--md-primary` directly. Re-aliasing on the accented element
+ * is what carries a re-seeded palette into the shadcn utility names.
+ */
+:root,
+[data-accent] {
   --background: var(--md-surface-container-low);
   --foreground: var(--md-on-surface);
 
@@ -563,7 +657,14 @@
   --border: var(--md-outline-variant);
   --input: var(--md-outline);
   --ring: var(--md-primary);
+}
 
+/*
+ * `--radius` is shape, not colour, so it stays on `:root` alone — the block above re-runs on every
+ * accented element, and an accent preview re-declaring the app's corner radius for its own subtree
+ * is the same cross-axis leak the palette split exists to avoid.
+ */
+:root {
   --radius: var(--md-shape-md);
 }
 
@@ -628,6 +729,19 @@
   --color-inverse-surface: var(--md-inverse-surface);
   --color-inverse-on-surface: var(--md-inverse-on-surface);
   --color-scrim: var(--md-scrim);
+  --color-scrim-veil: var(--md-scrim-veil);
+
+  /* The workflow signal scale, as `bg-signal-wait` / `text-on-signal-wait` and friends. */
+  --color-signal-wait: var(--dts-signal-wait);
+  --color-on-signal-wait: var(--dts-on-signal-wait);
+  --color-signal-move: var(--dts-signal-move);
+  --color-on-signal-move: var(--dts-on-signal-move);
+  --color-signal-done: var(--dts-signal-done);
+  --color-on-signal-done: var(--dts-on-signal-done);
+  --color-signal-closed: var(--dts-signal-closed);
+  --color-on-signal-closed: var(--dts-on-signal-closed);
+  --color-priority-urgent: var(--dts-priority-urgent);
+  --color-priority-high: var(--dts-priority-high);
 
   /* Tonal elevation as backgrounds: `bg-elevation-2`. No shadow utility required. */
   --color-elevation-0: var(--md-elevation-0);
@@ -749,6 +863,16 @@
   --ease-emphasized-decelerate: var(--md-ease-emphasized-decelerate);
   --ease-emphasized-accelerate: var(--md-ease-emphasized-accelerate);
 
+  /*
+   * There is deliberately no `--duration-*` block to match the easings above. Tailwind v4 has a
+   * theme namespace for `ease-*` but NOT for `duration-*`, which takes a bare number of
+   * milliseconds or an arbitrary value and nothing else. A `duration-short-2` class therefore
+   * matches no utility, generates no CSS, and leaves Tailwind's own 150ms default in place — with
+   * no error, which is how it survived on Button, Card and the appearance panel unnoticed.
+   *
+   * Components spell the duration `duration-(--md-duration-short-2)` instead. Keep that shape.
+   */
+
   /* Density, as `h-control`, `px-control`, `p-card`, `gap-card` and friends. */
   --spacing-control: var(--md-density-control-px);
   --spacing-control-gap: var(--md-density-control-gap);
@@ -757,9 +881,115 @@
   --spacing-section: var(--md-density-section-gap);
   --height-control: var(--md-density-control-h);
   --size-control: var(--md-density-control-h);
+  /*
+   * `h-row` for a table row. It existed as a token from the start but had no utility bound to it,
+   * which is most of why density "did not really work": Button and Card read their tokens, and the
+   * tables — the thing a clerk actually stares at all day, and the whole reason Compact exists —
+   * carried hardcoded padding and never moved.
+   */
+  --height-row: var(--md-density-row-h);
+  --spacing-row: var(--md-density-row-h);
+}
+
+@layer base {
+  /*
+   * THE DEFAULT BORDER COLOUR.
+   *
+   * Tailwind v4 changed the default border colour from v3's grey to `currentColor`, so a bare
+   * `border` or `border-b` — which is what most of the unmodified shadcn components in `ui/` carry
+   * — paints the element's TEXT colour. That is `on-surface`: tone 10 in light, tone 90 in dark.
+   * The registry's row dividers were painting at L 0.90 on an L 0.17 surface in dark mode, a
+   * near-white grid, where `--border` (outline-variant) is L 0.30.
+   *
+   * The fix belongs here rather than in each component for the same reason the bridge above
+   * exists: it is one rule, it is the actual root cause, and it covers the next registry component
+   * added as well as the nine already affected (alert, command, dialog, dropdown-menu, select,
+   * sheet, table). An explicit `border-<colour>` utility still wins — it lands in the utilities
+   * layer, which outranks this.
+   *
+   * `outline-variant`, not `outline`: see the bridge note. A divider wants the quieter token.
+   */
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    border-color: var(--border);
+  }
+}
+
+/*
+ * Disclosure. Radix measures the panel and publishes its height as
+ * `--radix-collapsible-content-height`, which is the only way to animate to `auto` — a height
+ * transition needs two numbers and `auto` is not one. Decelerate open, accelerate shut, like every
+ * other surface that appears and leaves.
+ */
+@keyframes md3-collapsible-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+
+@keyframes md3-collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
 }
 
 @layer utilities {
+  /*
+   * THE APPEARANCE HANDOVER.
+   *
+   * Switching mode or density repaints most of the page at once, and an instant cut reads as a
+   * glitch rather than as a result — the user cannot tell what changed because nothing appeared to
+   * change, it was simply different. This transitions the whole tree through it, so the new theme
+   * arrives as a movement the eye can follow.
+   *
+   * Applied as a class for the length of the change and then removed, NOT left on permanently.
+   * A standing `transition` on every element in the document would make every hover, focus and
+   * state layer in the app inherit a 300ms lag, which is the opposite of responsive — the one
+   * place a cut is correct is the control the user is pointing at.
+   *
+   * Density is in the property list as well as colour: half the point of Compact is watching the
+   * rows close up, and a height that jumps has not shown the user what it did.
+   */
+  .md3-appearance-switching,
+  .md3-appearance-switching *,
+  .md3-appearance-switching *::before,
+  .md3-appearance-switching *::after {
+    transition-property:
+      background-color, border-color, color, fill, stroke, box-shadow, outline-color, height,
+      min-height, width, padding, margin, gap, font-size, line-height;
+    transition-duration: var(--md-duration-medium-2);
+    transition-timing-function: var(--md-ease-standard);
+  }
+
+  /*
+   * Honour the OS setting, the same way the state layer does: reduced, not removed. The movement
+   * goes, the handover still happens.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .md3-appearance-switching,
+    .md3-appearance-switching *,
+    .md3-appearance-switching *::before,
+    .md3-appearance-switching *::after {
+      transition-duration: 1ms;
+    }
+  }
+
+  .animate-collapsible-down {
+    animation: md3-collapsible-down var(--md-duration-medium-1) var(--md-ease-standard-decelerate);
+  }
+
+  .animate-collapsible-up {
+    animation: md3-collapsible-up var(--md-duration-short-4) var(--md-ease-standard-accelerate);
+  }
+
   /*
    * THE STATE LAYER — one utility instead of a hover colour per variant.
    *

@@ -177,6 +177,12 @@ export const documents = pgTable(
     status: statusEnum('status').notNull().default('PENDING'),
     sender: varchar('sender', { length: 240 }),
     company: varchar('company', { length: 240 }),
+    /*
+     * Contact address for the correspondent. Deliberately NOT folded into `reference_number`:
+     * that column is uniquely indexed where not null, and two documents from the same
+     * correspondent share an email address as a matter of course.
+     */
+    email: varchar('email', { length: 240 }),
     divisionId: uuid('division_id')
       .notNull()
       .references(() => divisions.id),

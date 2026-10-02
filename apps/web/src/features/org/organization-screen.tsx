@@ -84,7 +84,7 @@ export function OrganizationScreen() {
     <>
       <PageHeader
         eyebrow="Administration"
-        title="Organization"
+        title="Divisions"
         count={divisions.data?.length}
         description="Divisions and their sections. Codes are fixed once created — they appear in issued reference numbers."
         actions={<DivisionDialog />}

@@ -216,6 +216,19 @@ export const createDocumentSchema = z
     sender: z.string().trim().max(240).optional(),
     company: z.string().trim().max(240).optional(),
     referenceNumber: z.string().trim().max(120).optional(),
+    /*
+     * A contact address for the document's sender or recipient, kept distinct from
+     * `referenceNumber`: that column carries a partial UNIQUE index (one external reference per
+     * document), and two documents from the same correspondent legitimately share an email.
+     * Empty string is coerced away so an untouched optional field does not fail validation.
+     */
+    email: z
+      .string()
+      .trim()
+      .max(240)
+      .email('Enter a valid email address')
+      .optional()
+      .or(z.literal('').transform(() => undefined)),
     divisionId: z.string().trim().min(1),
     sectionId: z.string().trim().min(1).optional(),
     confidential: z.boolean().default(false),
@@ -251,6 +264,7 @@ export const updateDocumentMetadataSchema = z
     sender: z.string().trim().max(240).nullable().optional(),
     company: z.string().trim().max(240).nullable().optional(),
     referenceNumber: z.string().trim().max(120).nullable().optional(),
+    email: z.string().trim().max(240).email('Enter a valid email address').nullable().optional(),
     confidential: z.boolean().optional(),
     dueAt: z.string().datetime().nullable().optional(),
   })

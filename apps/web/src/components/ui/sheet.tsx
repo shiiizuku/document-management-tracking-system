@@ -29,7 +29,10 @@ function SheetOverlay({
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        'fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+        /* The scrim as a role at MD3's 32%, matching the dialog's. */
+        'fixed inset-0 z-50 bg-scrim-veil',
+        'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-(--md-duration-long-1) data-[state=open]:ease-standard-decelerate',
+        'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-(--md-duration-medium-2) data-[state=closed]:ease-standard-accelerate',
         className,
       )}
       {...props}
@@ -53,7 +56,19 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          'fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500',
+          /*
+           * `popover` for the same reason the dialog takes it: a sheet is a raised container, and
+           * on `background` it was the exact tone of the page it slides over — in dark mode the
+           * 1px edge was the only thing saying where the page stopped and the panel began.
+           */
+          'fixed z-50 flex flex-col gap-4 bg-popover text-popover-foreground shadow-lg',
+          /*
+           * The sheet already split its durations; what it shared was the curve — Tailwind's
+           * `ease-in-out`, which is the LEGACY Material curve, applied to both directions. A panel
+           * travelling this far is the emphasized set's case.
+           */
+          'data-[state=open]:animate-in data-[state=open]:duration-(--md-duration-long-1) data-[state=open]:ease-emphasized-decelerate',
+          'data-[state=closed]:animate-out data-[state=closed]:duration-(--md-duration-medium-2) data-[state=closed]:ease-emphasized-accelerate',
           side === 'right' &&
             'inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm',
           side === 'left' &&

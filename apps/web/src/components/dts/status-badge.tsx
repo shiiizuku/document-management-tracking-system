@@ -9,10 +9,16 @@ import { cn } from '@/lib/utils';
  * decision, and four screens making it independently is how "FOR_REVISION" ends up amber in one
  * list and grey in another.
  *
- * The colours are the ones the bespoke stylesheet used, as literals rather than theme tokens:
- * they are a four-way traffic signal (waiting / moving / done / closed) with no equivalent in the
- * shadcn palette, and mapping them onto `primary`/`secondary` would collapse distinctions the
- * user reads at a glance.
+ * The colours are a four-way traffic signal — waiting / moving / done / closed — with no
+ * equivalent in the shadcn palette; mapping them onto `primary`/`secondary` would collapse
+ * distinctions the user reads at a glance, and they cannot be spoken in the accent because the
+ * accent is whatever the user picked. They are fixed hues for the same reason `error` is.
+ *
+ * They were literal light-mode hex values until the dark scheme shipped, which left a Pending pill
+ * as a pale cream blob on a near-black page and put URGENT at 2.73:1. The scale now lives in
+ * md3-theme.css as `--dts-signal-*`, carries a value per scheme, and is reached through the
+ * `signal-*` / `priority-*` utilities below — so a tone is changed in one place and both schemes
+ * follow.
  */
 
 const STATUS_LABELS: Record<WorkflowStatus, string> = {
@@ -28,14 +34,14 @@ const STATUS_LABELS: Record<WorkflowStatus, string> = {
 
 /** Waiting on someone, moving, complete, or closed. */
 const STATUS_TONES: Record<WorkflowStatus, string> = {
-  PENDING: 'bg-[#fff0cf] text-[#7f5a12]',
-  FOR_REVISION: 'bg-[#fff0cf] text-[#7f5a12]',
-  IN_PROCESS: 'bg-[#dce9f3] text-[#2e6082]',
-  FOR_SIGNATURE: 'bg-[#dce9f3] text-[#2e6082]',
-  FOR_RELEASE: 'bg-[#dce9f3] text-[#2e6082]',
-  SIGNED: 'bg-[#dcefe5] text-[#236447]',
-  RELEASED: 'bg-[#dcefe5] text-[#236447]',
-  ARCHIVED: 'bg-[#e8e6e2] text-[#615d56]',
+  PENDING: 'bg-signal-wait text-on-signal-wait',
+  FOR_REVISION: 'bg-signal-wait text-on-signal-wait',
+  IN_PROCESS: 'bg-signal-move text-on-signal-move',
+  FOR_SIGNATURE: 'bg-signal-move text-on-signal-move',
+  FOR_RELEASE: 'bg-signal-move text-on-signal-move',
+  SIGNED: 'bg-signal-done text-on-signal-done',
+  RELEASED: 'bg-signal-done text-on-signal-done',
+  ARCHIVED: 'bg-signal-closed text-on-signal-closed',
 };
 
 export function StatusBadge({
@@ -60,8 +66,8 @@ export function StatusBadge({
  * purpose: if every row is coloured, none of them stands out.
  */
 const PRIORITY_TONES: Record<DocumentPriority, string> = {
-  URGENT: 'text-[#a52c2c]',
-  HIGH: 'text-[#a16b17]',
+  URGENT: 'text-priority-urgent',
+  HIGH: 'text-priority-high',
   NORMAL: 'text-muted-foreground',
   LOW: 'text-muted-foreground',
 };

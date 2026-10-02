@@ -55,6 +55,12 @@ afterEach(() => {
   searchParams.current = new URLSearchParams();
 });
 
+/**
+ * The filter panel is collapsed unless the screen arrives already filtered, so a test that drives
+ * a filter has to open it the way a user would.
+ */
+const openAdvanced = () => userEvent.click(screen.getByRole('button', { name: /Advanced search/ }));
+
 describe('AuditScreen', () => {
   it('lists recorded actions with the total the server counted', async () => {
     serve({ trail: auditPage([auditEvent()], 137) });
@@ -138,6 +144,7 @@ describe('AuditScreen', () => {
   it('puts a chosen date range in the URL so the finding can be linked', async () => {
     serve();
     renderWithQuery(<AuditScreen />);
+    await openAdvanced();
     await waitFor(() => expect(screen.getByLabelText('From')).toBeInTheDocument());
 
     await userEvent.type(screen.getByLabelText('From'), '2026-09-01');

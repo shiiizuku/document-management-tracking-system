@@ -45,6 +45,28 @@ const twMerge = extendTailwindMerge({
       shadow: [{ shadow: ['md3-1', 'md3-2', 'md3-3', 'md3-4', 'md3-5'] }],
       // The MD3 shape scale, so `rounded-md3-lg` conflicts with `rounded-full` as it should.
       rounded: [{ rounded: ['md3-none', 'md3-xs', 'md3-sm', 'md3-md', 'md3-lg', 'md3-xl'] }],
+      /*
+       * The MD3 easings. Same failure mode as the type roles, one step quieter: tailwind-merge
+       * knows only `ease-linear` / `ease-initial` / arbitrary, so `ease-standard` is unrecognised
+       * and falls through ungrouped — `cn('ease-standard', 'ease-linear')` keeps BOTH, and which
+       * one wins is left to stylesheet order rather than to the caller. The overlays now pass a
+       * different easing per direction, so this group has to exist for an override to work.
+       *
+       * The durations need no entry: `duration-(--md-duration-short-2)` is an arbitrary value in
+       * a group tailwind-merge already has, and it collapses correctly.
+       */
+      ease: [
+        {
+          ease: [
+            'standard',
+            'standard-decelerate',
+            'standard-accelerate',
+            'emphasized',
+            'emphasized-decelerate',
+            'emphasized-accelerate',
+          ],
+        },
+      ],
     },
   },
 });

@@ -54,6 +54,7 @@ export interface PublicDocument {
   status: DocumentRow['status'];
   sender: string | null;
   company: string | null;
+  email: string | null;
   divisionId: string;
   sectionId: string | null;
   createdById: string;
@@ -146,6 +147,7 @@ const METADATA_FIELDS = [
   'sender',
   'company',
   'referenceNumber',
+  'email',
   'confidential',
   'dueAt',
 ] as const;
@@ -186,6 +188,7 @@ export class DocumentsService {
       status: row.status,
       sender: row.sender,
       company: row.company,
+      email: row.email,
       divisionId: row.divisionId,
       sectionId: row.sectionId,
       createdById: row.createdById,
@@ -258,6 +261,7 @@ export class DocumentsService {
           status: 'PENDING',
           sender: input.sender ?? null,
           company: input.company ?? null,
+          email: input.email ?? null,
           divisionId: input.divisionId,
           sectionId: input.sectionId ?? null,
           createdById: actor.id,

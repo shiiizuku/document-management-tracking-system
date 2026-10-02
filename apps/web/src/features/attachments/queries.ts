@@ -71,6 +71,28 @@ export function useUploadAttachment(documentId: string) {
 }
 
 /**
+ * Uploads a file to a document named per call rather than per hook.
+ *
+ * The sibling above binds its `documentId` when the hook is constructed, which is right for the
+ * attachments section — it belongs to one open record. Registration is the case that cannot use
+ * it: the document does not exist when the form mounts, so the id only arrives with the create
+ * response, and a hook cannot be re-made at that point.
+ *
+ * Deliberately NOT a cache-invalidating mutation per file. The caller uploads a batch and then
+ * navigates to the new record, which mounts the attachments query fresh; invalidating a key
+ * nothing is subscribed to would be work for no observer.
+ */
+export function useUploadAttachmentToDocument() {
+  return useMutation({
+    mutationFn: ({ documentId, file }: { documentId: string; file: File }) => {
+      const body = new FormData();
+      body.set('file', file);
+      return upload<AttachmentVersion>(`/documents/${documentId}/attachments`, body);
+    },
+  });
+}
+
+/**
  * Downloads a version's bytes.
  *
  * Fetched with credentials through `download()` rather than offered as a plain link: a link would

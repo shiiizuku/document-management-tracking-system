@@ -44,7 +44,7 @@ const buttonVariants = cva(
     'text-label-large',
     // Only colour and transform animate; never size, or a row of buttons reflows on hover.
     // `standard` is the curve for a state change the user did not aim anywhere specific.
-    'transition-[color,background-color,border-color,box-shadow] duration-short-2 ease-standard',
+    'transition-[color,background-color,border-color,box-shadow] duration-(--md-duration-short-2) ease-standard',
     // The base stylesheet owns `:focus-visible`, so there is one focus treatment app-wide instead
     // of a ring here and an outline elsewhere. The state layer brightens at 10% alongside it.
     'outline-none',

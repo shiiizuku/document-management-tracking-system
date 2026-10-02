@@ -109,7 +109,7 @@ describe('CreateDocumentDialog', () => {
           status: 422,
           code: 'VALIDATION_FAILED',
           message: 'Validation failed',
-          details: { fieldErrors: { referenceNumber: ['Already used by another document'] } },
+          details: { fieldErrors: { email: ['Enter a valid email address'] } },
         }),
       ),
     );
@@ -121,8 +121,58 @@ describe('CreateDocumentDialog', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
 
     await waitFor(() =>
-      expect(screen.getByText('Already used by another document')).toBeInTheDocument(),
+      expect(screen.getByText('Enter a valid email address')).toBeInTheDocument(),
     );
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  /*
+   * The optional fields sit in a collapsed panel, so they are not mounted when the form first
+   * renders. Two things have to hold for a rejection on one of them to be visible at all: the
+   * error must ATTACH to the field (which depends on the name being in `getValues()`, hence the
+   * defaults), and the panel must OPEN by itself. The test above covers the first by finding the
+   * message; this covers the second, because a dialog that silently refuses to save is the exact
+   * failure the fold risks.
+   */
+  it('opens the collapsed panel holding a rejected field', async () => {
+    serve(() =>
+      Promise.reject(
+        new ApiError({
+          status: 422,
+          code: 'VALIDATION_FAILED',
+          message: 'Validation failed',
+          details: { fieldErrors: { email: ['Enter a valid email address'] } },
+        }),
+      ),
+    );
+    renderWithQuery(<CreateDocumentDialog />);
+    const dialog = await open();
+
+    // Shut to begin with: the email input is not even rendered.
+    expect(screen.queryByLabelText(/Email address/)).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Title'), 'Quarterly submission');
+    await userEvent.type(screen.getByLabelText('Sender'), 'Regional Office');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
+
+    await waitFor(() => expect(screen.getByLabelText(/Email address/)).toBeInTheDocument());
+  });
+
+  it('files a document without opening either optional panel', async () => {
+    serve(() => Promise.resolve(documentItem()));
+    renderWithQuery(<CreateDocumentDialog />);
+    const dialog = await open();
+
+    await userEvent.type(screen.getByLabelText('Title'), 'Quarterly submission');
+    await userEvent.type(screen.getByLabelText('Sender'), 'Regional Office');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/documents/doc-1'));
+    // The defaults the fold relies on are really sent, not dropped with the hidden inputs.
+    expect(requestBody(apiMock, '/documents')).toMatchObject({
+      priority: 'NORMAL',
+      direction: 'INCOMING',
+      type: 'MEMORANDUM',
+    });
   });
 });

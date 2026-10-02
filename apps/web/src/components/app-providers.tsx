@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 import { Toaster, toast } from 'sonner';
 import { createQueryClient, loginRedirectTarget } from '../lib/query-client';
 import { AppearanceProvider } from './md3/appearance';
+import { TooltipProvider } from './ui/tooltip';
 
 /**
  * Everything the rebuilt routes need in scope: the query cache, the session-expiry response, and
@@ -42,7 +43,14 @@ export function AppProviders({ children }: Readonly<{ children: React.ReactNode 
         readable by any screen, and it must not be torn down by the navigation out of /login — the
         user picks a density once, not once per route.
       */}
-      <AppearanceProvider>{children}</AppearanceProvider>
+      <AppearanceProvider>
+        {/*
+          One tooltip provider for the app. Radix shares the open/close timing across everything
+          under it, which is what makes a row of icon buttons behave like a row — the second
+          tooltip opens immediately rather than each control waiting out its own delay.
+        */}
+        <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+      </AppearanceProvider>
       {/*
         Toasts are immediate feedback only. The durable record of anything that matters is the
         notification inbox (D-111), so nothing here is the sole copy of a message.

@@ -75,6 +75,9 @@ export interface DocumentListItem {
   id: string;
   trackingNumber: string;
   referenceNumber: string | null;
+  /** Contact address for the correspondent. Separate from `referenceNumber`, which is uniquely
+   *  indexed and so cannot hold an address two documents legitimately share. */
+  email: string | null;
   title: string;
   type: string;
   description: string | null;
@@ -318,6 +321,7 @@ export interface MetadataPatch {
   sender?: string | null | undefined;
   company?: string | null | undefined;
   referenceNumber?: string | null | undefined;
+  email?: string | null | undefined;
   confidential?: boolean | undefined;
   /** An ISO instant to set a target date, `null` to clear it. Omitted leaves it alone. */
   dueAt?: string | null | undefined;
