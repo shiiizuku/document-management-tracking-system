@@ -23,6 +23,7 @@ if (process.env.ALLOW_DATABASE_RESET !== 'true')
 const RECORDS_PASSWORD = 'RecordsPass1234!';
 const STAFF_PASSWORD = 'StaffPass12345!';
 const ADMIN_PASSWORD = 'AdminPass12345!';
+const HEAD_PASSWORD = 'HeadPass123456!';
 
 const DIV_A = '00000000-0000-4000-9000-0000000000a0';
 const DIV_B = '00000000-0000-4000-9000-0000000000b0';
@@ -59,11 +60,15 @@ interface DocumentPayload {
 describe('document registry REST against a real database', () => {
   let app: INestApplication;
   let staffId: string;
+  let headId: string;
   // The auth window is a tight 5/minute, so each principal signs in once in `beforeAll` and
   // the session is reused across tests rather than logging in per case.
   let records: Session;
   let staff: Session;
   let admin: Session;
+  // A Division A head: the lowest-privileged role that holds REPORT_VIEW, and therefore the one
+  // that exercises reporting over a scope narrower than the whole office.
+  let head: Session;
   const server = (): Server => app.getHttpServer() as Server;
 
   const login = async (email: string, password: string): Promise<Session> => {
@@ -127,6 +132,16 @@ describe('document registry REST against a real database', () => {
       canAccessConfidential: false,
     });
     staffId = staffUser.id;
+    const headUser = await users.insert({
+      email: 'head@dts.local',
+      displayName: 'Division A Head',
+      passwordHash: hashSync(HEAD_PASSWORD, 4),
+      role: 'DIVISION_HEAD',
+      divisionId: DIV_A,
+      sectionId: null,
+      canAccessConfidential: false,
+    });
+    headId = headUser.id;
     await users.insert({
       email: 'admin@dts.local',
       displayName: 'System Administrator',
@@ -140,6 +155,7 @@ describe('document registry REST against a real database', () => {
     records = await login('records@dts.local', RECORDS_PASSWORD);
     staff = await login('staff@dts.local', STAFF_PASSWORD);
     admin = await login('admin@dts.local', ADMIN_PASSWORD);
+    head = await login('head@dts.local', HEAD_PASSWORD);
   }, 30_000);
 
   afterAll(async () => {
@@ -336,6 +352,60 @@ describe('document registry REST against a real database', () => {
       .set('Cookie', staff.cookies)
       .expect(200);
     expect(dataOf<DocumentPayload>(readable).id).toBe(created.id);
+  }, 30_000);
+
+  /*
+   * D-33 over an export: the monthly report has to agree with the registry about what the actor
+   * can see, in both directions. Out of scope must stay out, but *reachable* must stay in — and
+   * the second half is the one with no natural alarm, because a report that is quietly short a row
+   * looks exactly like a report.
+   *
+   * The case is specific: a document reachable only by assignment, from another division. It is
+   * the one `documentScopeFor` admits through a path the row's own columns do not show, so any
+   * attempt to re-decide readability downstream from a projection — the report's rows carry no
+   * assignment membership — would drop it. A division head is the actor because DIVISION_HEAD is
+   * the lowest-privileged role holding REPORT_VIEW, and so the only one whose report is narrower
+   * than the whole office.
+   */
+  it('counts a cross-division assignment on the assignee’s monthly report', async () => {
+    const now = new Date();
+    const [year, month] = [now.getUTCFullYear(), now.getUTCMonth() + 1];
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Cross-division report row',
+        type: 'MEMORANDUM',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_B,
+        sectionId: SEC_B,
+      }).expect(201),
+    );
+
+    const reportFor = async (session: Session) =>
+      dataOf<{ totals: { total: number }; documents: { id: string }[] }>(
+        await request(server())
+          .get(`/api/v1/reports/monthly?year=${year}&month=${month}`)
+          .set('Cookie', session.cookies)
+          .expect(200),
+      );
+
+    // Division B's document is outside a Division A head's scope until something reaches it.
+    const before = await reportFor(head);
+    expect(before.documents.map((row) => row.id)).not.toContain(created.id);
+
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/assignments`)
+      .set('Cookie', records.cookies)
+      .set('x-csrf-token', records.csrf)
+      .send({ recipientUserId: headId })
+      .expect(201);
+
+    const after = await reportFor(head);
+    expect(after.documents.map((row) => row.id)).toContain(created.id);
+    // The totals are computed from the same list, so they move with it or the report contradicts
+    // its own rows.
+    expect(after.totals.total).toBe(before.totals.total + 1);
   }, 30_000);
 
   it('routes a document to another division, moving its scope and recording the hop', async () => {
