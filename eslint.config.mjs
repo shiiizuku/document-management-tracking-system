@@ -12,6 +12,9 @@ export default tseslint.config(
       'minio/**',
       '**/*.config.ts',
       '**/*.config.mjs',
+      // `allowJs` is false in apps/web, so a .js config cannot be in the TS project either — the
+      // type-checked rules have no program to resolve it against. Same reason as the two above.
+      '**/*.config.js',
       'packages/contracts/test/**',
     ],
   },

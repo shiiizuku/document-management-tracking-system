@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './theme.css';
 import { AppProviders } from '@/components/app-providers';
+import { appearanceBootScript } from '@/components/md3/appearance-config';
 
 /*
  * The one layout above everything: the brand stylesheet, and the query cache, session-expiry
@@ -22,7 +23,22 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    /*
+     * `suppressHydrationWarning` is required, not cosmetic: the boot script below writes
+     * `data-theme` / `data-accent` / `data-density` onto this element before React hydrates, so the
+     * client's <html> attributes legitimately differ from the server's. The warning is scoped to
+     * this element only and does not reach anything inside it.
+     */
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          Inlined and blocking, on purpose. It is the only way to have the user's theme on the
+          first paint rather than one frame after it: the choice lives in localStorage, which the
+          server cannot read, so anything that waits for React has already shown the wrong colours.
+          It is a fixed string we author here — no user input reaches it.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: appearanceBootScript }} />
+      </head>
       <body>
         <AppProviders>{children}</AppProviders>
       </body>

@@ -17,6 +17,7 @@ import {
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { CommandPalette } from '@/features/command-palette/command-palette';
 import { NotificationsSheet } from '@/features/notifications/notifications-sheet';
+import { AppearanceMenu } from '@/components/md3/appearance-menu';
 import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
 import { useLogout, useSession, type SessionUser } from '@/features/session/queries';
 import { cn, enumLabel } from '@/lib/utils';
@@ -74,6 +75,12 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
             */}
             <CommandPalette />
             <NotificationsSheet live={realtime.connected} />
+            {/*
+              Theme, accent and density. In the topbar rather than buried in settings because
+              density is the one of the three that a clerk working the queue all day will want to
+              change, and they should not have to leave the queue to find it.
+            */}
+            <AppearanceMenu />
             <AccountMenu user={user} />
           </div>
         </header>
