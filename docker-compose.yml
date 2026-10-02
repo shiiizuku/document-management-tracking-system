@@ -9,12 +9,32 @@ name: dts
 services:
   postgres:
     image: postgres:16-alpine
+    # Continuous WAL archiving (policy register P-13, recovery point <= 5 minutes).
+    #
+    # `archive_timeout=60` closes the current segment once a minute even when it is not full,
+    # which is what bounds data loss on a quiet system: without it a low-traffic afternoon can
+    # leave the last committed transactions sitting in an unarchived segment indefinitely. The
+    # cost is a mostly-empty 16 MB segment per minute of activity, which the archive prunes.
+    #
+    # `archive_command` refuses to overwrite (`test ! -f`), so a misconfigured restore that
+    # replays into a live archive fails loudly rather than corrupting the history it is reading.
+    command: >
+      postgres
+      -c wal_level=replica
+      -c archive_mode=on
+      -c archive_timeout=60
+      -c archive_command='test ! -f /archive/wal/%f && cp %p /archive/wal/%f'
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-dts}
       POSTGRES_USER: ${POSTGRES_USER:-dts}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dts}
     ports: ['${POSTGRES_HOST_PORT:-5433}:5432']
-    volumes: ['postgres_data:/var/lib/postgresql/data']
+    volumes:
+      - 'postgres_data:/var/lib/postgresql/data'
+      # BACKUP_PATH must resolve to storage on a DIFFERENT machine (a NAS or second host
+      # mount). An archive on this host dies with the host, and the host is the failure this
+      # exists for — see docs/runbooks/backup-restore.md.
+      - '${BACKUP_PATH:-./backups}:/archive'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-dts} -d ${POSTGRES_DB:-dts}']
       interval: 5s
@@ -47,7 +67,11 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-dts-local}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-dts-local1}
     ports: ['${MINIO_HOST_PORT:-9002}:9000', '${MINIO_CONSOLE_HOST_PORT:-9003}:9001']
-    volumes: ['minio_data:/data']
+    volumes:
+      - 'minio_data:/data'
+      # The same off-host archive Postgres writes WAL to, so one destination holds both halves
+      # of a recoverable state and a restore reads from one place.
+      - '${BACKUP_PATH:-./backups}:/archive'
     healthcheck:
       test: ['CMD-SHELL', 'curl -fsS http://localhost:9000/minio/health/live || exit 1']
       interval: 10s
