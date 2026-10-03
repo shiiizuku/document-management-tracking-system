@@ -1,6 +1,22 @@
+import { strongPasswordSchema } from '@dts/contracts';
 import { MAX_ATTACHMENT_BYTES } from '../modules/files/media-types.js';
 
 export type CookieSameSite = 'lax' | 'strict' | 'none';
+
+/**
+ * The Regional Director's account, as deployment configuration rather than seed data (ADR-0006).
+ *
+ * Release is gated on a signature record and nobody but a `DIRECTOR` may make one, so the account
+ * is a deployment-ordering constraint: a pilot that boots without it registers and routes
+ * correspondence perfectly and then stalls at `FOR_SIGNATURE` with no account able to clear it.
+ * It used to be seeded as `director@dts.local` with a password written into the repository, which
+ * is the worst of both worlds — present enough to hide the constraint, and shared enough that the
+ * signatory on the audit trail is not evidence of anything.
+ */
+export interface DirectorAccountConfig {
+  email: string;
+  password: string;
+}
 
 export interface ValidatedEnvironment {
   DATABASE_URL: string;
@@ -21,6 +37,8 @@ export interface ValidatedEnvironment {
   UPLOAD_MAX_BYTES: number;
   PORT: number;
   WORKER_HEALTH_PORT: number;
+  DIRECTOR_EMAIL?: string;
+  DIRECTOR_PASSWORD?: string;
   NODE_ENV?: string;
   WEB_ORIGIN?: string;
 }
@@ -61,6 +79,61 @@ const parseUrl = (
   if (!protocols.includes(parsed.protocol))
     throw new Error(`${name} must be a valid ${description} URL`);
   return value;
+};
+
+/**
+ * Resolves the configured Director account, or `null` when there is none to configure.
+ *
+ * Exported on its own because the seed needs exactly this rule and nothing else in
+ * {@link validateEnvironment}: the seed runs in the migrator image, which is given a
+ * `DATABASE_URL` and little more, so making it validate the whole environment would turn an
+ * absent `REDIS_URL` into a failure to seed.
+ *
+ * Three outcomes, and the one that matters is the middle one:
+ *
+ * - **Both set** — that account is created, in any environment.
+ * - **Neither set, in production** — a hard failure at boot *and* at seed time. This is the point
+ *   of the exercise. A production deployment that forgot the Director must be told so loudly,
+ *   rather than be handed a development password that works.
+ * - **Neither set, outside production** — `null`, and the seed plants `director@dts.local` with
+ *   the shared development password so a developer's first `db:seed` yields a working signatory.
+ *
+ * A half-configured pair is always an error: silently falling back to the development account
+ * because only the password was supplied is how a deployment ends up signing as a default.
+ */
+export const validateDirectorAccount = (
+  environment: Record<string, unknown>,
+): DirectorAccountConfig | null => {
+  const rawEmail = typeof environment.DIRECTOR_EMAIL === 'string' ? environment.DIRECTOR_EMAIL : '';
+  const rawPassword =
+    typeof environment.DIRECTOR_PASSWORD === 'string' ? environment.DIRECTOR_PASSWORD : '';
+  const email = rawEmail.trim();
+  const password = rawPassword;
+
+  if (email === '' && password === '') {
+    if (environment.NODE_ENV === 'production')
+      throw new Error(
+        'DIRECTOR_EMAIL and DIRECTOR_PASSWORD are required in production: no outgoing document ' +
+          'can be released without a Regional Director account (ADR-0006)',
+      );
+    return null;
+  }
+  if (email === '') throw new Error('DIRECTOR_EMAIL is required when DIRECTOR_PASSWORD is set');
+  if (password === '') throw new Error('DIRECTOR_PASSWORD is required when DIRECTOR_EMAIL is set');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    throw new Error('DIRECTOR_EMAIL must be a valid email address');
+
+  // The same strength rule every other password in the system is held to, rather than a looser
+  // one for the account with the most authority.
+  const strength = strongPasswordSchema.safeParse(password);
+  if (!strength.success)
+    throw new Error(
+      `DIRECTOR_PASSWORD is not strong enough: ${strength.error.issues
+        .map((issue) => issue.message)
+        .join('; ')}`,
+    );
+
+  return { email: email.toLowerCase(), password };
 };
 
 export const validateEnvironment = (
@@ -165,6 +238,10 @@ export const validateEnvironment = (
     'WORKER_HEALTH_PORT',
     4001,
   );
+  // Called for its refusal, not its value: the API itself never creates the account, but it is
+  // the process a deployment starts first, so it is where a missing Director must be reported.
+  validateDirectorAccount(environment);
+
   if (typeof environment.WEB_ORIGIN === 'string') {
     for (const origin of environment.WEB_ORIGIN.split(','))
       parseUrl(origin.trim(), 'WEB_ORIGIN', ['http:', 'https:'], 'HTTP(S)');

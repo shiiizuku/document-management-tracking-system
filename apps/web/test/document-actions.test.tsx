@@ -24,6 +24,28 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/*
+ * Release methods are configured rows served by `GET /release-methods` (policy register P-15), so
+ * the release dialog cannot be driven without them. Two are enough: one that takes no tracking
+ * reference and one that requires one.
+ */
+const RELEASE_METHODS = [
+  { id: 'rm-1', code: 'POSTAL', label: 'Postal', requiresTrackingReference: false },
+  { id: 'rm-2', code: 'LBC', label: 'LBC', requiresTrackingReference: true },
+];
+
+/**
+ * Answers `/release-methods` with that list and everything else with `fallback`.
+ *
+ * The blunt `mockResolvedValue` the other cases use would hand the method list to the picker as a
+ * document, so the release cases need the mock to know which call it is answering.
+ */
+const withReleaseMethods = (fallback: unknown) => {
+  apiMock.mockImplementation((path: string) =>
+    Promise.resolve(path === '/release-methods' ? RELEASE_METHODS : fallback),
+  );
+};
+
 describe('DocumentActions', () => {
   // The server computes `allowedActions` from the workflow state and the actor's capabilities.
   // Rendering anything else would offer a control the API is going to refuse.
@@ -85,13 +107,14 @@ describe('DocumentActions', () => {
   });
 
   it('collects the delivery method before releasing', async () => {
+    withReleaseMethods(documentDetail({ status: 'RELEASED' }));
     renderWithQuery(<DocumentActions document={documentDetail({ allowedActions: ['RELEASE'] })} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Release document' }));
+    await waitFor(() => expect(screen.getByLabelText('Delivery method')).toBeEnabled());
     await userEvent.click(screen.getByLabelText('Delivery method'));
-    await userEvent.click(screen.getByRole('option', { name: 'Mailed' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Postal' }));
 
-    apiMock.mockResolvedValue(documentDetail({ status: 'RELEASED' }));
     await userEvent.click(
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Release document' }),
     );
@@ -99,7 +122,40 @@ describe('DocumentActions', () => {
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith('/documents/doc-1/actions/RELEASE', {
         method: 'POST',
-        body: JSON.stringify({ expectedVersion: 3, releaseMethod: 'MAILED' }),
+        body: JSON.stringify({ expectedVersion: 3, releaseMethod: 'POSTAL' }),
+      }),
+    );
+  });
+
+  /*
+   * Decision 27 as amended: a method may require a tracking reference, and then it is mandatory.
+   * The requirement is a property of the chosen method, so the field appears on selecting a
+   * courier and the submit stays disabled until it is filled.
+   */
+  it('demands a tracking reference for a courier, and sends it', async () => {
+    withReleaseMethods(documentDetail({ status: 'RELEASED' }));
+    renderWithQuery(<DocumentActions document={documentDetail({ allowedActions: ['RELEASE'] })} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Release document' }));
+    await waitFor(() => expect(screen.getByLabelText('Delivery method')).toBeEnabled());
+    expect(screen.queryByLabelText(/tracking reference/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText('Delivery method'));
+    await userEvent.click(screen.getByRole('option', { name: 'LBC' }));
+
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByRole('button', { name: 'Release document' })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('LBC tracking reference'), 'LBC-00042');
+    await userEvent.click(dialog.getByRole('button', { name: 'Release document' }));
+
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith('/documents/doc-1/actions/RELEASE', {
+        method: 'POST',
+        body: JSON.stringify({
+          expectedVersion: 3,
+          releaseMethod: 'LBC',
+          trackingReference: 'LBC-00042',
+        }),
       }),
     );
   });

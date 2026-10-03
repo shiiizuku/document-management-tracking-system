@@ -224,4 +224,263 @@ describe('database migrations', () => {
       expect(result.rows[0]).toMatchObject({ from_status: 'PENDING', to_status: 'IN_PROCESS' });
     });
   });
+
+  /**
+   * Decision 152's other half. The risk in this migration is not its shape — it adds one section
+   * row — but its data half: it moves placement across every table that names a division, and it
+   * must do so without touching a single `reference_number`. Decision 153 makes already-issued
+   * `RECORDS-<year>-<n>` references permanent, and they exist on paper.
+   */
+  describe('0009 the Records Unit becomes a Section inside the ORD', () => {
+    const RECORDS_DIVISION = '33333333-3333-4333-8333-333333333333';
+    const INTAKE_SECTION = '44444444-4444-4444-8444-444444444444';
+    const OFFICER = '55555555-5555-4555-8555-555555555555';
+
+    beforeAll(async () => {
+      await resetSchema();
+      await migrate(database, {
+        migrationsFolder: await migrationsThrough('0008_reference_documents'),
+      });
+
+      await database.execute(
+        sql.raw(`
+        INSERT INTO divisions (id, code, name) VALUES
+          ('${RECORDS_DIVISION}', 'RECORDS', 'Records Office');
+
+        INSERT INTO sections (id, division_id, code, name)
+        VALUES ('${INTAKE_SECTION}', '${RECORDS_DIVISION}', 'INTAKE', 'Intake');
+
+        INSERT INTO users (id, email, display_name, password_hash, role, division_id, section_id)
+        VALUES ('${OFFICER}', 'officer@dts.local', 'Records Officer', 'not-a-real-hash',
+                'RECORDS_STAFF', '${RECORDS_DIVISION}', '${INTAKE_SECTION}');
+
+        -- An outgoing document already stamped with the retiring division's prefix, and an
+        -- incoming one that was never narrowed to a section.
+        INSERT INTO documents (tracking_number, reference_number, title, type, priority, direction,
+                               status, division_id, section_id, created_by_id)
+        VALUES ('DTS-2026-000900', 'RECORDS-2026-00001', 'Outgoing reply', 'LETTER', 'NORMAL',
+                'OUTGOING', 'RELEASED', '${RECORDS_DIVISION}', '${INTAKE_SECTION}', '${OFFICER}'),
+               ('DTS-2026-000901', NULL, 'Incoming request', 'MEMORANDUM', 'NORMAL',
+                'INCOMING', 'IN_PROCESS', '${RECORDS_DIVISION}', NULL, '${OFFICER}');
+
+        -- How far the retiring division's yearly sequence got.
+        INSERT INTO reference_counters (division_id, year, value)
+        VALUES ('${RECORDS_DIVISION}', 2026, 1);
+
+        INSERT INTO document_routes (document_id, to_division_id, to_section_id, routed_by_id)
+        SELECT id, '${RECORDS_DIVISION}', '${INTAKE_SECTION}', created_by_id
+        FROM documents WHERE tracking_number = 'DTS-2026-000901';
+
+        -- An open request for a placement that is about to stop being legal, and a decided one
+        -- whose record of what was asked for must not be rewritten.
+        INSERT INTO account_requests (email, display_name, password_hash, status,
+                                      requested_division_id, requested_section_id)
+        VALUES ('open@dts.local', 'Open Applicant', 'not-a-real-hash', 'PENDING',
+                '${RECORDS_DIVISION}', '${INTAKE_SECTION}'),
+               ('closed@dts.local', 'Closed Applicant', 'not-a-real-hash', 'REJECTED',
+                '${RECORDS_DIVISION}', '${INTAKE_SECTION}');
+      `),
+      );
+
+      await migrate(database, { migrationsFolder });
+    });
+
+    /** The whole risk in A1/A2, and the reason the migration moves placement and nothing else. */
+    it('leaves already-issued reference numbers untouched', async () => {
+      const result = await database.execute(
+        sql.raw(`SELECT reference_number FROM documents WHERE tracking_number = 'DTS-2026-000900'`),
+      );
+      expect(result.rows[0]).toEqual({ reference_number: 'RECORDS-2026-00001' });
+    });
+
+    it('repoints documents into the ORD and its Records Unit, preserving an absent section', async () => {
+      const result = await database.execute(
+        sql.raw(`
+        SELECT d.tracking_number, dv.code AS division, s.code AS section
+        FROM documents d
+        JOIN divisions dv ON dv.id = d.division_id
+        LEFT JOIN sections s ON s.id = d.section_id
+        ORDER BY d.tracking_number
+      `),
+      );
+
+      expect(result.rows).toEqual([
+        { tracking_number: 'DTS-2026-000900', division: 'ORD', section: 'RECORDS' },
+        // Division-wide before, division-wide after: the migration must not narrow a scope.
+        { tracking_number: 'DTS-2026-000901', division: 'ORD', section: null },
+      ]);
+    });
+
+    /**
+     * The point of the exercise: the records officer now sits inside the ORD, so a draft it
+     * registers is owned by the ORD and takes the `FOR_SIGNATURE` path (ADR-0007).
+     */
+    it('repoints the records officer into the ORD', async () => {
+      const result = await database.execute(
+        sql.raw(`
+        SELECT dv.code AS division, s.code AS section, s.name AS section_name
+        FROM users u
+        JOIN divisions dv ON dv.id = u.division_id
+        JOIN sections s ON s.id = u.section_id
+        WHERE u.email = 'officer@dts.local'
+      `),
+      );
+      expect(result.rows[0]).toEqual({
+        division: 'ORD',
+        section: 'RECORDS',
+        section_name: 'Records Unit',
+      });
+    });
+
+    it('repoints route recipients, so the unit that now holds a document can still read it', async () => {
+      const result = await database.execute(
+        sql.raw(`
+        SELECT dv.code AS division, s.code AS section
+        FROM document_routes r
+        JOIN divisions dv ON dv.id = r.to_division_id
+        LEFT JOIN sections s ON s.id = r.to_section_id
+      `),
+      );
+      expect(result.rows[0]).toEqual({ division: 'ORD', section: 'RECORDS' });
+    });
+
+    /**
+     * An open request would otherwise be unapprovable, because `resolvePlacement` refuses an
+     * inactive division. A decided one is a record of what was asked for and granted, so it keeps
+     * pointing where it pointed.
+     */
+    it('repoints open account requests and leaves decided ones as they were recorded', async () => {
+      const result = await database.execute(
+        sql.raw(`
+        SELECT a.email, dv.code AS division
+        FROM account_requests a
+        JOIN divisions dv ON dv.id = a.requested_division_id
+        ORDER BY a.email
+      `),
+      );
+      expect(result.rows).toEqual([
+        { email: 'closed@dts.local', division: 'RECORDS' },
+        { email: 'open@dts.local', division: 'ORD' },
+      ]);
+    });
+
+    /**
+     * Deactivated, never deleted — decision 152 is explicit, because division codes are embedded
+     * in reference numbers already issued. Its counter row survives with it, which is what makes
+     * the move reversible and what stops a number ever being reissued.
+     */
+    it('deactivates the RECORDS division rather than dropping it, and keeps its counter', async () => {
+      const result = await database.execute(
+        sql.raw(`
+        SELECT d.active AS division_active,
+               (SELECT bool_and(s.active) FROM sections s WHERE s.division_id = d.id)
+                 AS sections_active,
+               (SELECT value FROM reference_counters c
+                WHERE c.division_id = d.id AND c.year = 2026) AS counter
+        FROM divisions d WHERE d.code = 'RECORDS'
+      `),
+      );
+      expect(result.rows[0]).toEqual({
+        division_active: false,
+        sections_active: false,
+        counter: 1,
+      });
+    });
+  });
+
+  /**
+   * Release methods stop being a pgEnum and become configurable rows (policy register P-15). The
+   * case that matters is the backfill: four enum values have to map forward onto six seeded rows
+   * without any release losing the record of how it left the office.
+   */
+  describe('0010 configurable release methods', () => {
+    const previousMethods = ['MAILED', 'EMAILED', 'PICKED_UP', 'DELIVERED'];
+
+    beforeAll(async () => {
+      await resetSchema();
+      await migrate(database, {
+        migrationsFolder: await migrationsThrough('0009_records_unit_as_ord_section'),
+      });
+
+      await database.execute(
+        sql.raw(`
+        INSERT INTO divisions (id, code, name)
+        VALUES ('66666666-6666-4666-8666-666666666666', 'LEGACY', 'Legacy Division');
+
+        INSERT INTO users (id, email, display_name, password_hash, role, division_id)
+        VALUES ('77777777-7777-4777-8777-777777777777', 'releaser@dts.local', 'Releaser',
+                'not-a-real-hash', 'RECORDS_STAFF', '66666666-6666-4666-8666-666666666666');
+      `),
+      );
+
+      // One document per release: `release_events.document_id` is unique, because a document
+      // leaves the office once.
+      for (const [index, method] of previousMethods.entries()) {
+        await database.execute(
+          sql.raw(`
+          INSERT INTO documents (tracking_number, title, type, priority, direction, status,
+                                 division_id, created_by_id)
+          VALUES ('DTS-2026-00100${index}', 'Released ${method}', 'LETTER', 'NORMAL', 'OUTGOING',
+                  'RELEASED', '66666666-6666-4666-8666-666666666666',
+                  '77777777-7777-4777-8777-777777777777');
+
+          INSERT INTO release_events (document_id, released_by_id, method)
+          SELECT id, created_by_id, '${method}' FROM documents
+          WHERE tracking_number = 'DTS-2026-00100${index}';
+        `),
+        );
+      }
+
+      await migrate(database, { migrationsFolder });
+    });
+
+    it('seeds the six configured methods, flagging the two that issue a tracking number', async () => {
+      const result = await database.execute(
+        sql.raw(
+          `SELECT code, label, requires_tracking_reference FROM release_methods ORDER BY sort_order`,
+        ),
+      );
+      expect(result.rows).toEqual([
+        { code: 'EMAILED', label: 'Emailed', requires_tracking_reference: false },
+        { code: 'POSTAL', label: 'Postal', requires_tracking_reference: false },
+        { code: 'LBC', label: 'LBC', requires_tracking_reference: true },
+        { code: 'JRS', label: 'JRS', requires_tracking_reference: true },
+        { code: 'PICKED_UP', label: 'Picked up', requires_tracking_reference: false },
+        {
+          code: 'PERSONALLY_DELIVERED',
+          label: 'Personally delivered',
+          requires_tracking_reference: false,
+        },
+      ]);
+    });
+
+    /**
+     * `MAILED → POSTAL` and `DELIVERED → PERSONALLY_DELIVERED` are the two renames. The mapping of
+     * `MAILED` is still awaiting confirmation from the Records section; what this asserts is that
+     * the migration applied the mapping it documents, so a correction is a re-point rather than an
+     * archaeology exercise.
+     */
+    it('maps every stored enum value forward without losing a release', async () => {
+      const result = await database.execute(
+        sql.raw(`
+        SELECT d.title, m.code
+        FROM release_events e
+        JOIN documents d ON d.id = e.document_id
+        JOIN release_methods m ON m.id = e.method_id
+        ORDER BY d.tracking_number
+      `),
+      );
+      expect(result.rows).toEqual([
+        { title: 'Released MAILED', code: 'POSTAL' },
+        { title: 'Released EMAILED', code: 'EMAILED' },
+        { title: 'Released PICKED_UP', code: 'PICKED_UP' },
+        { title: 'Released DELIVERED', code: 'PERSONALLY_DELIVERED' },
+      ]);
+    });
+
+    it('removes the release_method type entirely', async () => {
+      const result = await database.execute(sql.raw(`SELECT to_regtype('release_method') AS type`));
+      expect(result.rows[0]).toEqual({ type: null });
+    });
+  });
 });

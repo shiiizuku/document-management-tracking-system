@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateEnvironment } from '../src/config/environment.js';
+import { validateDirectorAccount, validateEnvironment } from '../src/config/environment.js';
 
 const validEnvironment = {
   NODE_ENV: 'test',
@@ -80,5 +80,88 @@ describe('environment validation', () => {
     expect(() => validateEnvironment({ ...validEnvironment, COOKIE_MAX_AGE_MS: '1500' })).toThrow(
       'COOKIE_MAX_AGE_MS must be a multiple of 1000',
     );
+  });
+});
+
+/*
+ * ADR-0006 makes the Regional Director's account a deployment-ordering constraint: release is
+ * gated on a signature record and nobody else may make one, so a pilot that boots without the
+ * account registers and routes correspondence perfectly and then stalls at `FOR_SIGNATURE`.
+ *
+ * It used to be seed data with a password in the repository, which hid the constraint. These are
+ * the cases that make it visible instead.
+ */
+describe('Director account configuration', () => {
+  const production = { ...validEnvironment, NODE_ENV: 'production', COOKIE_SECURE: 'true' };
+
+  it('refuses a production boot with no Director configured', () => {
+    expect(() => validateEnvironment(production)).toThrow(
+      /DIRECTOR_EMAIL and DIRECTOR_PASSWORD are required in production/,
+    );
+  });
+
+  it('accepts a production boot once the Director is configured', () => {
+    expect(() =>
+      validateEnvironment({
+        ...production,
+        DIRECTOR_EMAIL: 'director@mgb.example.gov.ph',
+        DIRECTOR_PASSWORD: 'Regional-Director-2026!',
+      }),
+    ).not.toThrow();
+  });
+
+  /*
+   * Outside production the development account is still planted, because a developer's first
+   * `db:seed` has to yield a signatory. That fallback is the thing production may not reach.
+   */
+  it('leaves the development seed to its default outside production', () => {
+    expect(validateDirectorAccount(validEnvironment)).toBeNull();
+  });
+
+  it('normalizes a configured address and keeps the password verbatim', () => {
+    expect(
+      validateDirectorAccount({
+        ...validEnvironment,
+        DIRECTOR_EMAIL: '  Director@MGB.example.gov.ph ',
+        DIRECTOR_PASSWORD: 'Regional-Director-2026!',
+      }),
+    ).toEqual({ email: 'director@mgb.example.gov.ph', password: 'Regional-Director-2026!' });
+  });
+
+  // A half-configured pair is an error rather than a silent fallback: falling back to the
+  // development account because only the password was supplied is how a deployment ends up
+  // signing as a default.
+  it('refuses a half-configured pair', () => {
+    expect(() =>
+      validateDirectorAccount({
+        ...validEnvironment,
+        DIRECTOR_PASSWORD: 'Regional-Director-2026!',
+      }),
+    ).toThrow('DIRECTOR_EMAIL is required when DIRECTOR_PASSWORD is set');
+    expect(() =>
+      validateDirectorAccount({ ...validEnvironment, DIRECTOR_EMAIL: 'director@example.gov.ph' }),
+    ).toThrow('DIRECTOR_PASSWORD is required when DIRECTOR_EMAIL is set');
+  });
+
+  // Held to the same strength rule as every other password, rather than a looser one for the
+  // account with the most authority.
+  it('refuses a weak Director password', () => {
+    expect(() =>
+      validateDirectorAccount({
+        ...validEnvironment,
+        DIRECTOR_EMAIL: 'director@example.gov.ph',
+        DIRECTOR_PASSWORD: 'director',
+      }),
+    ).toThrow(/DIRECTOR_PASSWORD is not strong enough/);
+  });
+
+  it('refuses an address that is not one', () => {
+    expect(() =>
+      validateDirectorAccount({
+        ...validEnvironment,
+        DIRECTOR_EMAIL: 'director',
+        DIRECTOR_PASSWORD: 'Regional-Director-2026!',
+      }),
+    ).toThrow('DIRECTOR_EMAIL must be a valid email address');
   });
 });

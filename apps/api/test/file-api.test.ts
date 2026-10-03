@@ -233,11 +233,28 @@ describe('REST /api/v1 document attachments', () => {
     expect(signed.body.data.signedAttachmentVersionId).toBe(versionId);
     await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 4 }).expect(201); // -> 5
 
+    /*
+     * Which codes exist is a row, not a Zod enum, so an unknown or withdrawn method is a 400 from
+     * the service rather than a schema rejection. This is the one cost of making the list
+     * configurable, and it is worth asserting: the failure has to be refusal, not a release
+     * recorded against nothing.
+     */
+    const unknown = await act(cookie, created.id, 'RELEASE', {
+      expectedVersion: 5,
+      releaseMethod: 'CARRIER_PIGEON',
+    }).expect(400);
+    expect(unknown.body.error.message).toContain('Unknown release method');
+
+    // `POSTAL`, not `MAILED`: release methods are configured rows now, and migration 0010 maps
+    // the retired enum value forward to the name decision 27 uses (policy register P-15).
     const released = await act(cookie, created.id, 'RELEASE', {
       expectedVersion: 5,
-      releaseMethod: 'MAILED',
+      releaseMethod: 'POSTAL',
     }).expect(201);
-    expect(released.body.data).toMatchObject({ status: 'RELEASED', releaseMethod: 'MAILED' });
+    expect(released.body.data).toMatchObject({
+      status: 'RELEASED',
+      releaseMethod: { code: 'POSTAL', label: 'Postal', trackingReference: null },
+    });
   });
 
   /*
@@ -301,7 +318,7 @@ describe('REST /api/v1 document attachments', () => {
 
     const blocked = await act(cookie, created.id, 'RELEASE', {
       expectedVersion: 6,
-      releaseMethod: 'MAILED',
+      releaseMethod: 'POSTAL',
     }).expect(422);
     expect(blocked.body.error.code).toBe('RELEASE_BLOCKED');
   });
@@ -394,7 +411,7 @@ describe('REST /api/v1 document attachments', () => {
 
     const blocked = await act(cookie, created.id, 'RELEASE', {
       expectedVersion: 5,
-      releaseMethod: 'MAILED',
+      releaseMethod: 'POSTAL',
     }).expect(422);
     expect(blocked.body.error.code).toBe('RELEASE_BLOCKED');
   });

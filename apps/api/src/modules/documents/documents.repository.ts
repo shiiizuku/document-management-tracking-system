@@ -39,18 +39,29 @@ import {
   documents,
   referenceCounters,
   releaseEvents,
+  releaseMethods,
   sections,
   signatureEvents,
   users,
   workflowEvents,
 } from '../../database/schema.js';
-import { workflowStatuses, type ReleaseMethod } from '../workflow/workflow.service.js';
+import { workflowStatuses } from '../workflow/workflow.service.js';
 // The presented vocabulary, which includes the derived `PENDING` — what a filter accepts and a
 // timeline row may carry. The engine's narrower stored set is a different type on purpose.
 import type { WorkflowStatus } from '@dts/contracts';
 import { ORD_DIVISION_CODE } from '../organization/organization.constants.js';
 
 export type DocumentRow = typeof documents.$inferSelect;
+export type ReleaseMethodRow = typeof releaseMethods.$inferSelect;
+
+/** A recorded release: which method, and the consignment number where the method requires one. */
+export interface RecordedRelease {
+  id: string;
+  code: string;
+  label: string;
+  requiresTrackingReference: boolean;
+  trackingReference: string | null;
+}
 
 /** One route row with its ids resolved, as the routing slip prints them. */
 export interface RoutingSlipRoute {
@@ -1004,18 +1015,58 @@ export class DocumentsRepository {
   }
 
   async insertReleaseEvent(
-    event: { documentId: string; releasedById: string; method: ReleaseMethod },
+    event: {
+      documentId: string;
+      releasedById: string;
+      methodId: string;
+      trackingReference: string | null;
+    },
     executor: DatabaseExecutor = this.database,
   ): Promise<void> {
     await executor.insert(releaseEvents).values(event);
   }
 
-  async findReleaseMethod(documentId: string): Promise<ReleaseMethod | null> {
+  /**
+   * How a document left the office, joined back to its method row so the caller gets the label
+   * rather than a code it would have to translate. Null until the document has been released.
+   */
+  async findReleaseMethod(documentId: string): Promise<RecordedRelease | null> {
     const [row] = await this.database
-      .select({ method: releaseEvents.method })
+      .select({
+        id: releaseMethods.id,
+        code: releaseMethods.code,
+        label: releaseMethods.label,
+        requiresTrackingReference: releaseMethods.requiresTrackingReference,
+        trackingReference: releaseEvents.trackingReference,
+      })
       .from(releaseEvents)
+      .innerJoin(releaseMethods, eq(releaseMethods.id, releaseEvents.methodId))
       .where(eq(releaseEvents.documentId, documentId));
-    return row?.method ?? null;
+    return row ?? null;
+  }
+
+  /**
+   * The configured release methods, in the order the office reads them.
+   *
+   * Lives on this repository rather than one of its own so that the suites which override
+   * `DocumentsRepository` with an in-memory double keep working without a second override — and
+   * so the release path reads its method from the same place the picker lists them.
+   */
+  async listReleaseMethods(includeInactive = false): Promise<ReleaseMethodRow[]> {
+    return this.database
+      .select()
+      .from(releaseMethods)
+      .where(includeInactive ? undefined : eq(releaseMethods.active, true))
+      .orderBy(asc(releaseMethods.sortOrder), asc(releaseMethods.label));
+  }
+
+  /** The active method for a code, or null — an inactive method may not be used for a new release. */
+  async findActiveReleaseMethodByCode(code: string): Promise<ReleaseMethodRow | null> {
+    const [row] = await this.database
+      .select()
+      .from(releaseMethods)
+      .where(and(eq(releaseMethods.code, code), eq(releaseMethods.active, true)));
+    return row ?? null;
   }
 
   /**

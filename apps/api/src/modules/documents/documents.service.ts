@@ -32,14 +32,14 @@ import {
   WorkflowConflictError,
   WorkflowRuleError,
   WorkflowService,
-  type ReleaseMethod,
+  type ReleaseMethodCode,
   type WorkflowAction,
   type WorkflowActor,
   type WorkflowDocument,
   type RouteCustody,
 } from '../workflow/workflow.service.js';
 // The presented vocabulary, which includes the derived `PENDING`; see `TimelineEntry`.
-import type { WorkflowStatus } from '@dts/contracts';
+import type { ReleaseMethod, WorkflowStatus } from '@dts/contracts';
 import {
   DocumentsRepository,
   type DashboardActivityEntry,
@@ -50,9 +50,22 @@ import {
   type DocumentRow,
   type DocumentRouteRow,
   type DocumentSearchFilters,
+  type RecordedRelease,
   type ReferenceDocumentSummary,
+  type ReleaseMethodRow,
   type RoutingSlipRoute,
 } from './documents.repository.js';
+
+/**
+ * How a document left the office, as the detail view and the routing slip read it. The `label` is
+ * served rather than the code alone: renaming a configured method must change what every screen
+ * prints without any of them carrying a translation table (policy register P-15).
+ */
+export interface PublicRelease {
+  code: string;
+  label: string;
+  trackingReference: string | null;
+}
 
 /** The wire shape of a document row. Built by hand so a column added later is never served by accident. */
 export interface PublicDocument {
@@ -80,7 +93,7 @@ export interface PublicDocument {
   currentAttachmentVersionId: string | null;
   signedAttachmentVersionId: string | null;
   hasCleanCurrentAttachment: boolean;
-  releaseMethod: ReleaseMethod | null;
+  releaseMethod: PublicRelease | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -250,7 +263,7 @@ export class DocumentsService {
   // N+1 scan/release lookup per row.
   private toPublic(
     row: DocumentRow,
-    releaseMethod: ReleaseMethod | null = null,
+    release: RecordedRelease | null = null,
     hasCleanCurrentAttachment = false,
   ): PublicDocument {
     return {
@@ -275,7 +288,14 @@ export class DocumentsService {
       currentAttachmentVersionId: row.currentFileVersionId,
       signedAttachmentVersionId: row.signedFileVersionId,
       hasCleanCurrentAttachment,
-      releaseMethod,
+      releaseMethod:
+        release === null
+          ? null
+          : {
+              code: release.code,
+              label: release.label,
+              trackingReference: release.trackingReference,
+            },
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -415,7 +435,7 @@ export class DocumentsService {
    */
   async routingSlip(actor: RequestUser, id: string): Promise<RoutingSlip> {
     const row = await this.requireReadable(actor, id);
-    const [routes, timeline, releaseMethod, clean, addressee] = await Promise.all([
+    const [routes, timeline, release, clean, addressee] = await Promise.all([
       this.repository.routingSlipRoutes(id),
       this.repository.listTimeline(id),
       this.repository.findReleaseMethod(id),
@@ -424,7 +444,7 @@ export class DocumentsService {
     ]);
 
     return {
-      document: this.toPublic(row, releaseMethod, clean),
+      document: this.toPublic(row, release, clean),
       addressee,
       hops: this.toRoutingSlipHops(routes, timeline),
     };
@@ -490,7 +510,7 @@ export class DocumentsService {
       timeline,
       assigneeUserIds,
       sharedUserIds,
-      releaseMethod,
+      release,
       routes,
       signatures,
       clean,
@@ -516,7 +536,7 @@ export class DocumentsService {
       this.repository.listReplyDocuments(actor, id),
     ]);
     return {
-      ...this.toPublic(row, releaseMethod, clean),
+      ...this.toPublic(row, release, clean),
       assigneeUserIds,
       sharedUserIds,
       referencedDocuments,
@@ -748,11 +768,34 @@ export class DocumentsService {
 
   // --------------------------------------------------------------- workflow
 
+  /**
+   * The configured release methods, for the picker in the `RELEASE` dialog.
+   *
+   * Readable by any authenticated caller: it is the office's list of ways post leaves the
+   * building, which carries nothing a signed-in user may not see. Inactive rows are withheld —
+   * a method the office has retired should not be offerable, and `executeAction` refuses it
+   * anyway, so serving it would only make a picker that produces 400s.
+   */
+  async listReleaseMethods(): Promise<ReleaseMethod[]> {
+    const rows = await this.repository.listReleaseMethods();
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      label: row.label,
+      requiresTrackingReference: row.requiresTrackingReference,
+    }));
+  }
+
   async executeAction(
     actor: RequestUser,
     id: string,
     action: WorkflowAction,
-    input: { expectedVersion: number; remarks?: string; releaseMethod?: ReleaseMethod },
+    input: {
+      expectedVersion: number;
+      remarks?: string;
+      releaseMethod?: ReleaseMethodCode;
+      trackingReference?: string;
+    },
   ): Promise<PublicDocument> {
     const { row: current, facts } = await this.requireReadableWithFacts(actor, id);
     const capability = WORKFLOW_ACTION_CAPABILITIES[action];
@@ -765,11 +808,33 @@ export class DocumentsService {
     // Office document cannot evidence a release (D-83).
     const currentClean = await this.releasableFlag(current);
 
+    /*
+     * The configured method, resolved here so the engine stays a pure function of its inputs.
+     *
+     * An unknown or deactivated code is a 400 rather than a schema rejection: which codes exist is
+     * a row in `release_methods`, not a value in a Zod enum, and that is the one cost of making
+     * the list configurable (policy register P-15). Deactivated is refused as firmly as unknown —
+     * a method withdrawn by the office must not be recordable on a new release, even though every
+     * release that already cites it keeps reading correctly.
+     */
+    const { releaseMethod: releaseMethodCode, ...command } = input;
+    let releaseMethod: ReleaseMethodRow | null = null;
+    if (releaseMethodCode !== undefined) {
+      releaseMethod = await this.repository.findActiveReleaseMethodByCode(releaseMethodCode);
+      if (releaseMethod === null)
+        throw new BadRequestException(`Unknown release method: ${releaseMethodCode}`);
+    }
+
     try {
       const result = this.workflow.execute(
         await this.toWorkflowDocument(current),
         this.toWorkflowActor(actor),
-        { action, actorId: actor.id, ...input },
+        {
+          action,
+          actorId: actor.id,
+          ...command,
+          ...(releaseMethod === null ? {} : { releaseMethod }),
+        },
       );
 
       /*
@@ -854,7 +919,12 @@ export class DocumentsService {
         // documentId on release_events makes a second release a hard conflict at the DB.
         if (action === 'RELEASE' && result.event.releaseMethod !== null)
           await this.repository.insertReleaseEvent(
-            { documentId: id, releasedById: actor.id, method: result.event.releaseMethod },
+            {
+              documentId: id,
+              releasedById: actor.id,
+              methodId: result.event.releaseMethod.id,
+              trackingReference: result.event.trackingReference,
+            },
             tx,
           );
         // Signing is recorded as an evidentiary event against the version that was signed (now
@@ -886,7 +956,13 @@ export class DocumentsService {
           },
           tx,
         );
-        return this.toPublic(updated, result.event.releaseMethod, currentClean);
+        return this.toPublic(
+          updated,
+          result.event.releaseMethod === null
+            ? null
+            : { ...result.event.releaseMethod, trackingReference: result.event.trackingReference },
+          currentClean,
+        );
       });
     } catch (error) {
       // Best-effort failure trail; a workflow rejection is expected traffic, not a fault.

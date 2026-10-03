@@ -113,6 +113,37 @@ describe('REST /api/v1 public seam', () => {
     expect(afterAccept.body.data).toContain('COMPLY');
   });
 
+  /*
+   * The point of P-15: the list is data, so LBC and JRS are recordable, and the two that issue a
+   * consignment number are the two flagged as requiring one.
+   */
+  it('serves the configured release methods, flagging the ones that need a tracking reference', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'records@dts.local', password: 'Records@1234!' })
+      .expect(201);
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/release-methods')
+      .set('Cookie', sessionCookie(login))
+      .expect(200);
+
+    const methods = (
+      response.body as { data: { code: string; requiresTrackingReference: boolean }[] }
+    ).data;
+    expect(methods.map((method) => method.code)).toEqual([
+      'EMAILED',
+      'POSTAL',
+      'LBC',
+      'JRS',
+      'PICKED_UP',
+      'PERSONALLY_DELIVERED',
+    ]);
+    expect(
+      methods.filter((method) => method.requiresTrackingReference).map((method) => method.code),
+    ).toEqual(['LBC', 'JRS']);
+  });
+
   it('never returns inaccessible cross-division documents in search totals', async () => {
     const recordsLogin = await request(app.getHttpServer())
       .post('/api/v1/auth/login')

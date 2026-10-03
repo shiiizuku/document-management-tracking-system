@@ -62,16 +62,21 @@ it reads like UI but it is a policy change, so it is slice 7, planned below.
 
 **Known gaps carried forward**
 
-- The seed now creates an `ORD` division alongside `RECORDS` / `PILOT`, so a division *is* the ORD
-  and ADR-0007's exemption is reachable. The other half of decision 152 is still owed: the Records
-  Unit should be a Section **inside** the ORD rather than its own `RECORDS` division. Until that
-  lands the seeded records officer sits outside the ORD, so drafts it registers take the ordinary
-  `FOR_INITIAL` path.
-- `director@dts.local` is seeded with a development password. Pilot configuration must replace it
-  with a real account for the Regional Director — ADR-0006 makes the existence of that account a
-  deployment-ordering constraint, because release is gated on a signature nobody else may make.
-- Release methods are still a database enum. Decision 27 as amended calls for configurable rows
-  seeded with Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered.
+**Closed by Wave A on 2026-10-03** (migrations `0009`/`0010`):
+
+- The Records Unit is a Section **inside** the ORD, so the seeded records officer's drafts take the
+  `FOR_SIGNATURE` path and ADR-0007's exemption is reachable without hand-editing rows. The
+  `RECORDS` division is deactivated rather than deleted (decision 152), and no `reference_number`
+  was touched (decision 153).
+- The Regional Director is `DIRECTOR_EMAIL` / `DIRECTOR_PASSWORD`, and with `NODE_ENV=production`
+  both the API and the seed refuse to run without them. `director@dts.local` remains only as a
+  development default, which production cannot reach.
+- Release methods are configurable rows, seeded Emailed / Postal / LBC / JRS / Picked Up /
+  Personally Delivered, with LBC and JRS flagged as requiring a tracking reference.
+
+**Still open**
+
+- Audit retention (P-08): the relocation path and a test that no purge path exists.
 
 ### Slice 3 plan — the `DIRECTOR` role
 
