@@ -78,20 +78,28 @@ export const documentScopeFor = (actor: AuthorizationActor): SQL => {
  *   that: the hop by which the unit received the document is still on record, so read accumulates
  *   along the custody chain. This is a widening over the destructive `relocate` it replaces, and it
  *   is intended (decision 176) — the unit that handled a document can still answer for it.
- * - **Section actors do not match division-level hops.** `to_section_id = :sectionId` is required,
- *   the same shape as the column check beside it, so a for-information copy (division-level by
- *   decision 160) reaches the division head and not every section inside the division.
+ * - **Section actors match a lead hop to their division as a whole, but not a copy for
+ *   information.** A forward addressed to the division without naming a section is handed to
+ *   every section in it (decision 180), the same people the forward notifies. A for-information
+ *   copy is division-level too (decision 160), yet it reaches the division head only: being
+ *   consulted is not being handed the document.
  *
  * A `null` `sectionId` means "any hop into this division", which is the division head's reach; a
- * section id narrows to that section's own hops. Kept in lockstep with `routesReachUnit` in
- * `authorization.policy.ts`, its in-memory twin.
+ * section id narrows to that section's own hops plus the division-wide lead hops. Kept in lockstep
+ * with `routesReachUnit` in `authorization.policy.ts`, its in-memory twin.
  */
 const routedToUnit = (divisionId: string, sectionId: string | null) =>
   exists(
     sql`(select 1 from ${documentRoutes}
          where ${documentRoutes.documentId} = ${documents.id}
            and ${documentRoutes.toDivisionId} = ${divisionId}
-           ${sectionId === null ? sql`` : sql`and ${documentRoutes.toSectionId} = ${sectionId}`})`,
+           ${
+             sectionId === null
+               ? sql``
+               : sql`and (${documentRoutes.toSectionId} = ${sectionId}
+                          or (${documentRoutes.toSectionId} is null
+                              and ${documentRoutes.forInformation} = false))`
+           })`,
   );
 
 /**

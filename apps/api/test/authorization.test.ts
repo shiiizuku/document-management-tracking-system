@@ -150,6 +150,26 @@ describe('AuthorizationPolicy public seam', () => {
     });
 
     /*
+     * Decision 180: a forward to the division as a whole is handed to every section in it — the
+     * same people it notifies — while a forward naming a section still skips its siblings.
+     */
+    it('reaches every section of a division forwarded to as a whole', () => {
+      const divisionWide: AuthorizationResource = {
+        ...forwarded,
+        routes: [{ toDivisionId: 'division-b', toSectionId: null, forInformation: false }],
+      };
+      expect(
+        policy.canRead(actor({ divisionId: 'division-b', sectionId: 'section-b1' }), divisionWide),
+      ).toBe(true);
+      expect(
+        policy.canRead(actor({ divisionId: 'division-b', sectionId: 'section-b2' }), divisionWide),
+      ).toBe(true);
+      expect(
+        policy.canRead(actor({ divisionId: 'division-c', sectionId: 'section-c1' }), divisionWide),
+      ).toBe(false);
+    });
+
+    /*
      * Decision 176: forwarding is non-destructive, so the unit that handled a document keeps it.
      * Nothing in the predicate says so — the hop by which Section A1 received the document is
      * still on record, and that is the whole mechanism. Pinned because the behaviour it replaces

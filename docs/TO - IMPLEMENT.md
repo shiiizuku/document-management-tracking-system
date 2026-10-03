@@ -909,7 +909,7 @@ modules/<name>/
 
 **Done when:**
 
-- [ ] Clean machine → `docker compose up` → healthy stack. *(Compose config validates and every service declares a health gate; an end-to-end cold boot on a clean machine has not been run.)*
+- [x] Clean machine → `docker compose up` → healthy stack. *(Run 2026-10-03 from an empty Docker — no images, no volumes, no build cache. One `docker compose up -d --build`, ~8 minutes to all seven containers healthy; seed, login, register, upload, ClamAV scan to CLEAN and download all verified against it. Two faults it surfaced are fixed in the same change: the web image bound its server to the container id and so always failed its own healthcheck, and the absent `.dockerignore` sent a ~5 GB build context.)*
 - [x] CI green.
 - [ ] No infrastructure blocker from IT. *(External sign-off; see P-13 in `policy-register.md`.)*
 

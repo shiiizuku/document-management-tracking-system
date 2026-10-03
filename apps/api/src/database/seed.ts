@@ -53,7 +53,9 @@ try {
       set: { code: 'GENERAL', active: true, updatedAt: new Date() },
     })
     .returning();
-  const passwordHash = await hash(process.env.SEED_ADMIN_PASSWORD ?? 'Admin@12345!', 12);
+  // `||`, not `??`: compose passes an unset variable through as an empty string, and an empty
+  // administrator password must fall back to the default rather than be hashed.
+  const passwordHash = await hash(process.env.SEED_ADMIN_PASSWORD || 'Admin@12345!', 12);
   await db
     .insert(users)
     .values({

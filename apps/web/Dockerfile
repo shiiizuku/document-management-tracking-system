@@ -15,6 +15,9 @@ RUN npm run build -w @dts/contracts && npm run build -w @dts/web
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
+# Next.js standalone binds to $HOSTNAME, which Docker sets to the container id; the healthcheck
+# probes 127.0.0.1, so bind every interface instead.
+ENV HOSTNAME=0.0.0.0
 WORKDIR /app
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static

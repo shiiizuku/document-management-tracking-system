@@ -312,6 +312,7 @@ Agreed 2026-10-02. This round **amends** decisions 22, 24, 27, 38, 40, 49, 58 an
 
 178. The Reference Document set freezes when an outgoing document is released. Linking is gated by the same rule that refuses any other edit to a released or archived record, so what a letter answered is fixed at the moment the letter goes out — a reference added afterwards would rewrite the record of a document already sent. The consequence is that the interface must offer linking before Prepare Release, not after.
 179. Linking or unlinking a Reference Document does not bump the document's version and takes no expected version. Nothing on the document row changes, the relation is a separate table whose unique pair makes the write idempotent, and bumping would invalidate every open form on a document because someone attached a reply to it. The same reasoning as acceptance, which stamps a route row and leaves the document untouched.
+180. A forward addressed to a division as a whole, naming no section, makes every section in that division a reader, not only the division head. It matches who the forward notifies (every active member of the receiving division), since a notification its recipient cannot open is a dead link. A copy for information stays with the head (decision 160): being consulted is not being handed the document. A forward to a named section still reaches that section and the head, not its sibling sections.
 
 ## MVP acceptance boundary
 

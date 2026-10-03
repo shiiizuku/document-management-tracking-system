@@ -59,10 +59,11 @@ export interface AuthorizationResource {
 }
 
 /**
- * The in-memory twin of `routedToUnit` in `query-scope.ts`, with the same three deliberate
- * properties: acceptance is not consulted, a unit that forwarded a document onward still matches
- * the hop by which it received it, and a `null` `sectionId` means "any hop into this division"
- * (the division head's reach) while a section id must match the hop's own section.
+ * The in-memory twin of `routedToUnit` in `query-scope.ts`, with the same deliberate properties:
+ * acceptance is not consulted, a unit that forwarded a document onward still matches the hop by
+ * which it received it, and a `null` `sectionId` means "any hop into this division" (the division
+ * head's reach). A section id matches its own section's hops and any lead hop to the division as
+ * a whole (decision 180), but not a copy for information, which stays with the head (decision 160).
  */
 const routesReachUnit = (
   routes: readonly RouteRecipient[],
@@ -71,7 +72,10 @@ const routesReachUnit = (
 ): boolean =>
   routes.some(
     (route) =>
-      route.toDivisionId === divisionId && (sectionId === null || route.toSectionId === sectionId),
+      route.toDivisionId === divisionId &&
+      (sectionId === null ||
+        route.toSectionId === sectionId ||
+        (route.toSectionId === null && !route.forInformation)),
   );
 
 export class AuthorizationPolicy {
