@@ -160,10 +160,10 @@ has UI). Everything after this reuses the module + repository shape you establis
 - [x] (2h) Reconcile the `seed.ts` users with the capabilities/divisions the app expects, and
       delete the in-memory user seed from the `DtsApplicationService` constructor. _Done-when:_
       no user state remains in any `Map` and the authorization tests still pass. ✓ — four users are
-      seeded against real placements (`admin` unplaced, `records` in RECORDS/INTAKE, `director` in
-      the ORD with no section, `staff` in PILOT/GENERAL) and `DtsApplicationService` no longer
-      exists anywhere in the tree. _(Decision 152's other half — the Records Unit as a Section
-      inside the ORD — is tracked under M6 "Audit / policy", not here.)_
+      seeded against real placements (`admin` unplaced, `records` in the ORD's Records Unit,
+      `director` in the ORD with no section, `staff` in PILOT/GENERAL) and `DtsApplicationService`
+      no longer exists anywhere in the tree. _(Decision 152's other half landed with migration
+      `0009`: there is no standalone `RECORDS` division any more.)_
 
 ---
 
@@ -596,22 +596,26 @@ Pull from this list whenever a slice above reaches "verify."
       the SLA calendar (P-04), signature meaning (P-05), the allow-list and 25 MB limit (P-06),
       scanner posture (P-07), disposal (P-09), session timeout (P-10), provisioning (P-11),
       cross-division visibility (P-12) and PII-in-logs (P-14) are each reflected in code.
-      _Remaining, and each a real code change:_
+      **Wave A closed three of the four remaining gaps on 2026-10-03** (migrations `0009`/`0010`;
+      see [`phase-7-sequencing.md`](phase-7-sequencing.md)):
+      - ~~**Release methods (decision 27 as amended)**~~ — `release_methods` is six configurable
+        rows seeded Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered, so a seventh
+        carrier is an INSERT. LBC and JRS are flagged as requiring a tracking reference, which
+        `WorkflowService` then makes mandatory. One factual confirmation is still owed by the
+        Records section: that the pre-existing `MAILED` rows should read as Postal.
+      - ~~**Decision 152's other half**~~ — the Records Unit is a Section inside the ORD. The
+        `RECORDS` division is deactivated rather than deleted, because its code is embedded in
+        reference numbers already issued (decision 153), and the migration moves placement without
+        touching a single `reference_number`.
+      - ~~**Director account**~~ — `DIRECTOR_EMAIL` / `DIRECTOR_PASSWORD` are deployment
+        configuration, and with `NODE_ENV=production` both the API and the seed refuse to run
+        without them (ADR-0006). `director@dts.local` is now a local convenience that production
+        cannot reach by forgetting to configure anything.
+
+      _Remaining, and a real code change:_
       - **Audit retention (P-08)** — 5-year retain-then-relocate is decided; the code retains
         everything in the primary database with no window and no relocation path. Nothing to decide,
         only to build.
-      - **Release methods (decision 27 as amended)** — still the `release_method` pgEnum
-        (`MAILED`, `EMAILED`, `PICKED_UP`, `DELIVERED`). The decision calls for configurable rows
-        seeded Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered, so LBC and JRS are
-        currently unrepresentable.
-      - **Decision 152's other half** — the Records Unit should be a Section inside the ORD, not the
-        standalone `RECORDS` division `seed.ts` still creates. Until it lands the seeded records
-        officer sits outside the ORD and its drafts take the ordinary `FOR_INITIAL` path, so
-        ADR-0007's exemption is reachable only by hand.
-      - **Director account** — `director@dts.local` carries the shared development password.
-        ADR-0006 makes a real Regional Director account a deployment-ordering constraint, because
-        release is gated on a signature nobody else may make.
-      - **Parallel-route completion semantics** — still deferred as an open policy question.
 - [ ] (2h) Runbooks for the remaining failure modes. _Done-when:_ each has a rehearsed runbook.
       _(`docs/runbooks/backup-restore.md` exists; incident response, scanner-down and Redis-loss do
       not.)_

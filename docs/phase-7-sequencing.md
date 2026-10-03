@@ -14,8 +14,8 @@ core workflow revision imposes on new code.
 ## The count
 
 **Nine open boxes and four policy-encoding gaps.** Not five — see the correction below. **Wave B
-landed on 2026-10-03** and closed the EICAR test, the CI harness and the oversize upload, so seven
-boxes remain.
+landed on 2026-10-03** and closed the EICAR test, the CI harness and the oversize upload; **Wave A
+landed the same day** and closed three of the four policy gaps. Seven boxes and one gap remain.
 
 | Open boxes |                                                                              |
 | ---------- | ---------------------------------------------------------------------------- |
@@ -23,12 +23,12 @@ boxes remain.
 | Tests      | ~~EICAR integration test~~ · Playwright E2E · axe sweep · load test          |
 | Ops        | backup/restore rehearsal · runbooks for incident, scanner-down and Redis-loss |
 
-| Policy gap                                                      | Register row    |
-| --------------------------------------------------------------- | --------------- |
-| Audit retention — decided, unimplemented                        | P-08            |
-| Release methods — decided, the enum is short of it              | P-15            |
-| Decision 152's other half — Records Unit as a Section in the ORD | —               |
-| The Director's development password                             | — (ADR-0006)    |
+| Policy gap                                                           | Register row |
+| -------------------------------------------------------------------- | ------------ |
+| Audit retention — decided, unimplemented                             | P-08         |
+| ~~Release methods — decided, the enum is short of it~~               | P-15         |
+| ~~Decision 152's other half — Records Unit as a Section in the ORD~~ | —            |
+| ~~The Director's development password~~                              | — (ADR-0006) |
 
 ### Correction: parallel-route completion semantics is not open
 
@@ -45,8 +45,9 @@ and now says so in the schema.
 
 ## What drives the order
 
-1. **Decision 152 changes the seed**, and the seed is what E2E fixtures and load-test data build on.
-   Do it before anything that writes fixtures.
+1. ~~**Decision 152 changes the seed**~~, and the seed is what E2E fixtures and load-test data
+   build on. Closed by Wave A: there is no standalone `RECORDS` division any more, so C1's
+   scenarios and D1's pilot seed can be written against the structure that will ship.
 2. **Acceptance scenarios are the script E2E automates.** Writing them first makes the E2E work
    transcription rather than design — so the Slice 0.1 item that looks like paperwork is a
    prerequisite, not a trailing chore.
@@ -60,33 +61,94 @@ and now says so in the schema.
 
 ## Wave A — settle the data model and the seed
 
-Nothing downstream is stable until this lands. ~5 sessions.
+**Done 2026-10-03.** ~5 sessions. Two migrations, `0009` and `0010`, and the organization tree C1
+and D1 build fixtures on is now fixed.
 
 - [x] **A0** (0.5h) Strike the parallel-route "deferred" note from both docs; Phase 3 backend → `✅`;
       comment `completed_at` as deliberately unused. _Done-when:_ the docs no longer claim an open
       policy that ADR-0005 closed.
-- [ ] **A1** (2h) Migration `0009`: the Records Unit becomes a Section inside the ORD. Drop the
-      `RECORDS` division, create the `RECORDS` section under `ORD`, repoint the records officer.
+- [x] **A1** (2h) Migration `0009`: the Records Unit becomes a Section inside the ORD.
       _Done-when:_ the seeded records officer sits inside the ORD, so its drafts take the
       `FOR_SIGNATURE` path and ADR-0007's exemption is reachable without hand-editing rows.
-- [ ] **A2** (2h) The same migration's data half: existing `documents.division_id = RECORDS` rows
-      repointed. _Done-when:_ **already-issued `RECORDS-<year>-<n>` reference numbers are unchanged.**
-      Decision 153 makes them permanent and they exist on paper, so the migration moves placement
-      without touching `reference_number`. This is the whole risk in A1 — write the reversibility note
-      before the migration.
-- [ ] **A3** (2h) The Director account becomes deployment configuration rather than seed data;
-      `director@dts.local` drops out of the non-development seed path. _Done-when:_ a production boot
-      with no Director account fails loudly at config validation instead of silently seeding a
-      development password. ADR-0006 makes this a deployment-ordering constraint — release is gated on
-      a signature nobody else may make.
-- [ ] **A4** (2h) P-15: `release_method` stops being a pgEnum and becomes configurable rows, seeded
-      Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered. _Done-when:_ LBC and JRS are
-      recordable. Touches the enum, `releaseMethodSchema`, the `RELEASE` dialog's picker, and
-      `release_events.method` → FK. The four existing values map forward, `MAILED` → Postal.
 
-A1 needs almost no application change: the ORD is identified by division **code**
-(`organization.constants.ts`) and `isOrdDivision` reads that code, so the exemption keeps working.
-The work is the data migration and its reversibility note.
+  **The `RECORDS` division is deactivated, not dropped.** This box said "drop"; decision 152 says
+  "deactivated, never deleted: division codes are embedded in reference numbers already issued",
+  and the decision wins. It also dissolves A2's hardest question — dropping the division would mean
+  deciding what happens to its `reference_counters` rows, and there is no answer to that which
+  cannot reissue a number. Keeping the row keeps the counter, and nothing can allocate from it
+  because no account is placed there.
+
+  The prediction held: **no application change at all.** The ORD is identified by division code and
+  `isOrdDivision` reads that code, so the exemption kept working untouched.
+
+  One thing the plan did not anticipate: **the migration must not create the ORD unconditionally.**
+  `ORD_DIVISION_CODE`'s comment already says the pilot's ORD row is created by configuration rather
+  than by a migration, and `files.int.test.ts` / `scanner.int.test.ts` prove it — they migrate a
+  fresh schema and then insert their own ORD at a fixed id, so an unconditional `INSERT` collided
+  on `divisions_code_unique`. Every statement in `0009` is now conditional on a `RECORDS` division
+  existing; a database that never had one is left entirely alone and gets its tree from the seed.
+
+- [x] **A2** (2h) The same migration's data half: existing `documents.division_id = RECORDS` rows
+      repointed. _Done-when:_ **already-issued `RECORDS-<year>-<n>` reference numbers are unchanged.**
+
+  Asserted in `migration.int.test.ts`, which seeds the pre-`0009` shape and checks the reference
+  after. The reversibility note is at the head of the migration; the one thing the reverse cannot
+  recover is which former section a row sat in, because the forward direction collapses every
+  section of the old division into one — lossless for the pilot's single `INTAKE`, and called out
+  for a deployment with more.
+
+  Two judgement calls the box did not mention, both in the migration's comments:
+
+  - **`document_routes` recipients are repointed**, even though a hop is evidence of where a
+    document went. `query-scope.ts` resolves read scope through those columns, so a hop left
+    pointing at the retired division would hide the document from the unit that now holds it.
+  - **Only `PENDING` account requests are repointed.** A decided request is a record of what was
+    asked for and granted, so rewriting it would falsify it — but approval runs `resolvePlacement`,
+    which refuses an inactive division, so an open one would become unapprovable.
+
+- [x] **A3** (2h) The Director account becomes deployment configuration rather than seed data.
+      _Done-when:_ a production boot with no Director account fails loudly at config validation
+      instead of silently seeding a development password.
+
+  `DIRECTOR_EMAIL` / `DIRECTOR_PASSWORD`, validated by `validateDirectorAccount`, which both
+  `validateEnvironment` and the seed call. Three outcomes: both set and that account is created;
+  neither set outside production and `director@dts.local` is still planted, because a developer's
+  first `db:seed` has to yield a signatory; neither set **in** production and it throws. A
+  half-configured pair is always an error — falling back to the development account because only
+  the password was given is how a deployment ends up signing as a default.
+
+  It is a separate exported function rather than part of `validateEnvironment` for one reason: the
+  seed runs in the migrator image, which is handed a `DATABASE_URL` and little else, so making it
+  validate the whole environment would turn an absent `REDIS_URL` into a failure to seed.
+
+  **The same hazard remains for `SEED_ADMIN_PASSWORD`**, which still falls back to
+  `Admin@12345!` in any environment. Out of this box's scope, and worth its own.
+
+- [x] **A4** (2h) P-15: `release_method` stops being a pgEnum and becomes configurable rows, seeded
+      Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered. _Done-when:_ LBC and JRS are
+      recordable.
+
+  Migration `0010`. `release_events.method_id` is an FK, the four old values map forward, and
+  `GET /release-methods` feeds the dialog's picker — which no longer holds a code-to-label table,
+  because the label is served.
+
+  **Scoped wider than this box, deliberately.** Decision 27 as amended has a second half the box
+  did not carry: "a method may be flagged as requiring a tracking reference, which is then
+  mandatory at release." Implementing the list without it would have left P-15 half-encoded, which
+  is exactly the failure mode this document keeps finding. So `release_methods.requires_tracking_reference`
+  exists, LBC and JRS are flagged, `release_events.tracking_reference` holds the consignment number,
+  and `WorkflowService` makes it mandatory for a flagged method — and **refuses it for an
+  unflagged one**, because a tracking number against "Picked up" asserts that something can be
+  traced when it cannot.
+
+  The cost of configurability, paid in one place: an unknown or deactivated code is a 400 from
+  `DocumentsService` rather than a schema rejection, because which codes exist is a row and not a
+  Zod enum. The wire value is still shape-constrained (`releaseMethodCodeSchema`, upper snake
+  case).
+
+  An administration screen for the list is **not** here. The decision asks for a list that is
+  configurable, which it now is — a seventh carrier is an INSERT, not a migration — and a CRUD UI
+  for it is a separate box.
 
 ## Wave B — give CI the dependencies it lacks
 
@@ -221,10 +283,17 @@ Chase these now; they are not engineering work.
 | D4 — audit retention       | Where the post-5-year database lives                       | IT operations                           |
 | A4 — release methods       | Confirmation that `MAILED` → Postal is the right mapping   | Records section                         |
 
+A4's confirmation is now the only one that is **chasing applied code rather than blocking it**. The
+mapping was applied as planned because the alternative — reading `MAILED` as a courier and splitting
+it across LBC and JRS — would invent a carrier the row never recorded. If the answer comes back
+differently, the correction is an `UPDATE` of `release_events.method_id`: the old value survives in
+the method row it maps to rather than having been overwritten in place.
+
 The risk register is the one to start today: it needs nothing but a conversation, and Phase 0's gate
 cannot be signed off without it.
 
 ## Shape
 
-~25 sessions, so 5–6 weeks at 2 h/day; Wave B's ~4 are spent. **Wave A** is next — the riskiest
-migration, and the seed everything downstream builds fixtures on.
+~25 sessions, so 5–6 weeks at 2 h/day; Waves A and B's ~9 are spent. **Wave C** is next, and C1 —
+the acceptance scenarios — is the one to start: it is the script C3 transcribes, and it can now be
+written against the organization structure that will actually ship.

@@ -16,11 +16,12 @@ that no placeholder heuristic silently becomes permanent behaviour.
 Provisional defaults are **dev/pilot-only**. `OPEN`, `PROVISIONAL` and `DECIDED` rows must all
 reach `AGREED` before the Phase 7 readiness sign-off.
 
-_Last reviewed: 2026-10-03, against the code rather than against the previous review._ Two rows are
-not yet `AGREED`: **P-08** (audit retention — decided, unimplemented) and **P-15** (release methods —
-decided, the enum is short of it). Everything else is confirmed and matched by code. P-13 is `AGREED`
-on substance but its restore has still never been rehearsed, which is an M6 box rather than a register
-question.
+_Last reviewed: 2026-10-03, against the code rather than against the previous review; P-15 updated
+the same day when Wave A encoded it._ One row is not yet `AGREED`: **P-08** (audit retention —
+decided, unimplemented). Everything else is confirmed and matched by code. P-13 is `AGREED` on
+substance but its restore has still never been rehearsed, which is an M6 box rather than a register
+question; P-15 is `AGREED` and implemented, with one factual confirmation owed by the Records
+section about how the pre-existing `MAILED` rows should read.
 
 | #    | Policy question                                                                                   | Owner            | Status        | Current behaviour in code                                                                                                      | Blocks    |
 | ---- | ------------------------------------------------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------- |
@@ -38,7 +39,7 @@ question.
 | P-12 | **Cross-division visibility** — whether any role may read outside its own division                  | Admin office     | `AGREED` | Deny by default; access only via explicit `document_shares` / `document_routes`. Three roles are office-wide by design and named in one place, `OFFICE_WIDE_READ_ROLES`: `ADMINISTRATOR`, `RECORDS_STAFF` and — since ADR-0006 — `DIRECTOR`, which must review any division's work in order to sign it. The confidentiality gate still applies to all three | Phase 1/2 |
 | P-13 | **Backup RPO/RTO** — acceptable data loss and restore window for the single-host deployment         | IT operations    | `AGREED` | Recovery point **<= 5 minutes**, restore window **2-4 hours**, archived off-host. Postgres archives WAL continuously (`archive_timeout=60`); `scripts/backup.sh` takes a base backup and mirrors the object store; `scripts/restore.sh` replays to a point in time, and `docs/runbooks/backup-restore.md` writes the procedure down. The restore is **still not rehearsed** against the stated window — M6 carries that, and it is the one P-13 obligation outstanding | Phase 7   |
 | P-14 | **PII in logs** — which user fields may appear in structured logs                                   | IT security      | `AGREED` | User IDs may be logged; names and emails may not. The logger redacts credential-shaped keys and `key=value` pairs | Phase 0   |
-| P-15 | **Release methods** — the list of ways an outgoing document leaves the office (decision 27, amended) | Records section  | `DECIDED` | Answer is six configurable values: Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered. Code still carries a four-value `release_method` pgEnum (`MAILED`, `EMAILED`, `PICKED_UP`, `DELIVERED`), so **LBC and JRS cannot be recorded at all** and the list is not configurable without a migration | Phase 7   |
+| P-15 | **Release methods** — the list of ways an outgoing document leaves the office (decision 27, amended) | Records section  | `AGREED` | Six configurable rows in `release_methods`, seeded Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered (migration `0010`); a seventh is an INSERT, not a migration. LBC and JRS are flagged `requires_tracking_reference`, and `WorkflowService` makes the reference mandatory for those and refuses it for the rest. `release_events.method_id` is an FK, and the four old enum values were mapped forward (`MAILED` → Postal, `DELIVERED` → Personally delivered). **One confirmation outstanding:** that `MAILED` → Postal is the right reading of the existing rows — a correction is a re-point of `method_id`, not a schema change | Phase 7   |
 
 ## Changing a row
 
