@@ -9,7 +9,7 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 ## Core workflow revision (2026-10-02)
 
 The revision recorded in `CONTEXT.md` (decisions 152–175) and ADR-0005/0006/0007 is being delivered
-as six dependency-ordered slices. **Slices 1–3 are done**; the rest are not started.
+as six dependency-ordered slices. **Slices 1–5 are done**; slice 6, the UI, is not started.
 
 | Slice | Work | Status |
 | ----- | ---- | ------ |
@@ -17,10 +17,10 @@ as six dependency-ordered slices. **Slices 1–3 are done**; the rest are not st
 | 2 | Workflow engine: `FOR_INITIAL`, `COMPLIED`, direction-branched matrix and `RESTORE`, re-entrant `ACCEPT` | ✅ done |
 | 3 | `DIRECTOR` role; remove `DOCUMENT_SIGN` from `RECORDS_STAFF` and `DIVISION_HEAD` | ✅ done |
 | 4 | Non-destructive routing: `relocate` must stop overwriting `documents.division_id`; scope resolves through accepted routes; multi-recipient forwards write `for_information` rows | ✅ done |
-| 5 | Reference Document join table (decisions 165–167) | ⬜ not started |
+| 5 | Reference Document join table (decisions 165–167) | ✅ done |
 | 6 | UI: detail-view right rail, reference-document modal, inline routing slip, list-view control, Inter | ⬜ not started |
 
-**What slices 1–3 changed that later slices inherit**
+**What slices 1–5 changed that later slices inherit**
 
 - `documents.status` no longer holds `PENDING`; the enum type was replaced. `PENDING` is derived
   from unaccepted `document_routes` rows through one predicate, `documentIsPending` in
@@ -39,6 +39,21 @@ as six dependency-ordered slices. **Slices 1–3 are done**; the rest are not st
 - `DOCUMENT_SIGN` is held by `DIRECTOR` and, as break-glass only, `ADMINISTRATOR`. Records staff
   and division heads no longer sign. Any new test or fixture that drives the outgoing path past
   `FOR_SIGNATURE` needs a Director actor for that one step.
+- `document_references` is the Reference Document relation, and the **two endpoints that write it
+  answer a target the actor cannot read with the same `404` as one that does not exist**
+  (decision 166). No capability check runs against the referenced document at all — a `403` there
+  is an existence oracle. `requireReadableDocument` on the way in and a scope test *inside* the
+  `DELETE` are what produce the two identical misses; a lookup followed by a permission check
+  reintroduces the leak. Anything added later that resolves a reference must do the same.
+- **Reference reads are short by omission.** `referencedDocuments` and `replyDocuments` on
+  `/documents/:id` are filtered by the reader's own scope with no placeholder for what was removed,
+  so two readers legitimately see different lengths for one document. Not a bug to reconcile.
+- Linking takes **no `expectedVersion` and bumps no version** (decision 179), and is idempotent on
+  the unique pair: a repeat link is a `201` with one row and one audit event, never a `409`. The
+  reference set freezes when the outgoing document is released (decision 178), because linking is
+  gated by `requireEditableDocument` — so the UI must offer linking before `PREPARE_RELEASE`.
+- The relation's direction is a service-level rule, and enforcing it is what makes cycles
+  unrepresentable. No cycle check, depth limit or recursive guard belongs anywhere in this feature.
 - Office-wide read is now a named set, `OFFICE_WIDE_READ_ROLES` in `authorization.policy.ts`, shared
   by `canRead` and its SQL twin `documentScopeFor`. `DIRECTOR` is in it *and* is placed in a
   division, so no scope code may infer "reads everything" from an absent `divisionId` any more.

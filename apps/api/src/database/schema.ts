@@ -2,6 +2,7 @@ import { relations, sql } from 'drizzle-orm';
 import { storedWorkflowStatusSchema, type StoredWorkflowStatus } from '@dts/contracts';
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -270,6 +271,62 @@ export const documentShares = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.documentId, table.userId] })],
+);
+
+/*
+ * The Reference Document relation: an outgoing document names the incoming documents it answers,
+ * and each of those reads the inverse as its replies (decision 165).
+ *
+ * A *relationship*, not a string. `documents.reference_number` is already two different things —
+ * the office's identifier for an outgoing document, the sender's free text on an incoming one — so
+ * nothing in this table is called `reference` unqualified; `REFERENCES` is a SQL reserved word
+ * besides, which settles it.
+ *
+ * **Direction is a service-level rule, not a column constraint.** `outgoing_document_id` must name
+ * an `OUTGOING` document and `incoming_document_id` an `INCOMING` one, which SQL cannot express
+ * across tables without a trigger, so the check lives in `DocumentsService.linkReferenceDocument`.
+ * Enforcing it buys a guarantee worth writing down: an incoming document can never be the naming
+ * side, so the relation cannot contain a cycle. No cycle check, depth limit or recursive guard is
+ * needed anywhere here — and none should be added later "for safety".
+ *
+ * The `CHECK` below is the one malformed row direction would not catch if the service check were
+ * ever bypassed, and it costs nothing.
+ */
+export const documentReferences = pgTable(
+  'document_references',
+  {
+    ...identityColumns(),
+    outgoingDocumentId: uuid('outgoing_document_id')
+      .notNull()
+      .references(() => documents.id),
+    incomingDocumentId: uuid('incoming_document_id')
+      .notNull()
+      .references(() => documents.id),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    /*
+     * What makes linking idempotent without a read-before-write: the insert is
+     * `ON CONFLICT DO NOTHING`, so a double submit is a quiet success rather than a 409 and the
+     * audit trail does not grow a second identical event (decision 179).
+     */
+    uniqueIndex('document_references_pair_uq').on(
+      table.outgoingDocumentId,
+      table.incomingDocumentId,
+    ),
+    /*
+     * The reverse read — an incoming document's replies — which is the half the composite unique
+     * index above cannot serve, since it leads with the outgoing id.
+     */
+    index('document_references_incoming_idx').on(table.incomingDocumentId),
+    check(
+      'document_references_not_self',
+      sql`${table.outgoingDocumentId} <> ${table.incomingDocumentId}`,
+    ),
+  ],
 );
 
 /*

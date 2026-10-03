@@ -14,6 +14,7 @@ import type { Response } from 'express';
 import {
   assignDocumentSchema,
   createDocumentSchema,
+  linkReferenceDocumentSchema,
   routeDocumentSchema,
   shareDocumentSchema,
   updateDocumentMetadataSchema,
@@ -21,6 +22,7 @@ import {
   workflowCommandSchema,
   type AssignDocumentInput,
   type CreateDocumentInput,
+  type LinkReferenceDocumentInput,
   type RouteDocumentInput,
   type ShareDocumentInput,
   type UpdateDocumentMetadataInput,
@@ -163,6 +165,45 @@ export class DocumentsController {
     @Body(new ZodValidationPipe(routeDocumentSchema)) input: RouteDocumentInput,
   ) {
     return this.documents.route(actor, id, input).then((data) => ({ data }));
+  }
+
+  /*
+   * Reference Documents (decisions 165–167). One id per call rather than a set, because a batch has
+   * to report which of several ids was the bad one and under decision 166 that report is the leak —
+   * see `linkReferenceDocumentSchema`. No `expectedVersion` in the body and none in the response's
+   * version either (decision 179).
+   */
+  @Post(':id/references')
+  linkReference(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(linkReferenceDocumentSchema)) input: LinkReferenceDocumentInput,
+  ) {
+    return this.documents
+      .linkReferenceDocument(actor, id, input.incomingDocumentId)
+      .then((data) => ({ data }));
+  }
+
+  /*
+   * The target id is a path parameter here, so it is validated by the same field schema the body
+   * uses on the way in — reusing the field rather than restating `z.uuid()` keeps the two halves of
+   * one feature from drifting. A malformed value has to be refused as a bad request rather than
+   * reaching Postgres as an invalid-uuid cast, which would answer 500 where every other miss
+   * answers 404.
+   */
+  @Delete(':id/references/:incomingDocumentId')
+  unlinkReference(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Param(
+      'incomingDocumentId',
+      new ZodValidationPipe(linkReferenceDocumentSchema.shape.incomingDocumentId),
+    )
+    incomingDocumentId: string,
+  ) {
+    return this.documents
+      .unlinkReferenceDocument(actor, id, incomingDocumentId)
+      .then((data) => ({ data }));
   }
 
   @Post(':id/shares')
