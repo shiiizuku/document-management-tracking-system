@@ -105,6 +105,8 @@ services:
     command: node dist/database/migrate.js
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
+      # Read only by the seed, which is run in this image (README, Production stack).
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
     depends_on:
       postgres: { condition: service_healthy }
     restart: 'no'
@@ -114,9 +116,11 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 4000
-      WEB_ORIGIN: http://localhost:${WEB_HOST_PORT:-3001}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-3001}}
+      # The API refuses to boot with NODE_ENV=production unless this is true (HTTPS only).
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
@@ -147,7 +151,7 @@ services:
       dockerfile: apps/api/Dockerfile
     command: node apps/api/dist/worker.js
     environment:
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
@@ -157,6 +161,7 @@ services:
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
       SESSION_SECRET: ${SESSION_SECRET:-local-development-session-secret-change-before-pilot}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       WORKER_HEALTH_PORT: 4001
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-26214400}
     depends_on:
@@ -173,9 +178,10 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4001}/api/v1
+        # Baked into the client bundle at build time: rebuild `web` after changing it.
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:${API_HOST_PORT:-4001}/api/v1}
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4001}/api/v1
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:${API_HOST_PORT:-4001}/api/v1}
     ports: ['${WEB_HOST_PORT:-3001}:3000']
     depends_on:
       api: { condition: service_healthy }

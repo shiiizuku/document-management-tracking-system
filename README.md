@@ -71,18 +71,105 @@ Sign in with any development account below.
 compose up -d postgres` (same pattern for `REDIS_HOST_PORT`, `MINIO_HOST_PORT`,
   `CLAMAV_HOST_PORT`, `API_HOST_PORT`, `WEB_HOST_PORT`).
 
-### Everything in containers
+### Production stack (Docker)
 
-To run the app processes in Docker as well — adding the one-shot `migrate` gate plus `api`,
-`worker` and `web` — use the whole file instead of the four dependencies:
+The whole system — Postgres, Redis, MinIO, ClamAV, a one-shot `migrate` job, `api`, `worker` and
+`web` — runs from the one `docker-compose.yml`. Compose reads `.env` from the repository root for
+every `${...}` in that file, so production is configured there and nothing in the compose file
+needs editing.
+
+Requirements on the host: Docker Engine with Compose v2, about 4 GB of free memory (ClamAV alone
+wants about 2 GB), and a reverse proxy that terminates HTTPS in front of the web and API ports.
+
+**1. Get the code with LF line endings.** On Windows, check out with `git config core.autocrlf
+false` or rely on the repository's `.gitattributes`. `infra/clamav/clamd.conf` is mounted into a
+Linux container, and a CRLF copy stops clamd from starting (see
+[Uploads stuck on "scan pending"](#uploads-stuck-on-scan-pending)).
+
+**2. Write `.env`.** Start from `.env.example` and set at least:
+
+| Variable                                | Production value                                                                        |
+| --------------------------------------- | --------------------------------------------------------------------------------------- |
+| `NODE_ENV`                              | `production`                                                                            |
+| `COOKIE_SECURE`                         | `true`. The API refuses to boot in production without it, so the site must be on HTTPS  |
+| `SESSION_SECRET`                        | 32+ random characters, e.g. `openssl rand -base64 48`                                   |
+| `POSTGRES_PASSWORD`                     | a strong password (`POSTGRES_USER` and `POSTGRES_DB` are optional)                      |
+| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | new credentials; the secret must be 8+ characters                                       |
+| `WEB_ORIGIN`                            | the public URL of the web app, e.g. `https://dts.example.gov.ph`. CORS allows only this |
+| `PUBLIC_API_URL`                        | the public API base the browser calls, e.g. `https://dts.example.gov.ph/api/v1`         |
+| `SEED_ADMIN_PASSWORD`                   | the first administrator's password                                                      |
+
+`PUBLIC_API_URL` is compiled into the web bundle, so changing it later means rebuilding `web`.
+
+**3. Build and start.**
 
 ```bash
 docker compose up -d --build
 ```
 
-`api` waits for its four dependencies to be healthy **and** for `migrate` to exit successfully, so
-it can never serve traffic against an un-migrated schema. Note that a clean-machine cold boot has
-not yet been verified end to end (`docs/TO - IMPLEMENT.md`).
+The first build compiles MinIO from source and takes a while. `api` starts only once Postgres,
+Redis, MinIO and ClamAV are healthy **and** `migrate` has exited successfully, so it never serves
+an un-migrated schema. ClamAV takes a couple of minutes to go healthy while it loads definitions.
+Check progress with:
+
+```bash
+docker compose ps
+```
+
+**4. Seed the organisation and the first administrator** (once; re-running is harmless):
+
+```bash
+docker compose run --rm --no-deps migrate node dist/database/seed.js
+```
+
+The seed also creates the two development accounts below. Deactivate them, or change their
+passwords, before anyone else can reach the site.
+
+**5. Put HTTPS in front.** Proxy the public hostname to `web` (`WEB_HOST_PORT`, default 3001) and
+`/api` to `api` (`API_HOST_PORT`, default 4001). Postgres, Redis, MinIO and ClamAV also publish
+host ports for development; firewall them, or delete their `ports:` lines, on a server.
+
+**Upgrading:** pull, then run `docker compose up -d --build` again. `migrate` re-runs and `api`
+waits for it. Back up first with `scripts/backup.sh`, and make sure `BACKUP_PATH` is on another
+machine.
+
+### Uploads stuck on "scan pending"
+
+An attachment cannot be previewed or downloaded until ClamAV has passed it as `CLEAN`; anything
+else **fails closed**. When every upload sits at "scan pending", one of these is the reason.
+
+1. **The worker is not running.** `npm run dev` starts only the API and the web app; in local
+   development, also run `npm run dev:worker -w @dts/api`. In Docker, `docker compose ps` should show
+   `worker` as healthy.
+2. **ClamAV is not healthy.** Run `docker compose ps clamav`. It should say `healthy` within a few
+   minutes of starting. If it stays at `starting`, read the log:
+
+   ```bash
+   docker compose logs --tail 50 clamav
+   ```
+
+   `ERROR: Incorrect argument format for option TCPSocket` means `infra/clamav/clamd.conf` has
+   Windows (CRLF) line endings: clamd reads the port as `3310
+` and never starts. The
+   `.gitattributes` keeps it LF on new checkouts. To repair an existing checkout:
+
+   ```bash
+   rm infra/clamav/clamd.conf
+   git checkout -- infra/clamav/clamd.conf
+   docker compose up -d --force-recreate clamav
+   ```
+
+3. **The uploads were made while the scanner was down.** A scan is retried 5 times over about
+   30 seconds, then the job is parked as failed and the file stays pending even after ClamAV
+   recovers. Once ClamAV is healthy, requeue the failed jobs:
+
+   ```bash
+   docker compose exec worker node -e "const {Queue}=require('bullmq');const q=new Queue('dts.outbox',{connection:{url:process.env.REDIS_URL}});q.retryJobs({state:'failed'}).then(()=>q.close())"
+   ```
+
+   Files that were already scanned are skipped, so this is safe to run more than once. When the
+   worker runs outside Docker, run the same `node -e` from `apps/api` with `REDIS_URL` set to your
+   `.env` value.
 
 ### Development accounts
 

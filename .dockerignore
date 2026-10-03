@@ -1,0 +1,17 @@
+# The Dockerfiles copy only package manifests, packages/contracts and their own app, but Docker
+# still sends the whole context first. Without this file that was ~5 GB per build (backups,
+# node_modules, .next) and enough to exhaust memory on a workstation.
+**/node_modules
+**/.next
+**/dist
+**/*.tsbuildinfo
+.git
+backups
+minio
+docs
+scripts
+.env
+.env.*
+!.env.example
+**/test
+**/coverage

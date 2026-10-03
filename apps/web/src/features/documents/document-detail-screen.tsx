@@ -1,10 +1,12 @@
 'use client';
 
+import type { ComponentProps } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ArrowLeft, FileX, Lock } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { EmptyState } from '@/components/dts/empty-state';
 import { DetailSkeleton } from '@/components/dts/skeletons';
@@ -39,6 +41,9 @@ const isClosed = (document: DocumentDetail) =>
  *
  * The rail is **second in the DOM**, so the narrow layout, where the grid collapses, gives a
  * reader the document before its history rather than the other way round.
+ *
+ * Each group sits in its own {@link Panel}. Hairline rules alone left one long undifferentiated
+ * column, where the eye had no edge to find the attachments or the timeline by.
  */
 export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: string }>) {
   const document = useDocument(documentId);
@@ -59,84 +64,97 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
   const closed = isClosed(detail);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-start">
-      <div className="min-w-0 space-y-6">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-start">
+      <div className="min-w-0 space-y-4">
         <div>
-          <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2 text-muted-foreground">
+          <Button asChild variant="ghost" size="sm" className="-ml-2 mb-1 text-muted-foreground">
             <Link href="/documents">
               <ArrowLeft />
               Registry
             </Link>
           </Button>
 
-          <p className="eyebrow">{detail.trackingNumber}</p>
-          <h1 className="mt-1 flex items-start gap-2 text-3xl text-foreground">
-            <span className="min-w-0">{detail.title}</span>
-            {detail.confidential ? (
-              <Lock
-                className="mt-2 size-4 shrink-0 text-muted-foreground"
-                aria-label="Confidential"
-              />
-            ) : null}
-          </h1>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {/* Status is not repeated here: the rail states it beside where the document is now,
-                which is the pairing that answers "what happens next". */}
-            <Badge variant="outline">{documentTypeLabel(detail.type)}</Badge>
-            <Badge variant="outline">
-              {detail.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}
-            </Badge>
-            <PriorityLabel priority={detail.priority} />
-            <div className="ml-auto flex items-center gap-2">
-              {/*
-                Both editing controls are gated on DOCUMENT_EDIT — and hidden on a closed record,
-                where the server refuses them anyway. The routing slip is not: a released document
-                is exactly the one whose printable dossier people still need.
-              */}
-              {can('DOCUMENT_EDIT') && !closed ? <RouteDialog document={detail} /> : null}
-              {can('DOCUMENT_EDIT') && !closed ? <MetadataDialog document={detail} /> : null}
-              <RoutingSlipDialog document={detail} />
-              {can('DOCUMENT_DELETE') ? <DeleteDocumentDialog document={detail} /> : null}
+          <Panel>
+            <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+              <div className="min-w-0 flex-1">
+                <p className="eyebrow">{detail.trackingNumber}</p>
+                <h1 className="mt-1 flex items-start gap-2 text-2xl text-foreground">
+                  <span className="min-w-0">{detail.title}</span>
+                  {detail.confidential ? (
+                    <Lock
+                      className="mt-2 size-4 shrink-0 text-muted-foreground"
+                      aria-label="Confidential"
+                    />
+                  ) : null}
+                </h1>
+              </div>
+              <div className="flex items-center gap-2">
+                {/*
+                  Both editing controls are gated on DOCUMENT_EDIT — and hidden on a closed record,
+                  where the server refuses them anyway. The routing slip is not: a released document
+                  is exactly the one whose printable dossier people still need.
+                */}
+                {can('DOCUMENT_EDIT') && !closed ? <RouteDialog document={detail} /> : null}
+                {can('DOCUMENT_EDIT') && !closed ? <MetadataDialog document={detail} /> : null}
+                <RoutingSlipDialog document={detail} />
+                {can('DOCUMENT_DELETE') ? <DeleteDocumentDialog document={detail} /> : null}
+              </div>
             </div>
-          </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Status is not repeated here: the rail states it beside where the document is now,
+                  which is the pairing that answers "what happens next". */}
+              <Badge variant="outline">{documentTypeLabel(detail.type)}</Badge>
+              <Badge variant="outline">
+                {detail.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}
+              </Badge>
+              <PriorityLabel priority={detail.priority} />
+            </div>
+          </Panel>
         </div>
 
-        <Separator />
+        <Panel>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+            <Field label="Sender" value={detail.sender} />
+            <Field label="Company / agency" value={detail.company} />
+            <ReferenceNumberField document={detail} />
+            <Field label="Email address" value={detail.email} />
+            <Field label="Registered" value={new Date(detail.createdAt).toLocaleDateString()} />
+            <DueField document={detail} />
+            {detail.releaseMethod === null ? null : (
+              <Field
+                label="Released by"
+                value={detail.releaseMethod.replaceAll('_', ' ').toLowerCase()}
+              />
+            )}
+          </dl>
 
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-          <Field label="Sender" value={detail.sender} />
-          <Field label="Company / agency" value={detail.company} />
-          <ReferenceNumberField document={detail} />
-          <Field label="Email address" value={detail.email} />
-          <Field label="Registered" value={new Date(detail.createdAt).toLocaleDateString()} />
-          <DueField document={detail} />
-          {detail.releaseMethod === null ? null : (
-            <Field
-              label="Released by"
-              value={detail.releaseMethod.replaceAll('_', ' ').toLowerCase()}
-            />
+          {detail.description === null || detail.description === '' ? null : (
+            <>
+              <Separator />
+              <div>
+                <h3 className="text-label-medium tracking-wide text-muted-foreground uppercase">
+                  Description
+                </h3>
+                <p className="mt-0.5 text-sm whitespace-pre-line text-foreground">
+                  {detail.description}
+                </p>
+              </div>
+            </>
           )}
-        </dl>
-
-        {detail.description === null || detail.description === '' ? null : (
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">Description</h3>
-            <p className="mt-1 text-sm whitespace-pre-line text-muted-foreground">
-              {detail.description}
-            </p>
-          </div>
-        )}
-
-        <Separator />
+        </Panel>
 
         {/* Before the attachments, and in the ordinary flow of the page: decision 178 freezes the
             reference set at release, so linking has to be reachable well before Prepare Release. */}
-        <ReferencesSection document={detail} canEdit={can('DOCUMENT_EDIT') && !closed} />
+        {/* `empty:hidden`: the section renders nothing on an incoming document with no replies,
+            and an empty card would be a box around nothing. */}
+        <Panel className="empty:hidden">
+          <ReferencesSection document={detail} canEdit={can('DOCUMENT_EDIT') && !closed} />
+        </Panel>
 
-        <Separator />
-
-        <AttachmentsSection documentId={detail.id} canUpload={can('DOCUMENT_EDIT') && !closed} />
+        <Panel>
+          <AttachmentsSection documentId={detail.id} canUpload={can('DOCUMENT_EDIT') && !closed} />
+        </Panel>
       </div>
 
       <DetailRail document={detail} />
@@ -160,22 +178,34 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
 function DetailRail({ document }: Readonly<{ document: DocumentDetail }>) {
   return (
     <aside className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-3.5rem-3rem)]">
-      <LocationBlock document={document} />
+      <Panel className="shrink-0">
+        <LocationBlock document={document} />
 
-      <Separator />
+        <Separator />
 
-      <section className="space-y-2">
-        <h2 className="text-label-medium tracking-wide text-muted-foreground uppercase">
-          Available actions
-        </h2>
-        <DocumentActions document={document} />
-      </section>
+        <section className="space-y-2">
+          <h2 className="text-label-medium tracking-wide text-muted-foreground uppercase">
+            Available actions
+          </h2>
+          <DocumentActions document={document} />
+        </section>
+      </Panel>
 
-      <Separator />
-
-      <Timeline document={document} />
+      {/* `min-h-0` lets the panel shrink below its content, which is what hands the timeline's
+          own list the overflow instead of the rail. */}
+      <Panel className="min-h-0">
+        <Timeline document={document} />
+      </Panel>
     </aside>
   );
+}
+
+/**
+ * One group of the detail view, on the filled card surface. The card's own padding and gap read
+ * the density tokens, so the global density control tightens these with everything else.
+ */
+function Panel({ className, ...props }: ComponentProps<'div'>) {
+  return <Card className={cn('px-card', className)} {...props} />;
 }
 
 /**

@@ -389,6 +389,25 @@ describe('documentScopeFor / scopeToActor against a real database', () => {
       ).toEqual([]);
     });
 
+    // Decision 180: a lead hop naming no section reaches every section of that division.
+    it('reaches every section of a division forwarded to as a whole', async () => {
+      const divisionWide = randomUUID();
+      await db
+        .insert(documents)
+        .values(doc(divisionWide, { divisionId: DIV_A, sectionId: SEC_A1 }));
+      await db
+        .insert(documentRoutes)
+        .values({ documentId: divisionWide, toDivisionId: DIV_B, routedById: CREATOR });
+      for (const sectionId of [SEC_B1, SEC_B2]) {
+        expect(
+          await visibleTo(actor({ role: 'STAFF_MEMBER', divisionId: DIV_B, sectionId })),
+        ).toContain(divisionWide);
+      }
+      expect(
+        await visibleTo(actor({ role: 'STAFF_MEMBER', divisionId: DIV_C, sectionId: SEC_C1 })),
+      ).not.toContain(divisionWide);
+    });
+
     /*
      * Both hops here are unaccepted, and the recipients above reach them anyway. That is the
      * resolution of ADR-0005's "scope resolves through accepted route rows", which read literally
