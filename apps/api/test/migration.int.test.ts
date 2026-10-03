@@ -387,4 +387,100 @@ describe('database migrations', () => {
       });
     });
   });
+
+  /**
+   * Release methods stop being a pgEnum and become configurable rows (policy register P-15). The
+   * case that matters is the backfill: four enum values have to map forward onto six seeded rows
+   * without any release losing the record of how it left the office.
+   */
+  describe('0010 configurable release methods', () => {
+    const previousMethods = ['MAILED', 'EMAILED', 'PICKED_UP', 'DELIVERED'];
+
+    beforeAll(async () => {
+      await resetSchema();
+      await migrate(database, {
+        migrationsFolder: await migrationsThrough('0009_records_unit_as_ord_section'),
+      });
+
+      await database.execute(
+        sql.raw(`
+        INSERT INTO divisions (id, code, name)
+        VALUES ('66666666-6666-4666-8666-666666666666', 'LEGACY', 'Legacy Division');
+
+        INSERT INTO users (id, email, display_name, password_hash, role, division_id)
+        VALUES ('77777777-7777-4777-8777-777777777777', 'releaser@dts.local', 'Releaser',
+                'not-a-real-hash', 'RECORDS_STAFF', '66666666-6666-4666-8666-666666666666');
+      `),
+      );
+
+      // One document per release: `release_events.document_id` is unique, because a document
+      // leaves the office once.
+      for (const [index, method] of previousMethods.entries()) {
+        await database.execute(
+          sql.raw(`
+          INSERT INTO documents (tracking_number, title, type, priority, direction, status,
+                                 division_id, created_by_id)
+          VALUES ('DTS-2026-00100${index}', 'Released ${method}', 'LETTER', 'NORMAL', 'OUTGOING',
+                  'RELEASED', '66666666-6666-4666-8666-666666666666',
+                  '77777777-7777-4777-8777-777777777777');
+
+          INSERT INTO release_events (document_id, released_by_id, method)
+          SELECT id, created_by_id, '${method}' FROM documents
+          WHERE tracking_number = 'DTS-2026-00100${index}';
+        `),
+        );
+      }
+
+      await migrate(database, { migrationsFolder });
+    });
+
+    it('seeds the six configured methods, flagging the two that issue a tracking number', async () => {
+      const result = await database.execute(
+        sql.raw(
+          `SELECT code, label, requires_tracking_reference FROM release_methods ORDER BY sort_order`,
+        ),
+      );
+      expect(result.rows).toEqual([
+        { code: 'EMAILED', label: 'Emailed', requires_tracking_reference: false },
+        { code: 'POSTAL', label: 'Postal', requires_tracking_reference: false },
+        { code: 'LBC', label: 'LBC', requires_tracking_reference: true },
+        { code: 'JRS', label: 'JRS', requires_tracking_reference: true },
+        { code: 'PICKED_UP', label: 'Picked up', requires_tracking_reference: false },
+        {
+          code: 'PERSONALLY_DELIVERED',
+          label: 'Personally delivered',
+          requires_tracking_reference: false,
+        },
+      ]);
+    });
+
+    /**
+     * `MAILED → POSTAL` and `DELIVERED → PERSONALLY_DELIVERED` are the two renames. The mapping of
+     * `MAILED` is still awaiting confirmation from the Records section; what this asserts is that
+     * the migration applied the mapping it documents, so a correction is a re-point rather than an
+     * archaeology exercise.
+     */
+    it('maps every stored enum value forward without losing a release', async () => {
+      const result = await database.execute(
+        sql.raw(`
+        SELECT d.title, m.code
+        FROM release_events e
+        JOIN documents d ON d.id = e.document_id
+        JOIN release_methods m ON m.id = e.method_id
+        ORDER BY d.tracking_number
+      `),
+      );
+      expect(result.rows).toEqual([
+        { title: 'Released MAILED', code: 'POSTAL' },
+        { title: 'Released EMAILED', code: 'EMAILED' },
+        { title: 'Released PICKED_UP', code: 'PICKED_UP' },
+        { title: 'Released DELIVERED', code: 'PERSONALLY_DELIVERED' },
+      ]);
+    });
+
+    it('removes the release_method type entirely', async () => {
+      const result = await database.execute(sql.raw(`SELECT to_regtype('release_method') AS type`));
+      expect(result.rows[0]).toEqual({ type: null });
+    });
+  });
 });

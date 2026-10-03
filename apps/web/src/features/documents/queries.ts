@@ -6,6 +6,7 @@ import type {
   DocumentDirection,
   DocumentPriority,
   ReleaseMethod,
+  ReleaseMethodCode,
   WorkflowAction,
   WorkflowStatus,
 } from '@dts/contracts';
@@ -95,7 +96,15 @@ export interface DocumentListItem {
   currentAttachmentVersionId: string | null;
   signedAttachmentVersionId: string | null;
   hasCleanCurrentAttachment: boolean;
-  releaseMethod: ReleaseMethod | null;
+  /**
+   * How the document left the office, with the method's configured label — the server resolves
+   * it, so no screen carries a code-to-label table (policy register P-15).
+   */
+  releaseMethod: {
+    code: ReleaseMethodCode;
+    label: string;
+    trackingReference: string | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -318,6 +327,25 @@ export function invalidateDocument(client: QueryClient, id?: string): void {
   void client.invalidateQueries({ queryKey: documentKeys.deleted() });
 }
 
+/**
+ * The configured release methods, for the picker in the `RELEASE` dialog.
+ *
+ * Cached like the org tree and for the same reason: the office changes this list a few times a
+ * year, and the dialog would otherwise re-request it every time it opens.
+ *
+ * `enabled` is not a convenience. The only caller is `useActionRunner`, which the command palette
+ * mounts in the app shell on *every* route — so an unconditional query here would be a request on
+ * every page load for a list that only one dialog ever shows.
+ */
+export function useReleaseMethods(enabled: boolean) {
+  return useQuery({
+    queryKey: ['release-methods'] as const,
+    queryFn: () => api<ReleaseMethod[]>('/release-methods'),
+    staleTime: 30 * 60_000,
+    enabled,
+  });
+}
+
 export interface WorkflowCommand {
   action: WorkflowAction;
   /**
@@ -326,7 +354,8 @@ export interface WorkflowCommand {
    */
   expectedVersion: number;
   remarks?: string | undefined;
-  releaseMethod?: ReleaseMethod | undefined;
+  releaseMethod?: ReleaseMethodCode | undefined;
+  trackingReference?: string | undefined;
 }
 
 /**

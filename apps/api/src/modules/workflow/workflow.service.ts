@@ -3,6 +3,7 @@ import {
   workflowActionSchema,
   type DocumentDirection,
   type ReleaseMethod,
+  type ReleaseMethodCode,
   type StoredWorkflowStatus,
   type WorkflowAction,
 } from '@dts/contracts';
@@ -16,7 +17,13 @@ import {
 export const workflowStatuses = storedWorkflowStatusSchema.options;
 export const workflowActions = workflowActionSchema.options;
 
-export type { StoredWorkflowStatus, WorkflowAction, DocumentDirection, ReleaseMethod };
+export type {
+  StoredWorkflowStatus,
+  WorkflowAction,
+  DocumentDirection,
+  ReleaseMethod,
+  ReleaseMethodCode,
+};
 
 /**
  * What this engine moves a document between.
@@ -83,7 +90,14 @@ export interface WorkflowCommand {
   expectedVersion: number;
   actorId: string;
   remarks?: string;
+  /*
+   * The *resolved* method row, not the code the caller sent. Looking a code up is a database
+   * question, so `DocumentsService` answers it and hands the row over — which keeps this engine a
+   * pure function of its inputs and lets it enforce the row's own
+   * `requiresTrackingReference` flag without reaching for a repository.
+   */
   releaseMethod?: ReleaseMethod;
+  trackingReference?: string;
 }
 
 export interface WorkflowEvent {
@@ -93,6 +107,7 @@ export interface WorkflowEvent {
   toStatus: WorkflowStatus;
   remarks: string | null;
   releaseMethod: ReleaseMethod | null;
+  trackingReference: string | null;
 }
 
 /**
@@ -319,9 +334,32 @@ export class WorkflowService {
       throw new WorkflowRuleError('Compliance remarks are required', 'COMPLY_REMARKS_REQUIRED');
     }
 
+    const trackingReference = command.trackingReference?.trim() ?? '';
+
     if (command.action === 'RELEASE') {
       if (command.releaseMethod === undefined) {
         throw new WorkflowRuleError('Release method is required', 'RELEASE_METHOD_REQUIRED');
+      }
+      /*
+       * Decision 27 as amended: a method may require a tracking reference, and then it is
+       * mandatory. The rule reads off the method row rather than a list of courier codes here, so
+       * configuring a seventh carrier needs no change to this file.
+       *
+       * The converse is enforced too. A tracking number recorded against "Picked up" is a
+       * statement that something can be traced when it cannot, and silently dropping it would
+       * leave the person who typed it believing otherwise.
+       */
+      if (command.releaseMethod.requiresTrackingReference && trackingReference.length === 0) {
+        throw new WorkflowRuleError(
+          `${command.releaseMethod.label} requires a tracking reference`,
+          'TRACKING_REFERENCE_REQUIRED',
+        );
+      }
+      if (!command.releaseMethod.requiresTrackingReference && trackingReference.length > 0) {
+        throw new WorkflowRuleError(
+          `${command.releaseMethod.label} does not take a tracking reference`,
+          'TRACKING_REFERENCE_NOT_ACCEPTED',
+        );
       }
       if (
         document.direction === 'OUTGOING' &&
@@ -345,6 +383,7 @@ export class WorkflowService {
         toStatus,
         remarks: remarks.length > 0 ? remarks : null,
         releaseMethod: command.releaseMethod ?? null,
+        trackingReference: trackingReference.length > 0 ? trackingReference : null,
       },
       acceptedRouteId: null,
     };
@@ -388,6 +427,7 @@ export class WorkflowService {
         toStatus: document.status,
         remarks: remarks.length > 0 ? remarks : null,
         releaseMethod: null,
+        trackingReference: null,
       },
       acceptedRouteId: own.id,
     };

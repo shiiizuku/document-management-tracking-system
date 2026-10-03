@@ -3,6 +3,7 @@ import {
   IllegalTransitionError,
   WorkflowService,
   WorkflowRuleError,
+  type ReleaseMethod,
   type RouteCustody,
   type WorkflowAction,
   type WorkflowActor,
@@ -111,12 +112,31 @@ const legalTransitions: Array<{
 
 const remarksActions: WorkflowAction[] = ['REQUEST_REVISION', 'COMPLY'];
 
+/*
+ * A release method is a configured row now, not an enum value, and the engine is handed the
+ * resolved row so it can read the row's own `requiresTrackingReference` flag (policy register
+ * P-15). `EMAILED` is the one used throughout here precisely because it requires no tracking
+ * reference — the two methods that do have their own cases below.
+ */
+const EMAILED: ReleaseMethod = {
+  id: 'release-method-emailed',
+  code: 'EMAILED',
+  label: 'Emailed',
+  requiresTrackingReference: false,
+};
+const LBC: ReleaseMethod = {
+  id: 'release-method-lbc',
+  code: 'LBC',
+  label: 'LBC',
+  requiresTrackingReference: true,
+};
+
 const commandFor = (action: WorkflowAction) => ({
   action,
   expectedVersion: VERSION,
   actorId: 'user-1',
   ...(remarksActions.includes(action) ? { remarks: 'Noted.' } : {}),
-  ...(action === 'RELEASE' ? { releaseMethod: 'EMAILED' as const } : {}),
+  ...(action === 'RELEASE' ? { releaseMethod: EMAILED } : {}),
 });
 
 const documentFor = (entry: (typeof legalTransitions)[number]): WorkflowDocument => {
@@ -267,9 +287,55 @@ describe('WorkflowService public seam', () => {
         action: 'RELEASE',
         expectedVersion: VERSION,
         actorId: 'records-1',
-        releaseMethod: 'EMAILED',
+        releaseMethod: EMAILED,
       }),
     ).toThrowError('Outgoing release requires the current clean attachment to be signed');
+  });
+
+  /*
+   * Decision 27 as amended: a method may require a tracking reference, and then it is mandatory.
+   * The rule is read off the method row rather than a list of courier codes, so these two cases
+   * are what stop a seventh carrier needing a change to the engine.
+   */
+  describe('tracking references', () => {
+    const releasable = {
+      ...baseDocument('FOR_RELEASE'),
+      hasCleanCurrentAttachment: true,
+      currentAttachmentVersionId: 'file-v1',
+      signedAttachmentVersionId: 'file-v1',
+    };
+    const release = (extra: Partial<Parameters<typeof workflow.execute>[2]>) =>
+      workflow.execute(releasable, actor, {
+        action: 'RELEASE',
+        expectedVersion: VERSION,
+        actorId: 'records-1',
+        ...extra,
+      });
+
+    it('refuses a courier release with no tracking reference', () => {
+      expect(() => release({ releaseMethod: LBC })).toThrowError(
+        'LBC requires a tracking reference',
+      );
+    });
+
+    it('records the tracking reference a courier release carries', () => {
+      const outcome = release({ releaseMethod: LBC, trackingReference: ' LBC-00042 ' });
+      expect(outcome.event).toMatchObject({
+        releaseMethod: LBC,
+        trackingReference: 'LBC-00042',
+      });
+    });
+
+    /*
+     * The converse, and it is a refusal rather than a silent drop: a tracking number against
+     * "Emailed" asserts that something can be traced when it cannot, and discarding it would
+     * leave whoever typed it believing otherwise.
+     */
+    it('refuses a tracking reference on a method that does not take one', () => {
+      expect(() =>
+        release({ releaseMethod: EMAILED, trackingReference: 'LBC-00042' }),
+      ).toThrowError('Emailed does not take a tracking reference');
+    });
   });
 
   it('publishes actor-filtered allowed actions', () => {

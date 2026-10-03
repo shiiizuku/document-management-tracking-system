@@ -18,14 +18,38 @@ import type {
   NewDocument,
   NewWorkflowEvent,
   PlacementResult,
+  RecordedRelease,
   ReferenceDocumentSummary,
+  ReleaseMethodRow,
   RoutingSlipRoute,
   SignatureEventRow,
   WorkflowEventRow,
 } from '../src/modules/documents/documents.repository.js';
-import type { ReleaseMethod } from '../src/modules/workflow/workflow.service.js';
-
 const now = () => new Date();
+
+/*
+ * The same six methods migration 0010 seeds, because the release path reads its method from the
+ * repository now rather than from an enum (policy register P-15) — a double that served none
+ * would make every `RELEASE` in these suites a 400. Timestamps are fixed: nothing asserts on them
+ * and a stable value keeps snapshots quiet.
+ */
+const RELEASE_METHOD_ROWS: ReleaseMethodRow[] = [
+  ['EMAILED', 'Emailed', false],
+  ['POSTAL', 'Postal', false],
+  ['LBC', 'LBC', true],
+  ['JRS', 'JRS', true],
+  ['PICKED_UP', 'Picked up', false],
+  ['PERSONALLY_DELIVERED', 'Personally delivered', false],
+].map(([code, label, requiresTrackingReference], index) => ({
+  id: `release-method-${String(code).toLowerCase()}`,
+  code: code as string,
+  label: label as string,
+  requiresTrackingReference: requiresTrackingReference as boolean,
+  active: true,
+  sortOrder: index + 1,
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+}));
 
 /**
  * Stand-in for {@link DocumentsRepository} in the full-app REST suites, which run without a
@@ -56,7 +80,7 @@ export class InMemoryDocumentsRepository {
       occurredAt: Date;
     }[]
   >();
-  private readonly releaseMethods = new Map<string, ReleaseMethod>();
+  private readonly releases = new Map<string, RecordedRelease>();
   private readonly routes = new Map<string, DocumentRouteRow[]>();
   /*
    * Division ids that stand in for the Office of the Regional Director.
@@ -255,14 +279,36 @@ export class InMemoryDocumentsRepository {
   insertReleaseEvent(event: {
     documentId: string;
     releasedById: string;
-    method: ReleaseMethod;
+    methodId: string;
+    trackingReference: string | null;
   }): Promise<void> {
-    this.releaseMethods.set(event.documentId, event.method);
+    const method = RELEASE_METHOD_ROWS.find((row) => row.id === event.methodId);
+    if (method === undefined) throw new Error(`Unknown release method id: ${event.methodId}`);
+    this.releases.set(event.documentId, {
+      id: method.id,
+      code: method.code,
+      label: method.label,
+      requiresTrackingReference: method.requiresTrackingReference,
+      trackingReference: event.trackingReference,
+    });
     return Promise.resolve();
   }
 
-  findReleaseMethod(documentId: string): Promise<ReleaseMethod | null> {
-    return Promise.resolve(this.releaseMethods.get(documentId) ?? null);
+  findReleaseMethod(documentId: string): Promise<RecordedRelease | null> {
+    return Promise.resolve(this.releases.get(documentId) ?? null);
+  }
+
+  listReleaseMethods(includeInactive = false): Promise<ReleaseMethodRow[]> {
+    return Promise.resolve(
+      RELEASE_METHOD_ROWS.filter((row) => includeInactive || row.active).map((row) => ({ ...row })),
+    );
+  }
+
+  findActiveReleaseMethodByCode(code: string): Promise<ReleaseMethodRow | null> {
+    const row = RELEASE_METHOD_ROWS.find(
+      (candidate) => candidate.code === code && candidate.active,
+    );
+    return Promise.resolve(row === undefined ? null : { ...row });
   }
 
   hasActiveAssignment(documentId: string, userId: string): Promise<boolean> {

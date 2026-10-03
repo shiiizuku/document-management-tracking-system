@@ -34,7 +34,7 @@ import type { RequestUser } from '../../common/request-user.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { ReportExportService } from '../reports/report-export.service.js';
 import { AuditWriter } from '../audit/audit.writer.js';
-import type { ReleaseMethod } from '../workflow/workflow.service.js';
+import type { ReleaseMethodCode } from '../workflow/workflow.service.js';
 import { DocumentsService } from './documents.service.js';
 import type { DocumentSearchFilters } from './documents.repository.js';
 
@@ -186,7 +186,12 @@ export class DocumentsController {
     @Param('id') id: string,
     @Param('action') rawAction: string,
     @Body(new ZodValidationPipe(workflowCommandSchema))
-    input: { expectedVersion: number; remarks?: string; releaseMethod?: ReleaseMethod },
+    input: {
+      expectedVersion: number;
+      remarks?: string;
+      releaseMethod?: ReleaseMethodCode;
+      trackingReference?: string;
+    },
   ) {
     const action = workflowActionSchema.parse(rawAction);
     return this.documents.executeAction(actor, id, action, input).then((data) => ({ data }));

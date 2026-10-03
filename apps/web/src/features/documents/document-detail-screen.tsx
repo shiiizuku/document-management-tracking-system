@@ -122,10 +122,10 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
             <Field label="Registered" value={new Date(detail.createdAt).toLocaleDateString()} />
             <DueField document={detail} />
             {detail.releaseMethod === null ? null : (
-              <Field
-                label="Released by"
-                value={detail.releaseMethod.replaceAll('_', ' ').toLowerCase()}
-              />
+              <Field label="Released by" value={detail.releaseMethod.label} />
+            )}
+            {detail.releaseMethod?.trackingReference == null ? null : (
+              <Field label="Tracking reference" value={detail.releaseMethod.trackingReference} />
             )}
           </dl>
 
