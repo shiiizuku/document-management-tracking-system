@@ -106,7 +106,12 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
       # Read only by the seed, which is run in this image (README, Production stack).
+      NODE_ENV: ${NODE_ENV:-development}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      # The Regional Director's account (ADR-0006). The seed refuses to run with
+      # NODE_ENV=production unless both are set, rather than planting a development password.
+      DIRECTOR_EMAIL: ${DIRECTOR_EMAIL:-}
+      DIRECTOR_PASSWORD: ${DIRECTOR_PASSWORD:-}
     depends_on:
       postgres: { condition: service_healthy }
     restart: 'no'
@@ -131,6 +136,10 @@ services:
       CLAMAV_PORT: 3310
       SESSION_SECRET: ${SESSION_SECRET:-local-development-session-secret-change-before-pilot}
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-26214400}
+      # Both processes validate the environment at boot, and with NODE_ENV=production both refuse
+      # to start without a configured Regional Director (ADR-0006).
+      DIRECTOR_EMAIL: ${DIRECTOR_EMAIL:-}
+      DIRECTOR_PASSWORD: ${DIRECTOR_PASSWORD:-}
     ports: ['${API_HOST_PORT:-4001}:4000']
     depends_on:
       postgres: { condition: service_healthy }
@@ -164,6 +173,10 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       WORKER_HEALTH_PORT: 4001
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-26214400}
+      # Both processes validate the environment at boot, and with NODE_ENV=production both refuse
+      # to start without a configured Regional Director (ADR-0006).
+      DIRECTOR_EMAIL: ${DIRECTOR_EMAIL:-}
+      DIRECTOR_PASSWORD: ${DIRECTOR_PASSWORD:-}
     depends_on:
       api: { condition: service_healthy }
     healthcheck:
