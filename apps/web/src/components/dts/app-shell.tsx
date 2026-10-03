@@ -189,7 +189,7 @@ function Brand({ collapsed = false }: Readonly<{ collapsed?: boolean }>) {
     >
       <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-container-lowest ring-1 ring-outline-variant">
         <Image
-          src="/mgb-logo.png"
+          src="/branding/mgb-logo.png"
           alt="Mines and Geosciences Bureau"
           width={28}
           height={28}
