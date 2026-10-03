@@ -21,6 +21,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -80,9 +81,14 @@ const orNull = (value: string): string | null => (value.trim() === '' ? null : v
  * same on both sides, which is what lets each issue land on the input that caused it.
  */
 const metadataResolver =
-  (expectedVersion: number): Resolver<MetadataFormValues> =>
+  (expectedVersion: number, outgoing: boolean): Resolver<MetadataFormValues> =>
   (values) => {
-    const parsed = updateDocumentMetadataSchema.safeParse({ ...toPatch(values), expectedVersion });
+    // Validated against exactly what will be sent, `outgoing` and all, so a rule that only applies
+    // to one direction cannot pass here and fail at the API.
+    const parsed = updateDocumentMetadataSchema.safeParse({
+      ...toPatch(values, outgoing),
+      expectedVersion,
+    });
     // RHF wants the form's own values back on success, not the parsed payload.
     if (parsed.success) return { values, errors: {} };
 
@@ -103,11 +109,14 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
   const [showHistory, setShowHistory] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const update = useUpdateMetadata(document.id);
+  // Decision 169. The reference column holds the office's own identifier on an outgoing document
+  // and the sender's on an incoming one, which changes both the label and whether it may be typed.
+  const outgoing = document.direction === 'OUTGOING';
   // Only fetched once the history is actually asked for: most edits never open it.
   const revisions = useMetadataRevisions(document.id, open && showHistory);
 
   const form = useForm<MetadataFormValues>({
-    resolver: metadataResolver(document.version),
+    resolver: metadataResolver(document.version, document.direction === 'OUTGOING'),
     defaultValues: {
       title: document.title,
       type: document.type,
@@ -125,7 +134,7 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
   const onSubmit = (values: MetadataFormValues) => {
     setFormError(null);
     update.mutate(
-      { ...toPatch(values), expectedVersion: document.version },
+      { ...toPatch(values, outgoing), expectedVersion: document.version },
       {
         onSuccess: () => {
           setOpen(false);
@@ -268,15 +277,28 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
               )}
             />
 
+            {/*
+              Two different strings have shared this column, and "External reference" was wrong
+              about both (decision 169). On an incoming document it is whatever the sending office
+              printed on their letter — free text, theirs. On an outgoing one it is the office's
+              own `ORD-2026-00014`, allocated from `reference_counters` inside the create
+              transaction, which is neither external nor editable: the server refuses the change,
+              and this merely declines to ask for it.
+            */}
             <FormField
               control={form.control}
               name="referenceNumber"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>External reference</FormLabel>
+                  <FormLabel>{outgoing ? 'Reference number' : "Sender's reference"}</FormLabel>
                   <FormControl>
-                    <Input maxLength={120} {...field} />
+                    <Input maxLength={120} readOnly={outgoing} {...field} />
                   </FormControl>
+                  {outgoing ? (
+                    <FormDescription>
+                      Issued by the system when the document was registered.
+                    </FormDescription>
+                  ) : null}
                   <FormMessage />
                 </FormItem>
               )}
@@ -407,14 +429,17 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
 }
 
 /** Turns the form's text inputs back into the patch shape the API accepts. */
-const toPatch = (values: MetadataFormValues) => ({
+const toPatch = (values: MetadataFormValues, outgoing: boolean) => ({
   title: values.title.trim(),
   type: values.type,
   description: orNull(values.description),
   priority: values.priority,
   sender: orNull(values.sender),
   company: orNull(values.company),
-  referenceNumber: orNull(values.referenceNumber),
+  // Omitted entirely on an outgoing document rather than sent back unchanged: the server refuses
+  // the field there (decision 169), and an omitted field and a `null` one mean different things to
+  // the patch schema — sending the current value would make every outgoing edit a 400.
+  ...(outgoing ? {} : { referenceNumber: orNull(values.referenceNumber) }),
   email: orNull(values.email),
   confidential: values.confidential,
   // `null` clears the target date; an omitted field would leave the old one in place, and the

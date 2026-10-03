@@ -142,6 +142,34 @@ describe('REST reference documents', () => {
     (await request(server()).get(`/api/v1/documents/${id}`).set('Cookie', cookie).expect(200)).body
       .data as Detail;
 
+  /*
+   * Decision 169 is a records-integrity rule, not a form preference: an outgoing document's
+   * reference is allocated from `reference_counters` inside the create transaction and is the
+   * identifier printed on a letter that has gone out. The dialog declining to offer the field is
+   * courtesy; a rule that lives only in a form holds until somebody uses the API.
+   */
+  it("refuses to edit an outgoing document's own reference number", async () => {
+    const cookie = await asRecords();
+    const outgoing = await register(cookie, { direction: 'OUTGOING', title: 'Reply letter' });
+
+    const refused = await request(server())
+      .patch(`/api/v1/documents/${outgoing.id}/metadata`)
+      .set('Cookie', cookie)
+      .send({ expectedVersion: 1, referenceNumber: 'ORD-2026-99999' })
+      .expect(400);
+    expect((refused.body as { error: { code: string } }).error.code).toBe(
+      'REFERENCE_NUMBER_READ_ONLY',
+    );
+
+    // The incoming side is unaffected: that string is the sender's, and free text by design.
+    const incoming = await register(cookie, { title: 'A request' });
+    await request(server())
+      .patch(`/api/v1/documents/${incoming.id}/metadata`)
+      .set('Cookie', cookie)
+      .send({ expectedVersion: 1, referenceNumber: 'THEIR-REF-7' })
+      .expect(200);
+  });
+
   it('names two incoming documents, shows the inverse on each, and moves no status', async () => {
     const cookie = await asRecords();
     const outgoing = await register(cookie, { direction: 'OUTGOING', title: 'Reply letter' });

@@ -593,6 +593,24 @@ export class DocumentsService {
     if (!this.authorization.can(actor, this.asResource(current, facts), 'DOCUMENT_EDIT'))
       throw new ForbiddenException('Editing this document is not allowed');
 
+    /*
+     * An outgoing document's reference number is the office's own, allocated from
+     * `reference_counters` inside the create transaction (decision 169). Editing it by hand is a
+     * records-integrity problem — the identifier on a letter that has gone out is not something a
+     * later edit may contradict — and it also fights the partial unique index that keeps those
+     * identifiers distinct.
+     *
+     * Refused here rather than only hidden in the dialog. The form declining to offer the field is
+     * courtesy; this is the rule, and a rule that lives only in a form is one that holds until
+     * somebody uses the API.
+     */
+    if (current.direction === 'OUTGOING' && input.referenceNumber !== undefined)
+      throw new BadRequestException({
+        code: 'REFERENCE_NUMBER_READ_ONLY',
+        message:
+          "An outgoing document's reference number is issued by the system and cannot be edited",
+      });
+
     const { patch, before, after } = this.diffMetadata(current, input);
     if (Object.keys(after).length === 0)
       throw new BadRequestException({
