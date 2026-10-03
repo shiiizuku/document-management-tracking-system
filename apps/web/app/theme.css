@@ -13,7 +13,6 @@
  *
  * Imported once, by the root layout.
  */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
 @import 'tailwindcss';
 /* Supplies the enter/exit keyframes the Radix-driven components animate with (`animate-in`,
    `slide-in-from-*`, `fade-in-0`). Tailwind v4 dropped the plugin these used to come from. */
@@ -43,8 +42,16 @@
   --color-ink: var(--dts-ink);
   --color-paper: var(--dts-paper);
 
-  --font-sans: 'DM Sans', system-ui, sans-serif;
-  --font-serif: 'DM Serif Display', Georgia, serif;
+  /*
+   * Inter, loaded by `app/layout.tsx` through `next/font/local`, which publishes each face under
+   * its own CSS variable. The Latin Extended family is second in the list rather than merged into
+   * the first: the fallback is per glyph, so it is reached only by text the Latin file cannot set,
+   * and it is not preloaded. See the comment on `localFont` in the layout.
+   *
+   * There is no `--font-serif`. Decision 172 retires the display serif, and headings now take the
+   * same family as everything else — the type scale alone carries the hierarchy.
+   */
+  --font-sans: var(--font-inter), var(--font-inter-ext), system-ui, sans-serif;
 }
 
 @layer base {
@@ -92,14 +99,14 @@
   }
 
   /*
-   * Headings carry the display serif, as they do on the screens being replaced, and now sit on the
-   * MD3 type scale. Set once here instead of adding classes to every heading in every route.
+   * Headings sit on the MD3 type scale, set once here instead of adding classes to every heading
+   * in every route. They no longer carry a family of their own: with the display serif retired
+   * (decision 172) a heading differs from body text in size and weight, not in typeface.
    */
   h1,
   h2,
   h3 {
-    font-family: var(--font-serif);
-    font-weight: 400;
+    font-weight: 600;
   }
 
   h1 {
@@ -122,6 +129,11 @@
    * panel heading in this design. It is a type treatment, not a component, so it stays a base class
    * rather than becoming a one-element React wrapper. It now follows the accent: under `graphite`
    * it reads as grey ink, which is the point of that preset.
+   *
+   * `tabular-nums` because the eyebrow is where a tracking number appears on the detail screen and
+   * in both of its dialogs. Inter's proportional digits make a column of `DTS-2026-000014` jitter,
+   * and a tracking number is read by comparing it against another one rather than by reading it
+   * through. It costs nothing on the eyebrows that carry a word.
    */
   .eyebrow {
     font-family: var(--font-sans);
@@ -129,6 +141,7 @@
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
     color: var(--md-primary);
   }
 

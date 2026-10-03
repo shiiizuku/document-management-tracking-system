@@ -76,7 +76,7 @@ const columns: readonly DataTableColumn<DocumentListItem>[] = [
             <Lock className="size-3 shrink-0 text-muted-foreground" aria-label="Confidential" />
           ) : null}
         </div>
-        <div className="text-xs text-muted-foreground">
+        <div className="text-xs text-muted-foreground tabular-nums">
           {row.trackingNumber}
           {row.referenceNumber === null ? '' : ` · ${row.referenceNumber}`}
         </div>

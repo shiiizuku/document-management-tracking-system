@@ -1,7 +1,39 @@
 import type { Metadata } from 'next';
+import localFont from 'next/font/local';
 import './theme.css';
 import { AppProviders } from '@/components/app-providers';
 import { appearanceBootScript } from '@/components/md3/appearance-config';
+
+/*
+ * Inter, from two files committed under `app/fonts` (see the README beside them).
+ *
+ * `next/font/local` rather than a hand-written `@font-face`, because it emits the preload link and
+ * the `font-display` for us and hashes the file into the build output — there is no `public/fonts`
+ * URL to keep in step with a deploy. Both faces are declared as a weight *range*: one variable file
+ * covers 100–900, so no weight the design asks for needs a second request.
+ *
+ * Two families rather than one, and composed as a fallback list in `theme.css`. `localFont` has no
+ * per-file `unicode-range`, which is how a subsetted family is normally spelled, so the coverage is
+ * expressed the other way round: the browser falls through to the next family per *glyph*, which
+ * reaches the Latin Extended file only for text the Latin one cannot set. That file is therefore
+ * `preload: false` — it is 85 kB against the Latin file's 48 kB, and almost nothing in a Philippine
+ * records office needs it. Preloading both would double the font cost of first paint to buy glyphs
+ * that are never drawn.
+ */
+const inter = localFont({
+  src: './fonts/inter-latin-variable.woff2',
+  weight: '100 900',
+  variable: '--font-inter',
+  display: 'swap',
+});
+
+const interExtended = localFont({
+  src: './fonts/inter-latin-ext-variable.woff2',
+  weight: '100 900',
+  variable: '--font-inter-ext',
+  display: 'swap',
+  preload: false,
+});
 
 /*
  * The one layout above everything: the brand stylesheet, and the query cache, session-expiry
@@ -29,7 +61,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
      * client's <html> attributes legitimately differ from the server's. The warning is scoped to
      * this element only and does not reach anything inside it.
      */
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${inter.variable} ${interExtended.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         {/*
           Inlined and blocking, on purpose. It is the only way to have the user's theme on the

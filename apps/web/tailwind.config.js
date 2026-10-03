@@ -166,8 +166,8 @@ const config = {
       },
 
       // --- Type scale ---------------------------------------------------------------------------
-      // The fifteen MD3 roles. DM Sans stands in for Roboto; DM Serif Display is kept for the
-      // display roles, where MD3 explicitly invites a brand face.
+      // The fifteen MD3 roles, all set in Inter — which stands in for Roboto throughout, including
+      // the display roles that MD3 invites a brand face into (decision 172).
       fontSize: {
         'display-large': [
           '3.5625rem',
@@ -237,9 +237,11 @@ const config = {
         ],
       },
 
+      // One family. `font-serif` is deliberately absent rather than re-pointed: a class that
+      // silently resolved to the sans face would let the retired treatment creep back in unnoticed,
+      // where an unknown utility is caught the moment it is written.
       fontFamily: {
-        sans: ['DM Sans', 'system-ui', 'sans-serif'],
-        serif: ['DM Serif Display', 'Georgia', 'serif'],
+        sans: ['var(--font-inter)', 'var(--font-inter-ext)', 'system-ui', 'sans-serif'],
       },
 
       // --- Shape scale --------------------------------------------------------------------------

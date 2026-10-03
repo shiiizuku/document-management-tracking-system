@@ -141,7 +141,7 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
             the account name changes length and the pill does not drift.
           */}
           <div className="flex min-w-0 flex-1 basis-0 items-center">
-            <span className="truncate font-serif text-base lg:hidden">
+            <span className="truncate text-base font-semibold lg:hidden">
               Document Tracking System
             </span>
           </div>
@@ -198,7 +198,7 @@ function Brand({ collapsed = false }: Readonly<{ collapsed?: boolean }>) {
         />
       </span>
       {collapsed ? null : (
-        <span className="truncate font-serif text-sm leading-tight">
+        <span className="truncate text-sm leading-tight font-semibold">
           Document
           <br />
           Tracking System
