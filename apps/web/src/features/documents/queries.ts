@@ -142,9 +142,34 @@ export const currentCustody = (
   return { divisionId: lead.toDivisionId, sectionId: lead.toSectionId };
 };
 
+/**
+ * A referenced document as the detail payload summarises it — enough to list it and to open the
+ * modal, and nothing more.
+ */
+export interface ReferenceDocumentSummary {
+  id: string;
+  trackingNumber: string;
+  title: string;
+  direction: DocumentDirection;
+  status: WorkflowStatus;
+  createdAt: string;
+}
+
 export interface DocumentDetail extends DocumentListItem {
   assigneeUserIds: string[];
   sharedUserIds: string[];
+  /**
+   * The two directions of the Reference Document relation (decision 165), each already filtered by
+   * this reader's own scope on the server. An outgoing document fills `referencedDocuments` — what
+   * it answers — and an incoming one fills `replyDocuments`, the outgoing documents that name it.
+   *
+   * **Short by omission, never nulled** (decision 166): a reference the reader may not read is
+   * simply absent, with nothing marking its place. Two readers legitimately see different lengths
+   * for the same document, and the UI must render exactly what is here — no count from another
+   * source, no "1 reference hidden", no placeholder row.
+   */
+  referencedDocuments: ReferenceDocumentSummary[];
+  replyDocuments: ReferenceDocumentSummary[];
   routes: RouteEntry[];
   signatures: Array<{ id: string; fileVersionId: string; signerId: string; signedAt: string }>;
   timeline: TimelineEntry[];
@@ -447,6 +472,38 @@ export function useRoutingSlip() {
   return useMutation({
     mutationFn: ({ id, trackingNumber }: { id: string; trackingNumber: string }) =>
       download(`/documents/${id}/routing-slip.pdf`, `routing-slip-${trackingNumber}.pdf`),
+  });
+}
+
+/**
+ * Links an incoming document as a Reference Document of this outgoing one (decisions 165, 179).
+ *
+ * One request per id, because the contract takes one id per call: a batch would have to report
+ * which of several ids was refused, and under decision 166 that report is the leak. No
+ * `expectedVersion` — linking changes nothing on the document row and bumps no version — so unlike
+ * every other mutation here there is no stale-write conflict to handle.
+ */
+export function useLinkReference(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (incomingDocumentId: string) =>
+      api<DocumentDetail>(`/documents/${id}/references`, {
+        method: 'POST',
+        body: JSON.stringify({ incomingDocumentId }),
+      }),
+    onSuccess: () => invalidateDocument(client, id),
+  });
+}
+
+/** Removes a link. A target that does not exist and one outside the reader's scope both 404. */
+export function useUnlinkReference(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (incomingDocumentId: string) =>
+      api<DocumentDetail>(`/documents/${id}/references/${incomingDocumentId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => invalidateDocument(client, id),
   });
 }
 

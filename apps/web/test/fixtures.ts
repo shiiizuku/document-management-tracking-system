@@ -1,7 +1,11 @@
 import type { AccountRequest, AdminUser } from '../src/features/admin/queries';
 import type { AttachmentGroup, AttachmentVersion } from '../src/features/attachments/queries';
 import type { AuditEvent, AuditPage } from '../src/features/audit/queries';
-import type { DocumentDetail, DocumentListItem } from '../src/features/documents/queries';
+import type {
+  DocumentDetail,
+  DocumentListItem,
+  ReferenceDocumentSummary,
+} from '../src/features/documents/queries';
 import type { Notification } from '../src/features/notifications/queries';
 import type { Division, Section } from '../src/features/org/queries';
 import type { MonthlyReport } from '../src/features/reports/queries';
@@ -65,10 +69,29 @@ export const documentItem = (overrides: Partial<DocumentListItem> = {}): Documen
   ...overrides,
 });
 
+/**
+ * A reference as the detail payload summarises it. The lists it goes in are short by omission
+ * (decision 166), so a fixture holding one reference is a reader who may read one — not a document
+ * that has one.
+ */
+export const referenceSummary = (
+  overrides: Partial<ReferenceDocumentSummary> = {},
+): ReferenceDocumentSummary => ({
+  id: 'doc-2',
+  trackingNumber: 'DTS-2026-000002',
+  title: 'Request for ore transport permits',
+  direction: 'INCOMING',
+  status: 'IN_PROCESS',
+  createdAt: '2026-08-20T01:00:00.000Z',
+  ...overrides,
+});
+
 export const documentDetail = (overrides: Partial<DocumentDetail> = {}): DocumentDetail => ({
   ...documentItem(),
   assigneeUserIds: [],
   sharedUserIds: [],
+  referencedDocuments: [],
+  replyDocuments: [],
   routes: [],
   signatures: [],
   timeline: [

@@ -20,6 +20,7 @@ import { workflowActionLabel } from './action-labels';
 import { DeleteDocumentDialog } from './delete-document-dialog';
 import { DocumentActions } from './document-actions';
 import { MetadataDialog } from './metadata-dialog';
+import { ReferencesSection } from './references-section';
 import { RouteDialog } from './route-dialog';
 import { currentCustody, useDocument, useRoutingSlip, type DocumentDetail } from './queries';
 
@@ -126,6 +127,12 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
             </p>
           </div>
         )}
+
+        <Separator />
+
+        {/* Before the attachments, and in the ordinary flow of the page: decision 178 freezes the
+            reference set at release, so linking has to be reachable well before Prepare Release. */}
+        <ReferencesSection document={detail} canEdit={can('DOCUMENT_EDIT') && !closed} />
 
         <Separator />
 
