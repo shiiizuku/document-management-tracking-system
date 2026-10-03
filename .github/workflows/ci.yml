@@ -27,36 +27,31 @@ jobs:
       - run: npm run build
       - run: docker compose config --quiet
 
+  # The infrastructure comes from docker-compose.yml, started in a step rather than declared as
+  # `services:`. Two of them cannot be service containers at all: clamav needs
+  # `infra/clamav/clamd.conf` bind-mounted and service containers start *before* the repository is
+  # checked out, so the mount has nothing to resolve to; and MinIO has no image to pull (AIStor is
+  # license-gated, the community image is gone), so it is built from the vendored AGPL source in
+  # ./minio. Using compose also means CI runs against the same definitions a developer runs.
   integration:
-    name: integration (postgres)
+    name: integration (postgres · redis · minio · clamav)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: dts_test
-          POSTGRES_USER: dts
-          POSTGRES_PASSWORD: dts
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U dts -d dts_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
-      DATABASE_URL: postgresql://dts:dts@localhost:5432/dts_test
+      # Compose reads these, so the stack and the suites agree by construction. The database name
+      # is not the compose default: the migration and files suites drop and recreate `public`, and
+      # the guard below plus a dedicated name keep that away from anything else.
+      POSTGRES_DB: dts_test
+      DATABASE_URL: postgresql://dts:dts@localhost:5433/dts_test
       # The outbox → notification pipeline is exercised against a real Redis.
-      REDIS_URL: redis://localhost:6379
+      REDIS_URL: redis://localhost:6380
+      # Attachment bytes go to the real bucket (no in-memory adapter), so these have to be the
+      # credentials MinIO is started with. `setup-int-env.ts` deliberately defaults none of them.
+      MINIO_ENDPOINT: http://localhost:9002
+      MINIO_ACCESS_KEY: dts-local
+      MINIO_SECRET_KEY: dts-local1
+      MINIO_BUCKET: dts-files
+      CLAMAV_HOST: localhost
+      CLAMAV_PORT: '3311'
       # The migration suite drops and recreates `public`; the guard makes that
       # impossible to run against a database that has not opted in.
       ALLOW_DATABASE_RESET: 'true'
@@ -70,4 +65,36 @@ jobs:
       # Same reason as the quality job: the API imports `@dts/contracts` at runtime
       # through `dist/`, so the suites cannot even load without it.
       - run: npm run build -w @dts/contracts
+
+      # Postgres archives WAL into this path (compose BACKUP_PATH). It is gitignored, so on a clean
+      # checkout the subdirectories do not exist and every archive_command would fail.
+      - run: mkdir -p backups/wal backups/base backups/objects
+
+      # Building MinIO from source is minutes of Go compilation that changes only when the
+      # vendored source does, so the built image is cached as a tarball rather than rebuilt per
+      # run. `docker compose up` builds only when the image is absent, so a cache hit skips it.
+      - name: Restore the MinIO image built from vendored source
+        id: minio-image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/dts-minio-image.tar
+          key: dts-minio-${{ hashFiles('minio/go.sum', 'minio/go.mod', 'minio/Dockerfile.fromsource') }}
+      - if: steps.minio-image.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/dts-minio-image.tar
+      - if: steps.minio-image.outputs.cache-hit != 'true'
+        run: |
+          docker compose build minio
+          docker save dts-minio:from-source -o /tmp/dts-minio-image.tar
+
+      # ClamAV's definitions are baked into the image and freshclam tops them up at startup, which
+      # is most of the wait here — hence the timeout well above the 90s health start period. The
+      # definitions are deliberately not cached: a stale signature database is the one thing that
+      # would make a fail-closed scanner test pass for the wrong reason.
+      - name: Start the infrastructure
+        run: docker compose up -d --wait --wait-timeout 420 postgres redis minio clamav
+      - if: failure()
+        run: docker compose logs --tail 100 clamav minio
+
       - run: npm run test:integration -w @dts/api
+      - if: always()
+        run: docker compose down -v
