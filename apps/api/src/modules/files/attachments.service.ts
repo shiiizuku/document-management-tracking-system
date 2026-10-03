@@ -9,6 +9,7 @@ import {
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { fileTypeFromBuffer } from 'file-type';
 import type { RequestUser } from '../../common/request-user.js';
 import type { Database } from '../../database/client.js';
@@ -26,7 +27,6 @@ import {
 import { StoragePort } from './storage.port.js';
 import {
   ALLOWED_ATTACHMENT_MEDIA_TYPES,
-  MAX_ATTACHMENT_BYTES,
   PREVIEWABLE_ATTACHMENT_MEDIA_TYPES,
   UNSUPPORTED_MEDIA_TYPE_MESSAGE,
 } from './media-types.js';
@@ -75,6 +75,16 @@ export interface PublicAttachmentVersion {
  */
 @Injectable()
 export class AttachmentsService {
+  /**
+   * The effective upload ceiling, read once at construction.
+   *
+   * `MAX_ATTACHMENT_BYTES` is the hard ceiling the multipart parser is wired with (a decorator
+   * argument, fixed at module load); `UPLOAD_MAX_BYTES` is the deployment's own limit and may only
+   * narrow it, which boot validation enforces. Reading it here is what makes the variable live:
+   * configuring 5 MiB used to validate at boot and then change nothing.
+   */
+  readonly #maxBytes: number;
+
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     private readonly documents: DocumentsService,
@@ -82,7 +92,10 @@ export class AttachmentsService {
     private readonly storage: StoragePort,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.#maxBytes = config.getOrThrow<number>('UPLOAD_MAX_BYTES');
+  }
 
   async upload(
     actor: RequestUser,
@@ -94,10 +107,10 @@ export class AttachmentsService {
 
     if (file.buffer.byteLength === 0)
       throw new BadRequestException({ code: 'EMPTY_FILE', message: 'Uploaded file is empty' });
-    if (file.buffer.byteLength > MAX_ATTACHMENT_BYTES)
+    if (file.buffer.byteLength > this.#maxBytes)
       throw new PayloadTooLargeException({
         code: 'FILE_TOO_LARGE',
-        message: `Attachment exceeds the ${MAX_ATTACHMENT_BYTES}-byte limit`,
+        message: `Attachment exceeds the ${this.#maxBytes}-byte limit`,
       });
     // Trust the bytes, not the declared Content-Type: sniff the real media type from magic
     // bytes and validate that against the allow-list (defeats type spoofing).

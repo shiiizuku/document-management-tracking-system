@@ -10,10 +10,11 @@ process.env.SESSION_ABSOLUTE_MAX_AGE_MS ??= '28800000';
 process.env.LOGIN_MAX_ATTEMPTS ??= '5';
 process.env.LOGIN_LOCKOUT_MS ??= '900000';
 process.env.REDIS_URL ??= 'redis://localhost:6380';
-process.env.MINIO_ENDPOINT ??= 'http://localhost:9002';
-process.env.MINIO_ACCESS_KEY ??= 'dts-local';
-process.env.MINIO_SECRET_KEY ??= 'test-minio-secret';
-process.env.MINIO_BUCKET ??= 'dts-files';
+// MINIO_* is deliberately not defaulted here. The storage-backed suites write to the real bucket,
+// so the credentials have to be the ones the running MinIO was started with — which come from
+// `.env` locally (compose reads the same file, so the two cannot disagree) and from the job
+// environment in CI. A default here would shadow those and surface as an authentication failure
+// mid-suite rather than as the configuration mistake it is.
 process.env.CLAMAV_HOST ??= 'localhost';
 process.env.CLAMAV_PORT ??= '3311';
 process.env.UPLOAD_MAX_BYTES ??= '26214400';

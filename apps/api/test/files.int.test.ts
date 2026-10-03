@@ -14,7 +14,6 @@ import { DATABASE } from '../src/database/database.constants.js';
 import type { Database } from '../src/database/client.js';
 import { divisions, sections } from '../src/database/schema.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
-import { InMemoryStorageAdapter, StoragePort } from '../src/modules/files/storage.port.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for integration tests');
@@ -69,12 +68,12 @@ describe('attachment files REST against a real database', () => {
       .send({ status });
 
   beforeAll(async () => {
-    // This suite proves the Postgres metadata + fail-closed download paths; the bytes stay in an
-    // in-memory adapter so it needs no MinIO service (CI provisions only Postgres + Redis).
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(StoragePort)
-      .useClass(InMemoryStorageAdapter)
-      .compile();
+    // No storage override: the bytes go to the real MinIO bucket through MinioStorageAdapter, so
+    // the round trip this suite asserts (upload, then download the same bytes back) is proven
+    // against object storage rather than against a Map. This is what makes the M3 audit box
+    // honest, and it is why the suite needs MinIO running — locally `docker compose up -d minio`,
+    // in CI the compose service the integration job starts.
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
     app.use(cookieParser());

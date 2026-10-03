@@ -13,12 +13,14 @@ core workflow revision imposes on new code.
 
 ## The count
 
-**Nine open boxes and four policy-encoding gaps.** Not five — see the correction below.
+**Nine open boxes and four policy-encoding gaps.** Not five — see the correction below. **Wave B
+landed on 2026-10-03** and closed the EICAR test, the CI harness and the oversize upload, so seven
+boxes remain.
 
 | Open boxes |                                                                              |
 | ---------- | ---------------------------------------------------------------------------- |
 | Slice 0.1  | traceability matrix · acceptance scenarios · risk register                    |
-| Tests      | EICAR integration test · Playwright E2E · axe sweep · load test              |
+| Tests      | ~~EICAR integration test~~ · Playwright E2E · axe sweep · load test          |
 | Ops        | backup/restore rehearsal · runbooks for incident, scanner-down and Redis-loss |
 
 | Policy gap                                                      | Register row    |
@@ -48,8 +50,9 @@ and now says so in the schema.
 2. **Acceptance scenarios are the script E2E automates.** Writing them first makes the E2E work
    transcription rather than design — so the Slice 0.1 item that looks like paperwork is a
    prerequisite, not a trailing chore.
-3. **CI has no MinIO and no ClamAV.** That single gap blocks the EICAR test, the "proven on real
-   storage" audit box, and the Playwright harness. It is the highest-leverage box on the list.
+3. ~~**CI has no MinIO and no ClamAV.**~~ Closed by Wave B: the `integration` job starts both from
+   compose, so the EICAR test and the "proven on real storage" audit box are done and the
+   Playwright harness has the pattern it needs to copy (C2 below).
 4. **Three items are blocked on people, not code.** Chase them now so they are unblocked when their
    turn comes.
 
@@ -87,11 +90,19 @@ The work is the data migration and its reversibility note.
 
 ## Wave B — give CI the dependencies it lacks
 
-~4 sessions, and it unblocks three later boxes.
+**Done 2026-10-03.** ~4 sessions, and it unblocked three later boxes.
 
-- [ ] **B1** (2h) ClamAV in CI, then the EICAR test: upload → auto-scan → download, asserting the
+- [x] **B1** (2h) ClamAV in CI, then the EICAR test: upload → auto-scan → download, asserting the
       version stays `INFECTED` and the download stays closed. _Done-when:_ fail-closed is proven
       against a real scanner in CI.
+
+  Done in `scanner.int.test.ts`, which drives the production path — upload, outbox relay, BullMQ,
+  `scanUploadedVersion`, clamd INSTREAM — and then checks that download and preview both refuse and
+  that a manual `CLEAN` override is rejected. One thing the plan did not anticipate: **EICAR cannot
+  be uploaded as itself.** The upload gate sniffs the media type from the magic bytes, so plain text
+  is refused before the scanner ever sees it; the fixture is therefore the EICAR string inside a PDF
+  stream, which clamd detects and the gate accepts. It is held as base64 so a checkout does not trip
+  the developer's own desktop scanner.
 
   **Do not use a GitHub Actions `services:` block.** The service needs `infra/clamav/clamd.conf`
   bind-mounted, and services start _before_ the repo is checked out, so the mount cannot resolve. Use
@@ -99,15 +110,37 @@ The work is the data migration and its reversibility note.
   and freshclam adds more; cache `clamav_data`. `.gitattributes` already pins `infra/**` to LF, so the
   CRLF failure that kept clamd from starting cannot recur.
 
-- [ ] **B2** (2h) MinIO in CI; re-point `files.int.test.ts` at the real adapter. _Done-when:_ the file
+  The whole stack now comes up through `docker compose up -d --wait --wait-timeout 420` rather than
+  only clamav, which keeps one set of service definitions for CI and for a developer. The definitions
+  are **not** cached after all: they ship in the image, freshclam tops them up in the start period,
+  and a stale signature database is the one thing that would make a fail-closed test pass for the
+  wrong reason.
+
+- [x] **B2** (2h) MinIO in CI; re-point `files.int.test.ts` at the real adapter. _Done-when:_ the file
       suites run against real object storage, which is what makes the M3 audit box honest.
 
   Harder than it looks: there is no pullable image. AIStor is license-gated and the community image is
   gone, which is why `./minio` is vendored and built from source. Build it in the integration job with
   a buildx cache keyed on `minio/go.sum`.
 
-- [ ] **B3** (1h) The oversize upload. _Done-when:_ an over-`UPLOAD_MAX_BYTES` upload is refused by a
+  Built with `docker compose build minio` and cached as a `docker save` tarball keyed on
+  `minio/go.sum` + `go.mod` + the Dockerfile, which is simpler than threading a buildx cache through
+  compose and skips the build entirely on a hit. The suite's storage override is gone. One trap for
+  C2/C3: `setup-int-env.ts` used to default the `MINIO_*` variables, which **shadowed** the
+  credentials the running MinIO was actually started with and surfaced as an authentication failure
+  mid-suite. It now defaults none of them — they come from `.env` locally (compose reads the same
+  file) and from the job environment in CI.
+
+- [x] **B3** (1h) The oversize upload. _Done-when:_ an over-`UPLOAD_MAX_BYTES` upload is refused by a
       test. The limit is validated at boot today but nothing asserts the refusal.
+
+  The refusal could not be asserted as specified, because `UPLOAD_MAX_BYTES` was **dead
+  configuration**: it was validated at boot and then read by nothing, while the enforced limit was
+  the compiled 25 MiB `MAX_ATTACHMENT_BYTES`. A deployment configuring 5 MiB got 25 MiB. So the box
+  grew a small fix: `AttachmentsService` reads the variable, and boot validation refuses a value
+  above `MAX_ATTACHMENT_BYTES`, which stays the hard ceiling because it is a decorator argument on
+  the multipart parser and cannot be raised from the environment. `upload-limit.test.ts` covers all
+  three — over-limit refused, under-limit accepted, and a too-high configuration refused at boot.
 
 ## Wave C — write the scenarios, then automate them
 
@@ -193,5 +226,5 @@ cannot be signed off without it.
 
 ## Shape
 
-~25 sessions, so 5–6 weeks at 2 h/day. Start with **Wave B** for the biggest unblock, or **Wave A** to
-get the riskiest migration done while the tree is quiet.
+~25 sessions, so 5–6 weeks at 2 h/day; Wave B's ~4 are spent. **Wave A** is next — the riskiest
+migration, and the seed everything downstream builds fixtures on.

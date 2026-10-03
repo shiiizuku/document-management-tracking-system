@@ -9,7 +9,7 @@ are now ticked where they were ticked, and the pre-rebuild filenames some ticks 
 This document is both a **status report** (what is real today) and a **working backlog**
 (what to build next), sized for short daily sessions.
 
-> **Ordering the remainder:** the nine open boxes and four policy gaps left after the 2026-10-03
+> **Ordering the remainder:** the open boxes and four policy gaps left after the 2026-10-03
 > reconciliation are sequenced, with their dependencies, in
 > [`phase-7-sequencing.md`](phase-7-sequencing.md). Read that before picking a box — three of them
 > have prerequisites that are not obvious from the box text.
@@ -26,8 +26,10 @@ This document is both a **status report** (what is real today) and a **working b
 - A box that spills past one session is a sign it should be split — split it.
 - At ~2 h/day, 5 days/week, the ~70 boxes below were roughly a **6–8 month horizon** (about
   the 24–30 week program the spec describes, re-expressed as free-time increments). As of the
-  2026-10-03 reconciliation **9 boxes are open and 7 partial**, and all but three of them sit in
-  M6 — the programme is now a hardening exercise, not a build-out.
+  2026-10-03 reconciliation **9 boxes were open and 7 partial**, and all but three of them sat in
+  M6 — the programme is now a hardening exercise, not a build-out. Wave B of the sequencing plan
+  has since closed three of them (the EICAR integration test, the CI storage/scanner harness, and
+  the oversize upload), leaving **7 open and 5 partial**.
 
 > **A note on the two specs.** `docs/Document-management-tracking-system.md` (30 weeks) and
 > `docs/CONTEXT.md` (25 weeks) both number phases 0–7, but the numbers collide and mean
@@ -107,7 +109,7 @@ read them before adding a list, a report or anything that resolves a reference.
 | Capability                     | Defined in code                                        | Connected to running app? |
 | ------------------------------ | ------------------------------------------------------ | ------------------------- |
 | Postgres + Drizzle             | Full schema (19 tables/7 enums), client, migration, seed | **Yes for identity + documents** — `DatabaseModule` provides the `DATABASE` token; identity and the document aggregate read/write Postgres. Attachment bytes/notifications not yet migrated |
-| Object storage (MinIO/S3)      | `StoragePort` + `MinioStorageAdapter` + `objectKey` columns | **Yes** — the running app writes bytes to MinIO (`minio` SDK); tests override the port with the in-memory adapter. _(Local caveat: compose builds the vendored AGPL MinIO from `./minio` as `dts-minio:from-source`; a container still running the license-gated AIStor image will deny every S3 operation, so rebuild with `docker compose up --build`.)_ |
+| Object storage (MinIO/S3)      | `StoragePort` + `MinioStorageAdapter` + `objectKey` columns | **Yes** — the running app writes bytes to MinIO (`minio` SDK), and the integration suites do too (CI starts MinIO from compose); only the unit suites override the port with the in-memory adapter. _(Local caveat: compose builds the vendored AGPL MinIO from `./minio` as `dts-minio:from-source`; a container still running the license-gated AIStor image will deny every S3 operation, so rebuild with `docker compose up --build`.)_ |
 | BullMQ / Redis                 | `outbox-queue.ts` (queue + worker factories)           | **Yes** — the worker runs a relay + BullMQ consumer against Redis; tested in CI's integration job |
 | Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay + consumer** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published; the consumer fans out realtime notifications |
 | Antivirus scan                 | `ClamAvScanner` (INSTREAM) + scan consumer + `POST …/scan` override | **Yes** — the worker scans each upload via clamd and records the verdict; manual endpoint remains for re-scans |
@@ -311,8 +313,9 @@ behind it.
 
 - [x] (2h) Introduce a storage abstraction with server-generated keys and no overwrite, plus the
       real MinIO/S3 adapter. **Done** — `StoragePort` + `MinioStorageAdapter` (`minio-storage.adapter.ts`,
-      bucket auto-create, `put` refuses overwrite via `statObject`); the running app binds MinIO while
-      unit/integration suites override the port with the in-memory adapter. ✓
+      bucket auto-create, `put` refuses overwrite via `statObject`); the running app binds MinIO, and
+      the `files.int.test.ts` / `scanner.int.test.ts` suites now run against the real bucket in CI.
+      Only the unit suites override the port with the in-memory adapter. ✓
 - [x] (2h) Persist `file_records` + `file_versions` to Postgres with immutability enforced
       (`file-versions.repository.ts`; unique `(file_record_id, version_number)`, scan-status the only
       mutable field). _Done-when:_ versions are durable and cannot be mutated. ✓
@@ -340,22 +343,32 @@ behind it.
       (the manual `POST …/scan` stays as an override). _Done-when:_ uploads auto-transition to
       CLEAN/INFECTED. ✓ — `upload` enqueues an `attachment.uploaded` outbox event; the worker's
       `scanUploadedVersion` streams the bytes to clamd (`ClamAvScanner`, INSTREAM) and records the
-      verdict. Scanner verified against live clamd (EICAR→INFECTED, benign→CLEAN). _(Auto-scan
-      integration test with EICAR-in-CI remains under the M3 Test box.)_
+      verdict. Scanner verified against live clamd (EICAR→INFECTED, benign→CLEAN), and the whole
+      path is now exercised in CI by `scanner.int.test.ts` (M3 Test box).
 
 **Test**
 
-- [ ] (2h) Integration: upload → auto-scan → download, including an EICAR test file that must stay
-      blocked as INFECTED. _Done-when:_ fail-closed proven against the real scanner.
+- [x] (2h) Integration: upload → auto-scan → download, including an EICAR test file that must stay
+      blocked as INFECTED. _Done-when:_ fail-closed proven against the real scanner. ✓ —
+      `scanner.int.test.ts` drives the production path (upload → outbox relay → BullMQ →
+      `scanUploadedVersion` → clamd INSTREAM) against the compose clamav and MinIO: the EICAR
+      upload is condemned `INFECTED`, download and preview both return `FILE_NOT_CLEAN`, a manual
+      `CLEAN` override is refused as `SCAN_RESULT_CONFLICT`, and a benign PDF passes and downloads
+      byte-identical. The payload is EICAR inside a PDF stream — plain text never reaches the
+      scanner, because magic-byte sniffing refuses it first.
 
 **Audit / verify**
 
-- [~] (2h) Re-verify allow-list, size limit, untrusted-filename handling, and the IDOR guard against
-      the MinIO-backed paths. _Partial:_ `file-api.test.ts` and `files.int.test.ts` cover the
-      allow-list by magic bytes (spoofed media type, macro-enabled `.docm` refused), the empty
-      upload, the fail-closed download, the preview lockdown, and the IDOR guard through a sibling
-      document. _Remaining:_ nothing asserts an over-`UPLOAD_MAX_BYTES` upload is rejected, and the
-      file suites run against the in-memory `StoragePort`, so none of it is yet proven on MinIO.
+- [x] (2h) Re-verify allow-list, size limit, untrusted-filename handling, and the IDOR guard against
+      the MinIO-backed paths. ✓ `file-api.test.ts` and `files.int.test.ts` cover the allow-list by
+      magic bytes (spoofed media type, macro-enabled `.docm` refused), the empty upload, the
+      fail-closed download, the preview lockdown, and the IDOR guard through a sibling document —
+      and `files.int.test.ts` now runs on the real bucket, so the round trip is proven on MinIO.
+      The size limit is covered by `upload-limit.test.ts`, which also closed a gap it found:
+      `UPLOAD_MAX_BYTES` was validated at boot and read by nothing, so the enforced limit was the
+      compiled 25 MiB constant whatever a deployment configured. `AttachmentsService` now reads the
+      variable, boot validation refuses a value above the multipart parser's compiled ceiling, and
+      the suite asserts the refusal of an over-limit upload.
 
 ---
 
@@ -552,11 +565,13 @@ Pull from this list whenever a slice above reaches "verify."
 
 **Test / evidence**
 
-- [~] (2h) Postgres + MinIO integration harness (compose or testcontainers) running in CI.
-      _Partial:_ CI's `integration (postgres)` job provisions **Postgres + Redis** as services and runs
-      `test:integration`. _Remaining:_ **MinIO and ClamAV are not in CI** — the file suites override
-      `StoragePort` with the in-memory adapter, so no CI job exercises real object storage or a real
-      scanner. This box blocks the M3 EICAR test and the M3 audit box below it.
+- [x] (2h) Postgres + MinIO integration harness (compose or testcontainers) running in CI. ✓ The
+      `integration` job now starts **Postgres, Redis, MinIO and ClamAV from `docker-compose.yml`**
+      in a step and runs `test:integration` against them, so CI and a developer's machine share one
+      set of definitions. Service containers could not do it: clamav needs `clamd.conf`
+      bind-mounted and service containers start before checkout, and MinIO has no pullable image.
+      The source-built MinIO image is cached as a tarball keyed on `minio/go.sum`; ClamAV's
+      definitions are deliberately not cached, and the 420s wait covers freshclam's startup.
 - [ ] (2h) Playwright E2E: login → register document → upload → workflow → release. _Done-when:_
       the E2E flow is green in CI.
 - [ ] (2h) Accessibility automation (axe) on the key screens. _Done-when:_ no critical violations.
@@ -564,8 +579,9 @@ Pull from this list whenever a slice above reaches "verify."
       authorization matrix (`authorization.test.ts`, 30 cases incl. the confidentiality gate and the
       Director's office-wide read), IDOR (`file-api.test.ts`, `files.int.test.ts`), media-type
       spoofing and macro refusal, CSRF (`csrf.guard.test.ts`) and rate limits
-      (`rate-limit.test.ts`) are all covered. _Remaining:_ the oversize upload, a dependency and
-      container scan, a secure-headers/CORS-allowlist assertion, and a log-redaction check.
+      (`rate-limit.test.ts`) and the oversize upload (`upload-limit.test.ts`) are all covered.
+      _Remaining:_ a dependency and container scan, a secure-headers/CORS-allowlist assertion, and
+      a log-redaction check.
 - [ ] (2h) Representative-load test (search + upload + workflow). _Done-when:_ latency/throughput
       are recorded against a target.
 - [ ] (2h) Backup/restore rehearsal for coordinated Postgres + MinIO using `scripts/backup.sh` and

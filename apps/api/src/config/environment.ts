@@ -1,3 +1,5 @@
+import { MAX_ATTACHMENT_BYTES } from '../modules/files/media-types.js';
+
 export type CookieSameSite = 'lax' | 'strict' | 'none';
 
 export interface ValidatedEnvironment {
@@ -146,11 +148,17 @@ export const validateEnvironment = (
     15 * 60 * 1000,
   );
 
+  // UPLOAD_MAX_BYTES is what the upload use case enforces. MAX_ATTACHMENT_BYTES is the compiled
+  // ceiling the multipart parser is wired with — a decorator argument, so it cannot be raised from
+  // the environment. Configuration may therefore only narrow the limit, and asking for more than
+  // the parser will ever accept is a misconfiguration rather than a silently capped value.
   const uploadMaxBytes = parsePositiveInteger(
     environment.UPLOAD_MAX_BYTES,
     'UPLOAD_MAX_BYTES',
-    25 * 1024 * 1024,
+    MAX_ATTACHMENT_BYTES,
   );
+  if (uploadMaxBytes > MAX_ATTACHMENT_BYTES)
+    throw new Error(`UPLOAD_MAX_BYTES must not exceed ${MAX_ATTACHMENT_BYTES}`);
   const port = parsePositiveInteger(environment.PORT, 'PORT', 4000);
   const workerHealthPort = parsePositiveInteger(
     environment.WORKER_HEALTH_PORT,

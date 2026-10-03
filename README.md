@@ -202,6 +202,27 @@ npm run build
 docker compose config --quiet
 ```
 
+### Integration tests
+
+They run against **real** infrastructure — Postgres, Redis, MinIO and clamd — so the stack has to
+be up, and they are destructive: every suite drops and recreates `public`, which is why
+`ALLOW_DATABASE_RESET` exists. Point them at a database of their own, never at the one the running
+app uses:
+
+```bash
+docker compose up -d --build postgres redis minio clamav
+docker compose exec postgres createdb -U dts dts_test
+```
+
+```bash
+DATABASE_URL=postgresql://dts:dts@localhost:5433/dts_test ALLOW_DATABASE_RESET=true npm run test:integration -w @dts/api
+```
+
+The MinIO credentials come from your `.env` — compose reads the same file, so the suites and the
+running MinIO cannot disagree. Stop the `worker` container first (`docker compose stop worker`):
+it consumes the same Redis queue, so it would race the scan test for the job and then look for the
+version in the wrong database. CI does all of this in the `integration` job.
+
 ## Architecture note
 
 `docs/architecture.md` is the orientation document: the layers, the stack choices, and why each
