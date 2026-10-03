@@ -364,6 +364,13 @@ export const documentRoutes = pgTable(
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     acceptedById: uuid('accepted_by_id').references(() => users.id),
     remarks: text('remarks'),
+    /*
+     * Deliberately unused, not an unfinished column. ADR-0005 weighed a separate completion table
+     * and kept this one instead, because custody and completion are facts about the same hop. The
+     * gate that matters is `accepted_at` — `leadRouteOutstanding` in `workflow.service.ts` asks
+     * whether the lead hop is unaccepted, and nothing yet needs to record that a hop is finished as
+     * distinct from superseded by the next one. Leave it until a requirement asks for it.
+     */
     completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
