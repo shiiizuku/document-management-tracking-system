@@ -107,7 +107,9 @@ Linux container, and a CRLF copy stops clamd from starting (see
 docker compose up -d --build
 ```
 
-The first build compiles MinIO from source and takes a while. `api` starts only once Postgres,
+Verified cold on 2026-10-03 from an empty Docker (no images, no volumes, no build cache): about
+**eight minutes** to all seven containers healthy, on one command. The first build compiles MinIO
+from source and is most of that. `api` starts only once Postgres,
 Redis, MinIO and ClamAV are healthy **and** `migrate` has exited successfully, so it never serves
 an un-migrated schema. ClamAV takes a couple of minutes to go healthy while it loads definitions.
 Check progress with:
@@ -173,13 +175,14 @@ else **fails closed**. When every upload sits at "scan pending", one of these is
 
 ### Development accounts
 
-`npm run db:seed` creates three users (`apps/api/src/database/seed.ts`):
+`npm run db:seed` creates four users (`apps/api/src/database/seed.ts`):
 
-| Role          | Email               | Password        | Placement                        |
-| ------------- | ------------------- | --------------- | -------------------------------- |
-| Administrator | `admin@dts.local`   | `Admin@12345!`  | none; confidential access        |
-| Records Staff | `records@dts.local` | `Records@1234!` | Records Office / Intake          |
-| Staff Member  | `staff@dts.local`   | `Staff@12345!`  | pilot division / General Section |
+| Role          | Email                | Password         | Placement                        |
+| ------------- | -------------------- | ---------------- | -------------------------------- |
+| Administrator | `admin@dts.local`    | `Admin@12345!`   | none; confidential access        |
+| Director      | `director@dts.local` | `Director@1234!` | Office of the Regional Director  |
+| Records Staff | `records@dts.local`  | `Records@1234!`  | Records Office / Intake          |
+| Staff Member  | `staff@dts.local`    | `Staff@12345!`   | Pilot Division / General Section |
 
 Override the administrator password with `SEED_ADMIN_PASSWORD`. There is no seeded viewer account;
 create one by signing in as the administrator and posting to `/api/v1/users` with
