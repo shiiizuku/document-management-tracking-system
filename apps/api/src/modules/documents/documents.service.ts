@@ -50,6 +50,7 @@ import {
   type DocumentRow,
   type DocumentRouteRow,
   type DocumentSearchFilters,
+  type ReferenceDocumentSummary,
 } from './documents.repository.js';
 
 /** The wire shape of a document row. Built by hand so a column added later is never served by accident. */
@@ -136,6 +137,18 @@ export interface SignatureEntry {
 export interface DocumentDetail extends PublicDocument {
   assigneeUserIds: string[];
   sharedUserIds: string[];
+  /*
+   * The two directions of the Reference Document relation (decision 165), each already filtered by
+   * this reader's own scope. An outgoing document fills `referencedDocuments` and an incoming one
+   * fills `replyDocuments`; the direction rule makes the other list empty rather than absent, so
+   * the payload shape never depends on who is reading.
+   *
+   * Both are **short by omission, never nulled**: a reference the reader may not read is missing
+   * from the list with nothing to mark its place (decision 166), so two readers legitimately see
+   * different lengths for the same document.
+   */
+  referencedDocuments: ReferenceDocumentSummary[];
+  replyDocuments: ReferenceDocumentSummary[];
   routes: RouteEntry[];
   signatures: SignatureEntry[];
   timeline: TimelineEntry[];
@@ -364,6 +377,8 @@ export class DocumentsService {
       signatures,
       clean,
       ord,
+      referencedDocuments,
+      replyDocuments,
     ] = await Promise.all([
       this.repository.listTimeline(id),
       this.repository.listActiveAssigneeIds(id),
@@ -373,11 +388,21 @@ export class DocumentsService {
       this.repository.listSignatures(id),
       this.cleanFlag(row),
       this.repository.isOrdDivision(row.divisionId),
+      /*
+       * Both directions are read for every document rather than only the one its direction can
+       * hold. The cost is a second indexed lookup, and what it buys is that the shape of this
+       * payload is decided by the relation and not by a branch here — a row that somehow violated
+       * the direction rule would surface instead of being hidden by the code that assumes it.
+       */
+      this.repository.listReferencedDocuments(actor, id),
+      this.repository.listReplyDocuments(actor, id),
     ]);
     return {
       ...this.toPublic(row, releaseMethod, clean),
       assigneeUserIds,
       sharedUserIds,
+      referencedDocuments,
+      replyDocuments,
       signatures: signatures.map((signature) => ({
         id: signature.id,
         fileVersionId: signature.fileVersionId,
@@ -972,6 +997,147 @@ export class DocumentsService {
       );
     });
     return this.getDocument(actor, id);
+  }
+
+  // ------------------------------------------------------- reference documents
+
+  /**
+   * Names an incoming document as a Reference Document of an outgoing one (decision 165).
+   *
+   * **The order of the checks below is the whole security of this endpoint.** Under decision 166 a
+   * reference the reader may not read must be indistinguishable from one that does not exist, and
+   * that is a statement about *this* response body:
+   *
+   * 1. `requireEditableDocument` on the **outgoing** document is the authorization. It carries
+   *    `DOCUMENT_EDIT` and the released/archived freeze (decision 178), so the reference set becomes
+   *    immutable the moment the letter goes out — and the UI must therefore offer linking before
+   *    `PREPARE_RELEASE`, because afterwards there is no path at all.
+   * 2. The referenced document is loaded with `requireReadableDocument` and gets **no capability
+   *    check of its own**. A `403` there — the natural thing to write, and what the capability
+   *    helpers hand you — would turn this endpoint into an existence oracle: it would answer "this
+   *    id is real and you may not see it", the one thing the decision says must be unanswerable.
+   *    Readability of the target is a precondition, not a permission, and its miss is already the
+   *    same `404` a nonexistent id gets.
+   *
+   * No `expectedVersion` and no version bump (decision 179): nothing on either document row
+   * changes, the unique pair makes the write idempotent, and bumping would invalidate every open
+   * form on a document because somebody attached a reply to it. Same reasoning as `ACCEPT`.
+   *
+   * Linking is **evidence** of compliance and never the act of it — some incoming documents need no
+   * reply and some need several — so nothing here touches either document's status.
+   */
+  async linkReferenceDocument(
+    actor: RequestUser,
+    id: string,
+    incomingDocumentId: string,
+  ): Promise<DocumentDetail> {
+    const outgoing = await this.requireEditableDocument(actor, id);
+    if (outgoing.direction !== 'OUTGOING') throw this.referenceDirectionRefusal();
+
+    const incoming = await this.requireReadableDocument(actor, incomingDocumentId);
+    /*
+     * Also what refuses a document naming itself: a document cannot be both OUTGOING above and
+     * INCOMING here. The `document_references_not_self` CHECK is the backstop if this is ever
+     * bypassed, not the primary guard.
+     */
+    if (incoming.direction !== 'INCOMING') throw this.referenceDirectionRefusal();
+
+    await this.database.transaction(async (tx) => {
+      const referenceId = await this.repository.insertReference(
+        { outgoingDocumentId: id, incomingDocumentId, createdById: actor.id },
+        tx,
+      );
+      // A repeat link wrote no row, so it writes no second audit event either: the quiet success
+      // a double submit deserves is a quiet trail as well (decision 179).
+      if (referenceId === null) return;
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'document.reference-linked',
+          targetType: 'document',
+          targetId: id,
+          outcome: 'SUCCESS',
+          summary: { incomingDocumentId },
+        },
+        tx,
+      );
+      await this.outbox.enqueue(
+        {
+          aggregateType: 'document',
+          aggregateId: id,
+          eventType: 'document.reference-linked',
+          payload: { documentId: id, incomingDocumentId },
+          /*
+           * Keyed by the row, not by the pair. An unlink followed by a relink is a genuinely new
+           * event, and a pair-keyed value would make the outbox drop it as a duplicate of the
+           * first link.
+           */
+          idempotencyKey: `document.reference-linked:${referenceId}`,
+        },
+        tx,
+      );
+    });
+    return this.getDocument(actor, id);
+  }
+
+  /**
+   * Removes a Reference Document link. Same shape as linking and the same trap: the delete is
+   * scoped **inside the statement** (`DocumentsRepository.deleteReference`), so unlinking a
+   * reference whose target the actor cannot read is answered by the identical `404` as unlinking
+   * one that was never there. A lookup followed by a permission check would leak the difference.
+   *
+   * Gated by `requireEditableDocument` on the outgoing document for the same reasons as linking,
+   * which includes the release freeze: the set is fixed once the letter has gone out.
+   */
+  async unlinkReferenceDocument(
+    actor: RequestUser,
+    id: string,
+    incomingDocumentId: string,
+  ): Promise<DocumentDetail> {
+    await this.requireEditableDocument(actor, id);
+
+    await this.database.transaction(async (tx) => {
+      const referenceId = await this.repository.deleteReference(actor, id, incomingDocumentId, tx);
+      // Nothing matched: either no such link, or its target is outside this actor's scope. The two
+      // are deliberately the same answer, down to the message (decision 166).
+      if (referenceId === null) throw new NotFoundException('Document not found');
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'document.reference-unlinked',
+          targetType: 'document',
+          targetId: id,
+          outcome: 'SUCCESS',
+          summary: { incomingDocumentId },
+        },
+        tx,
+      );
+      await this.outbox.enqueue(
+        {
+          aggregateType: 'document',
+          aggregateId: id,
+          eventType: 'document.reference-unlinked',
+          payload: { documentId: id, incomingDocumentId },
+          idempotencyKey: `document.reference-unlinked:${referenceId}`,
+        },
+        tx,
+      );
+    });
+    return this.getDocument(actor, id);
+  }
+
+  /**
+   * The one refusal both reference endpoints share.
+   *
+   * A single message for both halves of the direction rule on purpose: it is a statement about the
+   * relation, not about either document, so it says nothing a caller could use to tell a readable
+   * document from an unreadable one.
+   */
+  private referenceDirectionRefusal(): UnprocessableEntityException {
+    return new UnprocessableEntityException({
+      code: 'REFERENCE_DIRECTION_INVALID',
+      message: 'Only an outgoing document may reference an incoming document',
+    });
   }
 
   /** The actor's work queue: live documents they currently hold an active assignment on. */

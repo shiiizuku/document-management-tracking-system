@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { hashSync } from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq, sql } from 'drizzle-orm';
+import { count, eq, sql } from 'drizzle-orm';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { DATABASE } from '../src/database/database.constants.js';
 import type { Database } from '../src/database/client.js';
-import { divisions, notifications, sections } from '../src/database/schema.js';
+import { documentReferences, divisions, notifications, sections } from '../src/database/schema.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -33,6 +33,9 @@ const DIV_B = '00000000-0000-4000-9000-0000000000b0';
 const DIV_C = '00000000-0000-4000-9000-0000000000c0';
 const SEC_A = '00000000-0000-4000-9000-0000000000a1';
 const SEC_B = '00000000-0000-4000-9000-0000000000b1';
+
+// A well-formed uuid no document carries, so "does not exist" can be asked for without guessing.
+const MISSING_DOCUMENT_ID = '00000000-0000-4000-9000-00000000dead';
 
 interface Session {
   cookies: string[];
@@ -729,5 +732,115 @@ describe('document registry REST against a real database', () => {
     // Restoring a document that is not deleted is a conflict.
     const notDeleted = await restoreAs(admin, restored.version).expect(409);
     expect(notDeleted.body.error.code).toBe('DOCUMENT_NOT_DELETED');
+  }, 30_000);
+
+  /**
+   * Reference Documents against real Postgres (decisions 165–166, 179).
+   *
+   * The REST behaviour is pinned in `reference-documents.test.ts` against the in-memory repository;
+   * what needs a database is the part that *is* SQL — the unique pair that makes a link idempotent,
+   * and the scoped `DELETE` whose zero-row outcome is what makes an unreadable target
+   * indistinguishable from an absent one.
+   */
+  it('links a reply idempotently and answers unreadable and absent targets identically', async () => {
+    const database = app.get<Database>(DATABASE);
+
+    const outgoing = dataOf<DocumentPayload>(
+      await registerDocument(staff, {
+        title: 'Division A reply',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'OUTGOING',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+    const reply = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Division A request',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External Office',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+    // Registered for Division B, so the Division A staff member cannot read it at all.
+    const hidden = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Division B request',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External Office',
+        divisionId: DIV_B,
+        sectionId: SEC_B,
+      }).expect(201),
+    );
+
+    const link = (session: Session, incomingDocumentId: string) =>
+      request(server())
+        .post(`/api/v1/documents/${outgoing.id}/references`)
+        .set('Cookie', session.cookies)
+        .set('x-csrf-token', session.csrf)
+        .send({ incomingDocumentId });
+
+    const linked = dataOf<DocumentPayload & { referencedDocuments: { id: string }[] }>(
+      await link(staff, reply.id).expect(201),
+    );
+    expect(linked.referencedDocuments.map((entry) => entry.id)).toEqual([reply.id]);
+    // No version bump and no expected version anywhere in the exchange (decision 179).
+    expect(linked.version).toBe(outgoing.version);
+
+    // `ON CONFLICT DO NOTHING` on the unique pair: the repeat is a success and writes no second row.
+    await link(staff, reply.id).expect(201);
+    const [rowCount] = await database
+      .select({ value: count() })
+      .from(documentReferences)
+      .where(eq(documentReferences.outgoingDocumentId, outgoing.id));
+    expect(rowCount?.value).toBe(1);
+
+    const errorOf = (response: { body: unknown }): unknown => {
+      // A copy minus the correlation id rather than a hand-picked set of fields: a field added to
+      // the envelope later is then compared too, which is the point of the comparison.
+      const error = { ...(response.body as { error: Record<string, unknown> }).error };
+      delete error.correlationId;
+      return error;
+    };
+
+    // The link path: a real id outside the actor's scope, and an id that does not exist.
+    const unreadable = await link(staff, hidden.id).expect(404);
+    const absent = await link(staff, MISSING_DOCUMENT_ID).expect(404);
+    expect(errorOf(unreadable)).toEqual(errorOf(absent));
+
+    /*
+     * The unlink path has the same trap. The records officer — who reads the whole office — makes a
+     * real link to the Division B document first, so the Division A staff member is deleting
+     * something that genuinely exists and must still be told exactly what they would be told about
+     * a link that never existed.
+     */
+    await link(records, hidden.id).expect(201);
+    const unlink = (incomingDocumentId: string) =>
+      request(server())
+        .delete(`/api/v1/documents/${outgoing.id}/references/${incomingDocumentId}`)
+        .set('Cookie', staff.cookies)
+        .set('x-csrf-token', staff.csrf);
+    const unlinkUnreadable = await unlink(hidden.id).expect(404);
+    const unlinkAbsent = await unlink(MISSING_DOCUMENT_ID).expect(404);
+    expect(errorOf(unlinkUnreadable)).toEqual(errorOf(unlinkAbsent));
+
+    // The refused unlink is a zero-row `DELETE`, so the row it could not see is still there.
+    const [afterRefusal] = await database
+      .select({ value: count() })
+      .from(documentReferences)
+      .where(eq(documentReferences.outgoingDocumentId, outgoing.id));
+    expect(afterRefusal?.value).toBe(2);
+
+    // What the staff member may unlink, they do unlink — and the reply list shortens to nothing.
+    const unlinked = dataOf<{ referencedDocuments: { id: string }[] }>(
+      await unlink(reply.id).expect(200),
+    );
+    expect(unlinked.referencedDocuments).toEqual([]);
   }, 30_000);
 });

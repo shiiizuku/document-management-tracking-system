@@ -377,6 +377,27 @@ export const shareDocumentSchema = z.object({
   userId: z.uuid(),
 });
 
+/*
+ * Links one incoming document to an outgoing one as a Reference Document (decision 165).
+ *
+ * **One id per call, deliberately, and not a set.** A batch endpoint would have to decide what
+ * happens when three ids are valid and the fourth is unreadable, and under decision 166 every
+ * answer to that leaks: partial success tells the caller which id was the bad one, which is
+ * precisely the existence oracle the decision forbids. One id per call, each answered with the
+ * same indistinguishable 404, has no such seam. A UI that links several loops.
+ *
+ * Nothing in this feature is named `reference` unqualified: `referenceNumber` is already two
+ * different strings (the office's identifier for an outgoing document, the sender's for an
+ * incoming one), and `REFERENCES` is a SQL reserved word besides. The relation is spelled out as
+ * `referencedDocumentIds` / `replyDocumentIds` wherever it is carried.
+ *
+ * No `expectedVersion`: linking changes nothing on the document row and bumps no version
+ * (decision 179).
+ */
+export const linkReferenceDocumentSchema = z.object({
+  incomingDocumentId: z.uuid(),
+});
+
 // Reportable scan outcomes. `PENDING` is intentionally excluded: an already-created
 // version starts PENDING, and a scanner may only ever report a resolved outcome — it
 // can never push a version back into the pending state (mirrors the domain service's
@@ -417,6 +438,7 @@ export type UpdateDocumentMetadataInput = z.infer<typeof updateDocumentMetadataS
 export type AssignDocumentInput = z.infer<typeof assignDocumentSchema>;
 export type RouteDocumentInput = z.infer<typeof routeDocumentSchema>;
 export type ShareDocumentInput = z.infer<typeof shareDocumentSchema>;
+export type LinkReferenceDocumentInput = z.infer<typeof linkReferenceDocumentSchema>;
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
 export type FileScanResult = z.infer<typeof fileScanStatusSchema>;
 export type RecordScanInput = z.infer<typeof recordScanSchema>;

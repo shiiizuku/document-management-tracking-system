@@ -8,6 +8,8 @@ import { Pool } from 'pg';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AuthorizationActor } from '../src/modules/authorization/authorization.policy.js';
+import type { Database } from '../src/database/client.js';
+import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
 import {
   custodyDivisionId,
   custodySectionId,
@@ -17,6 +19,7 @@ import {
 import {
   divisions,
   documentAssignments,
+  documentReferences,
   documentRoutes,
   documentShares,
   documents,
@@ -458,6 +461,95 @@ describe('documentScopeFor / scopeToActor against a real database', () => {
         .from(documents)
         .where(eq(documents.id, divisionOnly));
       expect(row).toEqual({ divisionId: DIV_C, sectionId: null });
+    });
+  });
+
+  /**
+   * The two directions of the Reference Document relation, resolved through the same scope
+   * predicate as everything else (decisions 165–166).
+   *
+   * Exercised through {@link DocumentsRepository} rather than by composing the predicate by hand,
+   * because the thing under test is the *join*: the reference reads filter the document they point
+   * at, not the link row, and a join written the other way round would return a link whose target
+   * the reader may not open. The property this pins is that both directions are filtered by one
+   * predicate — a reader who may see the letter but not the reply sees no reply, and the reverse.
+   *
+   * Declared last so its rows cannot disturb the suites above, which assert exact id lists over the
+   * whole table.
+   */
+  describe('reference documents through scope', () => {
+    const LETTER = randomUUID();
+    const repository = new DocumentsRepository(db as unknown as Database);
+
+    const referencedBy = async (a: AuthorizationActor): Promise<string[]> =>
+      (await repository.listReferencedDocuments(a, LETTER)).map((entry) => entry.id).sort();
+
+    beforeAll(async () => {
+      // The outgoing letter sits in Division A, section A1, and answers three incoming documents:
+      // one in that same section, one confidential one beside it, and one in Division B.
+      await db
+        .insert(documents)
+        .values(
+          doc(LETTER, { divisionId: DIV_A, sectionId: SEC_A1, direction: 'OUTGOING' as const }),
+        );
+      await db.insert(documentReferences).values(
+        [DOC_A_SECTION, DOC_A_CONFIDENTIAL, DOC_B].map((incomingDocumentId) => ({
+          outgoingDocumentId: LETTER,
+          incomingDocumentId,
+          createdById: CREATOR,
+        })),
+      );
+    });
+
+    it('shows each reader only the references they could open themselves', async () => {
+      // Division A, section A1: the section document, but not the confidential row beside it and
+      // not Division B's.
+      expect(
+        await referencedBy(actor({ role: 'STAFF_MEMBER', divisionId: DIV_A, sectionId: SEC_A1 })),
+      ).toEqual([DOC_A_SECTION]);
+      // Division B sees exactly the one it holds — a shorter list, from the other end.
+      expect(
+        await referencedBy(actor({ role: 'STAFF_MEMBER', divisionId: DIV_B, sectionId: SEC_B1 })),
+      ).toEqual([DOC_B]);
+      // Cleared and office-wide: all three.
+      expect(
+        await referencedBy(actor({ role: 'ADMINISTRATOR', canAccessConfidential: true })),
+      ).toEqual([DOC_A_SECTION, DOC_A_CONFIDENTIAL, DOC_B].sort());
+    });
+
+    /*
+     * Different readers, different lengths, same document — stated as its own assertion because it
+     * is the behaviour most likely to be "fixed" later by someone who reads it as a bug. Decision
+     * 166 requires it: a reference the reader may not read is absent, not nulled and not counted,
+     * so there is nothing in the payload from which the omission could be inferred.
+     */
+    it('leaves no placeholder behind for the entries it omits', async () => {
+      const uncleared = await repository.listReferencedDocuments(
+        actor({ role: 'STAFF_MEMBER', divisionId: DIV_A, sectionId: SEC_A1 }),
+        LETTER,
+      );
+      expect(uncleared).toHaveLength(1);
+      expect(uncleared.every((entry) => entry.id !== null && entry.trackingNumber !== null)).toBe(
+        true,
+      );
+    });
+
+    it('filters the reverse read by the same predicate as the forward one', async () => {
+      // Division B holds DOC_B and may read it, but the letter answering it sits in a Division A
+      // section: it may see the reply and not the letter, so its reply list is empty.
+      expect(
+        await repository.listReplyDocuments(
+          actor({ role: 'STAFF_MEMBER', divisionId: DIV_B, sectionId: SEC_B1 }),
+          DOC_B,
+        ),
+      ).toEqual([]);
+      // Records staff read the whole office and see the inverse of the forward read.
+      const replies = await repository.listReplyDocuments(
+        actor({ role: 'RECORDS_STAFF' }),
+        DOC_A_SECTION,
+      );
+      expect(replies.map((entry) => entry.id)).toEqual([LETTER]);
+      expect(replies[0]).toMatchObject({ direction: 'OUTGOING' });
     });
   });
 });

@@ -5,6 +5,7 @@ import {
   count,
   desc,
   eq,
+  exists,
   ilike,
   inArray,
   isNotNull,
@@ -28,6 +29,7 @@ import {
   divisions,
   documentAssignments,
   documentMetadataRevisions,
+  documentReferences,
   documentRoutes,
   documentSequences,
   documentShares,
@@ -49,6 +51,28 @@ export type DocumentRow = typeof documents.$inferSelect;
 export type WorkflowEventRow = typeof workflowEvents.$inferSelect;
 export type DocumentRouteRow = typeof documentRoutes.$inferSelect;
 export type SignatureEventRow = typeof signatureEvents.$inferSelect;
+export type DocumentReferenceRow = typeof documentReferences.$inferSelect;
+
+/** Either end of the Reference Document join, so the two directions can share one query builder. */
+type DocumentReferenceEnd =
+  typeof documentReferences.outgoingDocumentId | typeof documentReferences.incomingDocumentId;
+
+/**
+ * One end of a Reference Document link, as both directions present it (decision 165).
+ *
+ * A summary rather than the whole row because the list is a right-rail index into other records,
+ * not a payload to work from: the reader opens the referenced document through
+ * `/documents/:id`, which scopes it again. Hand-built for the same reason `PublicDocument` is —
+ * a column added later is never served by accident.
+ */
+export interface ReferenceDocumentSummary {
+  id: string;
+  trackingNumber: string;
+  title: string;
+  direction: DocumentRow['direction'];
+  status: DocumentRow['status'];
+  createdAt: Date;
+}
 
 /** The membership and custody facts the in-memory authorization policy reads. */
 export interface DocumentAuthorizationFacts {
@@ -737,6 +761,140 @@ export class DocumentsRepository {
       .from(signatureEvents)
       .where(eq(signatureEvents.documentId, documentId))
       .orderBy(asc(signatureEvents.signedAt));
+  }
+
+  /**
+   * Links an incoming document to an outgoing one, returning the new row's id — or `null` when the
+   * pair was already linked.
+   *
+   * `ON CONFLICT DO NOTHING` against the unique pair is what makes linking idempotent without a
+   * read-before-write, and the returned id is what tells the caller whether anything actually
+   * happened: a repeat submit writes no row, so it also writes no second audit event and no second
+   * outbox row (decision 179). Neither the direction rule nor the readability of the target is
+   * checked here — both live in the service, where the readability miss can be answered as the
+   * same 404 an absent document gets (decision 166).
+   */
+  async insertReference(
+    reference: { outgoingDocumentId: string; incomingDocumentId: string; createdById: string },
+    executor: DatabaseExecutor = this.database,
+  ): Promise<string | null> {
+    const [row] = await executor
+      .insert(documentReferences)
+      .values(reference)
+      .onConflictDoNothing({
+        target: [documentReferences.outgoingDocumentId, documentReferences.incomingDocumentId],
+      })
+      .returning({ id: documentReferences.id });
+    return row?.id ?? null;
+  }
+
+  /**
+   * Removes one link, but only if the actor may read the document it points at. Returns the id of
+   * the row that was deleted, or `null` when nothing matched.
+   *
+   * The readability test is **part of the `DELETE`**, not a lookup followed by a permission check:
+   * under decision 166, unlinking a reference whose target the actor cannot read has to be
+   * indistinguishable from unlinking one that was never there, and a two-step version answers
+   * "that link is real and you may not touch it" with a different status or message. One statement,
+   * one zero-row outcome, one 404.
+   */
+  async deleteReference(
+    actor: AuthorizationActor,
+    outgoingDocumentId: string,
+    incomingDocumentId: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<string | null> {
+    const [row] = await executor
+      .delete(documentReferences)
+      .where(
+        and(
+          eq(documentReferences.outgoingDocumentId, outgoingDocumentId),
+          eq(documentReferences.incomingDocumentId, incomingDocumentId),
+          this.referenceTargetIsReadable(actor, documentReferences.incomingDocumentId),
+        ),
+      )
+      .returning({ id: documentReferences.id });
+    return row?.id ?? null;
+  }
+
+  /**
+   * The incoming documents an outgoing document names, filtered by the reader's own scope.
+   *
+   * One scoped query, joined rather than a loop of {@link findReadableById}: the round trips are
+   * the lesser reason, and the real one is that a loop invites a `null` placeholder for the
+   * entries the reader cannot see, which is exactly the leak decision 166 forbids. **A reference
+   * the reader cannot read is absent — not nulled, not counted.** Two readers seeing different
+   * lengths for the same document is the intended behaviour and not a bug to reconcile.
+   */
+  async listReferencedDocuments(
+    actor: AuthorizationActor,
+    outgoingDocumentId: string,
+  ): Promise<ReferenceDocumentSummary[]> {
+    return this.referenceSummaries(
+      actor,
+      documentReferences.outgoingDocumentId,
+      outgoingDocumentId,
+      documentReferences.incomingDocumentId,
+    );
+  }
+
+  /**
+   * The inverse read: the outgoing documents that name this incoming one as a reference, which the
+   * incoming side presents as its replies (decision 165). Scoped exactly as
+   * {@link listReferencedDocuments} is, so a reader who may see the reply but not the letter — or
+   * the letter but not the reply — simply sees a shorter list.
+   */
+  async listReplyDocuments(
+    actor: AuthorizationActor,
+    incomingDocumentId: string,
+  ): Promise<ReferenceDocumentSummary[]> {
+    return this.referenceSummaries(
+      actor,
+      documentReferences.incomingDocumentId,
+      incomingDocumentId,
+      documentReferences.outgoingDocumentId,
+    );
+  }
+
+  /**
+   * Both directions of the reference read, which differ only in which column is matched and which
+   * is joined. Written once so the two can never be scoped differently — the pair of them being
+   * filtered by the same predicate is the property `query-scope.int.test.ts` pins.
+   */
+  private async referenceSummaries(
+    actor: AuthorizationActor,
+    matchColumn: DocumentReferenceEnd,
+    matchValue: string,
+    joinColumn: DocumentReferenceEnd,
+  ): Promise<ReferenceDocumentSummary[]> {
+    return this.database
+      .select({
+        id: documents.id,
+        trackingNumber: documents.trackingNumber,
+        title: documents.title,
+        direction: documents.direction,
+        status: documents.status,
+        createdAt: documents.createdAt,
+      })
+      .from(documentReferences)
+      .innerJoin(documents, eq(documents.id, joinColumn))
+      .where(and(eq(matchColumn, matchValue), isNull(documents.deletedAt), documentScopeFor(actor)))
+      .orderBy(asc(documentReferences.createdAt));
+  }
+
+  /**
+   * Whether the actor may read the document a reference column points at, as a correlated
+   * `EXISTS`. `documents` appears in this subquery's own `FROM`, so the scope predicate's
+   * references to it bind here rather than to any outer query — which is what lets the same
+   * `documentScopeFor` be reused inside a statement against `document_references`.
+   */
+  private referenceTargetIsReadable(actor: AuthorizationActor, column: DocumentReferenceEnd): SQL {
+    return exists(
+      sql`(select 1 from ${documents}
+           where ${documents.id} = ${column}
+             and ${documents.deletedAt} is null
+             and ${documentScopeFor(actor)})`,
+    );
   }
 
   /** Grants a user read access. Idempotent: a repeat share for the same user is a no-op. */

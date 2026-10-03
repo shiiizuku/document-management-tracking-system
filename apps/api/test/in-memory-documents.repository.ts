@@ -18,6 +18,7 @@ import type {
   NewDocument,
   NewWorkflowEvent,
   PlacementResult,
+  ReferenceDocumentSummary,
   SignatureEventRow,
   WorkflowEventRow,
 } from '../src/modules/documents/documents.repository.js';
@@ -66,6 +67,18 @@ export class InMemoryDocumentsRepository {
    */
   private readonly ordDivisionIds = new Set<string>(['division-records']);
   private readonly signatures = new Map<string, SignatureEventRow[]>();
+  /*
+   * The Reference Document join, in insertion order. A list rather than a Map keyed by the pair
+   * because the reads are ordered by when the link was made, and because the row id is what the
+   * outbox key is built from — see `insertReference`.
+   */
+  private readonly references: {
+    id: string;
+    outgoingDocumentId: string;
+    incomingDocumentId: string;
+    createdById: string;
+    createdAt: Date;
+  }[] = [];
   private trackingCounter = 0;
   private readonly referenceCounters = new Map<string, number>();
 
@@ -389,6 +402,92 @@ export class InMemoryDocumentsRepository {
 
   listSignatures(documentId: string): Promise<SignatureEventRow[]> {
     return Promise.resolve([...(this.signatures.get(documentId) ?? [])]);
+  }
+
+  /** Mirrors `ON CONFLICT DO NOTHING` on the unique pair: a repeat link makes no row and returns null. */
+  insertReference(reference: {
+    outgoingDocumentId: string;
+    incomingDocumentId: string;
+    createdById: string;
+  }): Promise<string | null> {
+    const existing = this.references.some(
+      (row) =>
+        row.outgoingDocumentId === reference.outgoingDocumentId &&
+        row.incomingDocumentId === reference.incomingDocumentId,
+    );
+    if (existing) return Promise.resolve(null);
+    const id = randomUUID();
+    this.references.push({ id, createdAt: now(), ...reference });
+    return Promise.resolve(id);
+  }
+
+  /**
+   * Mirrors the scoped `DELETE`: the readability of the target is part of the match, so a link
+   * whose target this actor cannot read yields null — the same answer as no link at all, which is
+   * what makes the two indistinguishable at the HTTP boundary (decision 166).
+   */
+  deleteReference(
+    actor: AuthorizationActor,
+    outgoingDocumentId: string,
+    incomingDocumentId: string,
+  ): Promise<string | null> {
+    const index = this.references.findIndex(
+      (row) =>
+        row.outgoingDocumentId === outgoingDocumentId &&
+        row.incomingDocumentId === incomingDocumentId &&
+        this.isReadable(actor, row.incomingDocumentId),
+    );
+    if (index === -1) return Promise.resolve(null);
+    const [removed] = this.references.splice(index, 1);
+    return Promise.resolve(removed!.id);
+  }
+
+  listReferencedDocuments(
+    actor: AuthorizationActor,
+    outgoingDocumentId: string,
+  ): Promise<ReferenceDocumentSummary[]> {
+    return Promise.resolve(
+      this.references
+        .filter((row) => row.outgoingDocumentId === outgoingDocumentId)
+        .map((row) => this.referenceSummary(actor, row.incomingDocumentId))
+        // Absent, not nulled: the entries this actor cannot read leave no placeholder behind, so
+        // two readers see different lengths for the same document (decision 166).
+        .filter((summary): summary is ReferenceDocumentSummary => summary !== null),
+    );
+  }
+
+  listReplyDocuments(
+    actor: AuthorizationActor,
+    incomingDocumentId: string,
+  ): Promise<ReferenceDocumentSummary[]> {
+    return Promise.resolve(
+      this.references
+        .filter((row) => row.incomingDocumentId === incomingDocumentId)
+        .map((row) => this.referenceSummary(actor, row.outgoingDocumentId))
+        .filter((summary): summary is ReferenceDocumentSummary => summary !== null),
+    );
+  }
+
+  private isReadable(actor: AuthorizationActor, documentId: string): boolean {
+    const row = this.documents.get(documentId);
+    if (row === undefined || row.deletedAt !== null) return false;
+    return this.authorization.canRead(actor, this.resource(row));
+  }
+
+  private referenceSummary(
+    actor: AuthorizationActor,
+    documentId: string,
+  ): ReferenceDocumentSummary | null {
+    const row = this.documents.get(documentId);
+    if (row === undefined || !this.isReadable(actor, documentId)) return null;
+    return {
+      id: row.id,
+      trackingNumber: row.trackingNumber,
+      title: row.title,
+      direction: row.direction,
+      status: row.status,
+      createdAt: row.createdAt,
+    };
   }
 
   insertShare(share: { documentId: string; userId: string; sharedById: string }): Promise<void> {
