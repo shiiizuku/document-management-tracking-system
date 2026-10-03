@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MetadataDialog } from '../src/features/documents/metadata-dialog';
 import { RouteDialog } from '../src/features/documents/route-dialog';
+import type { RouteEntry } from '../src/features/documents/queries';
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
 import { documentDetail } from './fixtures';
@@ -155,17 +156,44 @@ describe('MetadataDialog', () => {
   });
 });
 
+/** One custody hop, with the fields the dialog reads. */
+const hop = (overrides: Partial<RouteEntry>): RouteEntry => ({
+  id: 'route-1',
+  fromDivisionId: null,
+  toDivisionId: 'division-1',
+  toSectionId: null,
+  routedById: 'user-1',
+  remarks: null,
+  forInformation: false,
+  acceptedAt: null,
+  acceptedById: null,
+  createdAt: '2026-09-02T09:00:00.000Z',
+  ...overrides,
+});
+
 describe('RouteDialog', () => {
   const open = async () => {
     await userEvent.click(screen.getByRole('button', { name: /Forward/ }));
     return screen.getByRole('dialog');
   };
 
-  // Forwarding a document to the division it already sits in is the one destination with no
-  // meaning, so it is not offered.
-  it('does not offer the division the document already sits in', async () => {
+  /*
+   * Forwarding a document to the unit already holding it is the one destination with no meaning,
+   * so it is not offered. "Already holding it" is the last custody hop, not `divisionId`: that
+   * column is where the document was registered and stops moving once it is forwarded
+   * (ADR-0005). The fixture is registered in Legal and sitting in Records, so a dialog reading
+   * the column would exclude exactly the wrong one.
+   */
+  it('does not offer the division currently holding the document', async () => {
     serve(() => Promise.resolve(documentDetail()));
-    renderWithQuery(<RouteDialog document={documentDetail({ divisionId: 'division-1' })} />);
+    renderWithQuery(
+      <RouteDialog
+        document={documentDetail({
+          divisionId: 'division-2',
+          routes: [hop({ toDivisionId: 'division-1' })],
+        })}
+      />,
+    );
     await open();
 
     await userEvent.click(screen.getByLabelText('Receiving division'));
@@ -190,8 +218,56 @@ describe('RouteDialog', () => {
         body: JSON.stringify({
           expectedVersion: 3,
           toDivisionId: 'division-2',
+          forInformationDivisionIds: [],
           remarks: '',
         }),
+      }),
+    );
+  });
+
+  /*
+   * A forward names one lead recipient and any number of divisions consulted for information
+   * (decisions 159–160). The lead leaves the copy list the moment it is chosen, because a division
+   * that both holds the document and is merely consulted is a contradiction the contract refuses.
+   */
+  it('copies other divisions in for information, never the lead', async () => {
+    serve(() => Promise.resolve(documentDetail()));
+    // Sitting in Legal, so Records is the destination on offer and Legal is only consultable.
+    renderWithQuery(
+      <RouteDialog document={documentDetail({ version: 2, divisionId: 'division-2' })} />,
+    );
+    const dialog = await open();
+
+    await userEvent.click(within(dialog).getByLabelText('Legal Division'));
+    await userEvent.click(screen.getByLabelText('Receiving division'));
+    await userEvent.click(screen.getByRole('option', { name: 'Records Division' }));
+    // Legal is still consultable — Records is the lead now — and its tick survived.
+    expect(within(dialog).getByLabelText('Legal Division')).toBeChecked();
+    expect(within(dialog).queryByLabelText('Records Division')).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Forward document' }));
+
+    await waitFor(() =>
+      expect(requestBody(apiMock, '/documents/doc-1/routes')).toMatchObject({
+        toDivisionId: 'division-1',
+        forInformationDivisionIds: ['division-2'],
+      }),
+    );
+  });
+
+  it('drops a copied division that is then chosen as the lead', async () => {
+    serve(() => Promise.resolve(documentDetail()));
+    renderWithQuery(<RouteDialog document={documentDetail({ version: 2 })} />);
+    const dialog = await open();
+
+    await userEvent.click(within(dialog).getByLabelText('Legal Division'));
+    await userEvent.click(screen.getByLabelText('Receiving division'));
+    await userEvent.click(screen.getByRole('option', { name: 'Legal Division' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Forward document' }));
+
+    await waitFor(() =>
+      expect(requestBody(apiMock, '/documents/doc-1/routes')).toMatchObject({
+        toDivisionId: 'division-2',
+        forInformationDivisionIds: [],
       }),
     );
   });

@@ -6,6 +6,7 @@ import {
   desc,
   eq,
   ilike,
+  inArray,
   isNotNull,
   isNull,
   notInArray,
@@ -13,8 +14,13 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
-import type { AuthorizationActor } from '../authorization/authorization.policy.js';
-import { documentIsPending, documentScopeFor } from '../authorization/query-scope.js';
+import type { AuthorizationActor, RouteRecipient } from '../authorization/authorization.policy.js';
+import {
+  custodyDivisionId,
+  custodySectionId,
+  documentIsPending,
+  documentScopeFor,
+} from '../authorization/query-scope.js';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
 import type { DatabaseExecutor } from '../../database/executor.js';
@@ -43,6 +49,13 @@ export type DocumentRow = typeof documents.$inferSelect;
 export type WorkflowEventRow = typeof workflowEvents.$inferSelect;
 export type DocumentRouteRow = typeof documentRoutes.$inferSelect;
 export type SignatureEventRow = typeof signatureEvents.$inferSelect;
+
+/** The membership and custody facts the in-memory authorization policy reads. */
+export interface DocumentAuthorizationFacts {
+  routes: RouteRecipient[];
+  assigneeUserIds: string[];
+  sharedUserIds: string[];
+}
 
 export type NewDocument = typeof documents.$inferInsert;
 
@@ -311,8 +324,18 @@ export class DocumentsRepository {
     if (filters.priority) conditions.push(eq(documents.priority, filters.priority));
     if (filters.type) conditions.push(eq(documents.type, filters.type));
     if (filters.direction) conditions.push(eq(documents.direction, filters.direction));
-    if (filters.divisionId) conditions.push(eq(documents.divisionId, filters.divisionId));
-    if (filters.sectionId) conditions.push(eq(documents.sectionId, filters.sectionId));
+    /*
+     * Where the document *is*, not where it was filed. `documents.division_id` stopped moving when
+     * routing became non-destructive (ADR-0005), so filtering on it would answer "registered by",
+     * which for incoming correspondence is the ORD every time.
+     *
+     * It is also what keeps the dashboard's division chart clickable. That chart groups pending
+     * work by custody, and `dashboard.int.test.ts` asserts each tile equals what this list returns
+     * for the same division as the same user — one of them filtering on origin and the other
+     * grouping by custody would make the two disagree the first time anything was forwarded.
+     */
+    if (filters.divisionId) conditions.push(eq(custodyDivisionId(), filters.divisionId));
+    if (filters.sectionId) conditions.push(eq(custodySectionId(), filters.sectionId));
     const where = and(...conditions);
 
     // The enum columns are declared LOW→URGENT and IN_PROCESS→ARCHIVED, so Postgres orders them
@@ -522,6 +545,65 @@ export class DocumentsRepository {
     return rows.map((row) => row.userId).filter((userId): userId is string => userId !== null);
   }
 
+  /**
+   * Everything `AuthorizationPolicy.can` needs about a set of documents, in three queries.
+   *
+   * It exists because the in-memory policy is re-run on the capability path after SQL scope has
+   * already settled readability, and since ADR-0005 that second pass needs the custody hops: a
+   * resource built without them denies the very unit the document was forwarded to. Batched over
+   * ids rather than offered per document so `deletedQueue` — the one caller with N rows — cannot
+   * quietly become N round trips.
+   */
+  async authorizationFacts(
+    documentIds: readonly string[],
+  ): Promise<Map<string, DocumentAuthorizationFacts>> {
+    const facts = new Map<string, DocumentAuthorizationFacts>(
+      documentIds.map((id) => [id, { routes: [], assigneeUserIds: [], sharedUserIds: [] }]),
+    );
+    if (documentIds.length === 0) return facts;
+    const ids = [...documentIds];
+
+    const [routeRows, assignmentRows, shareRows] = await Promise.all([
+      this.database
+        .select({
+          documentId: documentRoutes.documentId,
+          toDivisionId: documentRoutes.toDivisionId,
+          toSectionId: documentRoutes.toSectionId,
+          forInformation: documentRoutes.forInformation,
+        })
+        .from(documentRoutes)
+        .where(inArray(documentRoutes.documentId, ids)),
+      this.database
+        .select({
+          documentId: documentAssignments.documentId,
+          userId: documentAssignments.userId,
+        })
+        .from(documentAssignments)
+        .where(
+          and(inArray(documentAssignments.documentId, ids), eq(documentAssignments.active, true)),
+        ),
+      this.database
+        .select({ documentId: documentShares.documentId, userId: documentShares.userId })
+        .from(documentShares)
+        .where(inArray(documentShares.documentId, ids)),
+    ]);
+
+    for (const row of routeRows) {
+      facts.get(row.documentId)?.routes.push({
+        toDivisionId: row.toDivisionId,
+        toSectionId: row.toSectionId,
+        forInformation: row.forInformation,
+      });
+    }
+    for (const row of assignmentRows) {
+      if (row.userId !== null) facts.get(row.documentId)?.assigneeUserIds.push(row.userId);
+    }
+    for (const row of shareRows) {
+      facts.get(row.documentId)?.sharedUserIds.push(row.userId);
+    }
+    return facts;
+  }
+
   /** Live documents a user currently holds an active assignment on — their work queue. */
   async listAssignedTo(userId: string): Promise<DocumentRow[]> {
     return this.database
@@ -555,17 +637,23 @@ export class DocumentsRepository {
       .orderBy(desc(documents.deletedAt), desc(documents.id));
   }
 
-  /** Moves a document to a new division/section under the optimistic-version guard. */
-  async relocate(
+  /**
+   * Takes the optimistic-version guard without changing anything else.
+   *
+   * This was `relocate`, which wrote `division_id` / `section_id` and so made forwarding
+   * destructive: a document could only ever be *handed over*, never copied in, and the division it
+   * came from lost it. ADR-0005 ends that — custody lives on `document_routes` and the columns
+   * record where the document was registered — leaving this with only the job it always also had,
+   * which is to stop two concurrent forwards both succeeding.
+   */
+  async bumpVersion(
     id: string,
     expectedVersion: number,
-    divisionId: string,
-    sectionId: string | null,
     executor: DatabaseExecutor = this.database,
   ): Promise<DocumentRow | null> {
     const [row] = await executor
       .update(documents)
-      .set({ divisionId, sectionId, version: sql`${documents.version} + 1` })
+      .set({ version: sql`${documents.version} + 1` })
       .where(
         and(
           eq(documents.id, id),
@@ -708,18 +796,30 @@ export class DocumentsRepository {
    * from the same `documentScopeFor` predicate the list uses so the dashboard can never show a
    * number the list can't back up (decision register 90 — one source of truth for scope).
    */
-  /** One division's share of the work waiting to be accepted. */
+  /**
+   * One division's share of the work waiting to be accepted.
+   *
+   * Grouped by **current custody**, not by `documents.division_id`. That column is the registering
+   * placement and never moves (ADR-0005), so grouping on it would attribute every piece of incoming
+   * correspondence to the ORD that registered it — turning the one tile whose job is "who is
+   * sitting on work" into a count of who filed it.
+   *
+   * `custodyDivisionId` is the same expression the registry's division filter uses, which is what
+   * makes a tile clickable rather than decorative: the chart and the list it links to are then the
+   * same question asked twice, and `dashboard.int.test.ts` holds them to it.
+   */
   async pendingByDivision(actor: AuthorizationActor): Promise<DashboardDivisionPending[]> {
+    const custodyDivision = custodyDivisionId();
     const rows = await this.database
       .select({
-        divisionId: documents.divisionId,
+        divisionId: custodyDivision,
         divisionName: divisions.name,
         total: count(),
       })
       .from(documents)
-      .innerJoin(divisions, eq(divisions.id, documents.divisionId))
+      .innerJoin(divisions, eq(divisions.id, custodyDivision))
       .where(and(isNull(documents.deletedAt), documentScopeFor(actor), documentIsPending()))
-      .groupBy(documents.divisionId, divisions.name)
+      .groupBy(custodyDivision, divisions.name)
       .orderBy(desc(count()), asc(divisions.name));
     return rows.map((row) => ({
       divisionId: row.divisionId,

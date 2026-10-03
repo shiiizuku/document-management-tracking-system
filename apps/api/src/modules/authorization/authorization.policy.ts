@@ -28,14 +28,51 @@ export interface AuthorizationActor {
   canAccessConfidential: boolean;
 }
 
+/**
+ * One custody hop, as scope sees it.
+ *
+ * `accepted_at` is deliberately absent rather than merely unused: acceptance gates what a recipient
+ * may *do* (the workflow engine's `leadRouteOutstanding`), never whether they may read — a unit that
+ * cannot open a document can never accept it. Leaving the field off the type means that rule cannot
+ * be broken here by someone adding one plausible-looking condition.
+ */
+export interface RouteRecipient {
+  toDivisionId: string;
+  toSectionId: string | null;
+  forInformation: boolean;
+}
+
 export interface AuthorizationResource {
   id: string;
+  /** Where the document was *registered*. It never moves; custody lives on `routes` (ADR-0005). */
   divisionId: string | null;
   sectionId: string | null;
+  /**
+   * Every hop this document has been through. Required, not optional: a resource built without it
+   * would silently deny the receiving unit, which is the whole of what routing is for. The same
+   * trap `monthly-report.ts` documents for assignment and share membership.
+   */
+  routes: readonly RouteRecipient[];
   assigneeUserIds: readonly string[];
   sharedUserIds: readonly string[];
   confidential: boolean;
 }
+
+/**
+ * The in-memory twin of `routedToUnit` in `query-scope.ts`, with the same three deliberate
+ * properties: acceptance is not consulted, a unit that forwarded a document onward still matches
+ * the hop by which it received it, and a `null` `sectionId` means "any hop into this division"
+ * (the division head's reach) while a section id must match the hop's own section.
+ */
+const routesReachUnit = (
+  routes: readonly RouteRecipient[],
+  divisionId: string,
+  sectionId: string | null,
+): boolean =>
+  routes.some(
+    (route) =>
+      route.toDivisionId === divisionId && (sectionId === null || route.toSectionId === sectionId),
+  );
 
 export class AuthorizationPolicy {
   canRead(actor: AuthorizationActor, resource: AuthorizationResource): boolean {
@@ -53,14 +90,21 @@ export class AuthorizationPolicy {
       return true;
     }
 
+    if (actor.divisionId === null) {
+      return false;
+    }
+
     if (actor.role === 'DIVISION_HEAD') {
-      return actor.divisionId !== null && actor.divisionId === resource.divisionId;
+      return (
+        actor.divisionId === resource.divisionId ||
+        routesReachUnit(resource.routes, actor.divisionId, null)
+      );
     }
 
     return (
       actor.sectionId !== null &&
-      actor.divisionId === resource.divisionId &&
-      actor.sectionId === resource.sectionId
+      ((actor.divisionId === resource.divisionId && actor.sectionId === resource.sectionId) ||
+        routesReachUnit(resource.routes, actor.divisionId, actor.sectionId))
     );
   }
 

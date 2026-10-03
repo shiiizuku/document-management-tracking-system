@@ -1,5 +1,3 @@
-import type { AuthorizationResource } from '../authorization/authorization.policy.js';
-
 /**
  * The shape of a monthly report, and the one piece of handling its exports cannot do without.
  *
@@ -10,9 +8,15 @@ import type { AuthorizationResource } from '../authorization/authorization.polic
  * pass was a trap — it decided readability from a projection that carries no assignment or share
  * membership, so wiring it up would have silently dropped every document an actor reaches only by
  * being assigned it. Scope is settled in SQL; re-deciding it downstream can only ever disagree.
+ *
+ * The shape below used to extend `AuthorizationResource`, the last trace of that pass. It now
+ * declares what a report row actually is, which is also exactly what the client already expects:
+ * the empty `assigneeUserIds` / `sharedUserIds` it inherited were the stubs the paragraph above
+ * warns about, and the custody hops ADR-0005 added to that interface would have been two more.
  */
 
-export interface ReportDocument extends AuthorizationResource {
+export interface ReportDocument {
+  id: string;
   title: string;
   referenceNumber: string | null;
   sender: string | null;
@@ -20,6 +24,10 @@ export interface ReportDocument extends AuthorizationResource {
   type: string;
   direction: 'INCOMING' | 'OUTGOING';
   createdAt: Date;
+  /** Where the document was registered — the report is a register, so this is the filing fact. */
+  divisionId: string;
+  sectionId: string | null;
+  confidential: boolean;
 }
 
 export interface MonthlyReport {

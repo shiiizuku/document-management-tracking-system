@@ -209,11 +209,19 @@ const actionCapabilities: Readonly<Record<WorkflowAction, WorkflowCapability>> =
 };
 
 /**
- * The document's lead route — the hop that took custody. A forward names exactly one
+ * The document's lead route — the most recent hop that took custody. A forward names exactly one
  * (decision 159); for-information copies are consulted, never waited on.
+ *
+ * Exported because this is also the answer to "where is the document now", which
+ * `documents.division_id` stopped answering when routing became non-destructive (ADR-0005). The
+ * routing service asks it to decide whether a forward is a no-op and what `from_division_id` to
+ * stamp on the next hop, and it must be the *same* notion of current custody the engine gates on.
  */
+export const leadCustodyRoute = (routes: readonly RouteCustody[]): RouteCustody | undefined =>
+  [...routes].reverse().find((route) => !route.forInformation);
+
 const leadRoute = (document: WorkflowDocument): RouteCustody | undefined =>
-  [...document.routes].reverse().find((route) => !route.forInformation);
+  leadCustodyRoute(document.routes);
 
 /** Whether the document is pending: any route handed out and not yet taken on (decision 157). */
 export const isPending = (document: WorkflowDocument): boolean =>

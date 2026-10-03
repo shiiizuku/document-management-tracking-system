@@ -319,6 +319,17 @@ export const documentRoutes = pgTable(
     index('document_routes_unaccepted_idx')
       .on(table.documentId)
       .where(sql`${table.acceptedAt} is null`),
+    /*
+     * Backs the route half of placement scope — `routedToUnit` in `query-scope.ts`, which asks
+     * "has any hop been addressed to this unit" for every list, count and export. The index above
+     * cannot serve it: that one is partial on the unaccepted rows, and this predicate deliberately
+     * ignores `accepted_at` (a recipient must be able to read a document in order to accept it).
+     */
+    index('document_routes_recipient_idx').on(
+      table.toDivisionId,
+      table.toSectionId,
+      table.documentId,
+    ),
   ],
 );
 

@@ -8,6 +8,7 @@ import {
 } from '../src/modules/documents/document-search.service.js';
 import type {
   DocumentActionPatch,
+  DocumentAuthorizationFacts,
   DocumentMetadataPatch,
   DocumentRouteRow,
   DocumentRow,
@@ -306,13 +307,8 @@ export class InMemoryDocumentsRepository {
     );
   }
 
-  relocate(
-    id: string,
-    expectedVersion: number,
-    divisionId: string,
-    sectionId: string | null,
-  ): Promise<DocumentRow | null> {
-    return Promise.resolve(this.applyVersioned(id, expectedVersion, { divisionId, sectionId }));
+  bumpVersion(id: string, expectedVersion: number): Promise<DocumentRow | null> {
+    return Promise.resolve(this.applyVersioned(id, expectedVersion, {}));
   }
 
   insertRoute(route: {
@@ -349,6 +345,17 @@ export class InMemoryDocumentsRepository {
       return Promise.resolve(route);
     }
     return Promise.resolve(null);
+  }
+
+  /**
+   * The in-memory twin of `custodyDivisionId` / `custodySectionId`: the most recent hop that took
+   * custody, falling back to the registering placement when there are no hops at all.
+   */
+  private custodyOf(row: DocumentRow): { divisionId: string; sectionId: string | null } {
+    const hops = (this.routes.get(row.id) ?? []).filter((route) => !route.forInformation);
+    const lead = hops[hops.length - 1];
+    if (lead === undefined) return { divisionId: row.divisionId, sectionId: row.sectionId };
+    return { divisionId: lead.toDivisionId, sectionId: lead.toSectionId };
   }
 
   /** The in-memory twin of the `documentIsPending` SQL predicate. */
@@ -422,14 +429,35 @@ export class InMemoryDocumentsRepository {
       id: row.id,
       divisionId: row.divisionId,
       sectionId: row.sectionId,
-      assigneeUserIds: [...(this.assignments.get(row.id) ?? [])],
-      sharedUserIds: [...(this.shares.get(row.id) ?? [])],
+      ...this.facts(row.id),
       confidential: row.confidential,
     };
   }
 
-  private searchable(row: DocumentRow): SearchableDocument {
+  /** The in-memory twin of `DocumentsRepository.authorizationFacts`, for one document. */
+  private facts(documentId: string): DocumentAuthorizationFacts {
     return {
+      routes: (this.routes.get(documentId) ?? []).map((route) => ({
+        toDivisionId: route.toDivisionId,
+        toSectionId: route.toSectionId,
+        forInformation: route.forInformation,
+      })),
+      assigneeUserIds: [...(this.assignments.get(documentId) ?? [])],
+      sharedUserIds: [...(this.shares.get(documentId) ?? [])],
+    };
+  }
+
+  authorizationFacts(
+    documentIds: readonly string[],
+  ): Promise<Map<string, DocumentAuthorizationFacts>> {
+    return Promise.resolve(new Map(documentIds.map((id) => [id, this.facts(id)])));
+  }
+
+  private searchable(row: DocumentRow): SearchableDocument {
+    const custody = this.custodyOf(row);
+    return {
+      custodyDivisionId: custody.divisionId,
+      custodySectionId: custody.sectionId,
       title: row.title,
       trackingNumber: row.trackingNumber,
       referenceNumber: row.referenceNumber,
