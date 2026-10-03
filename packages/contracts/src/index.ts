@@ -47,9 +47,15 @@ export const workflowActionSchema = z.enum([
   'ARCHIVE',
   'RESTORE',
 ]);
+/**
+ * `DIRECTOR` is the Regional Director: the sole holder of `DOCUMENT_SIGN` (ADR-0006). It is placed
+ * in a division — the ORD — yet reads the whole office, which no other placed role does, because it
+ * must review any division's work in order to sign it.
+ */
 export const roleSchema = z.enum([
   'ADMINISTRATOR',
   'RECORDS_STAFF',
+  'DIRECTOR',
   'DIVISION_HEAD',
   'STAFF_MEMBER',
   'VIEWER',
@@ -137,6 +143,10 @@ export const submitAccountRequestSchema = z.object({
 // and administrators work across the whole office, so their placement is optional; everyone
 // else is scoped, and the two lowest roles are scoped all the way down to a section because
 // the read policy falls back to a section match for them.
+//
+// `DIRECTOR` falls out of the general rule rather than needing a clause of its own: a division is
+// required (it belongs to the ORD — ADR-0006) and a section is not. Its office-wide read comes
+// from the role, not from the placement, which is why requiring a division costs it nothing.
 const membershipRules = (
   value: { role: Role; divisionId?: string | undefined; sectionId?: string | undefined },
   context: z.RefinementCtx,

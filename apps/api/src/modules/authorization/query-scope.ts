@@ -1,5 +1,5 @@
 import { and, eq, exists, or, sql, type SQL } from 'drizzle-orm';
-import type { AuthorizationActor } from './authorization.policy.js';
+import { OFFICE_WIDE_READ_ROLES, type AuthorizationActor } from './authorization.policy.js';
 import {
   documentAssignments,
   documentRoutes,
@@ -23,9 +23,12 @@ export const documentScopeFor = (actor: AuthorizationActor): SQL => {
     ? sql`true`
     : eq(documents.confidential, false);
 
-  // Records staff and administrators work across the whole office; the confidentiality gate
-  // above is still the only thing standing between them and a restricted document.
-  if (actor.role === 'ADMINISTRATOR' || actor.role === 'RECORDS_STAFF') {
+  // Records staff, administrators and the Director work across the whole office; the
+  // confidentiality gate above is still the only thing standing between them and a restricted
+  // document. The set is shared with `canRead` so the two halves cannot disagree about who is in
+  // this branch — note that the Director is in it while also being placed in a division, so the
+  // placement checks below must stay unreachable for that role.
+  if (OFFICE_WIDE_READ_ROLES.has(actor.role)) {
     return and(confidentialityGate)!;
   }
 

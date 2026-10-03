@@ -36,6 +36,24 @@ describe('AuthorizationPolicy public seam', () => {
     );
   });
 
+  /*
+   * The Director reads the whole office in order to review what it signs (ADR-0006), while still
+   * being *placed* in the ORD — the first role for which a division is required and yet narrows
+   * nothing. The confidentiality gate is the one thing the role does not override, which is what
+   * keeps it from collapsing into an administrator.
+   */
+  it('gives the director office-wide visibility without waiving confidentiality', () => {
+    const director = actor({ role: 'DIRECTOR', divisionId: 'division-ord', sectionId: null });
+    expect(policy.canRead(director, resource)).toBe(true);
+    expect(policy.canRead(director, { ...resource, confidential: true })).toBe(false);
+    expect(
+      policy.canRead(
+        { ...director, canAccessConfidential: true },
+        { ...resource, confidential: true },
+      ),
+    ).toBe(true);
+  });
+
   it('limits division heads to their division or explicit shares', () => {
     expect(
       policy.canRead(actor({ role: 'DIVISION_HEAD', divisionId: 'division-a' }), resource),

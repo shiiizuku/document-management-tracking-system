@@ -20,6 +20,26 @@ describe('role capability table', () => {
     }
   });
 
+  /*
+   * The privilege reduction of ADR-0006, asserted as a property of the table rather than left to
+   * the integration suites to discover. `DOCUMENT_SIGN` sits with exactly two roles: the Director,
+   * who is the signatory, and the administrator, who retains it as break-glass. A role picking it
+   * back up — the easy mistake when copying a block in this file — fails here.
+   */
+  it('keeps signing with the director, and the administrator only as break-glass', () => {
+    const signers = Object.entries(capabilitiesByRole)
+      .filter(([, capabilities]) => capabilities.includes('DOCUMENT_SIGN'))
+      .map(([role]) => role)
+      .sort();
+    expect(signers).toEqual(['ADMINISTRATOR', 'DIRECTOR']);
+  });
+
+  // Initialling is the division head's half of the split: the Director must not hold it, or the
+  // two-step approval collapses back into one person's two clicks.
+  it('keeps initialling away from the director', () => {
+    expect(capabilitiesByRole.DIRECTOR).not.toContain('DOCUMENT_INITIAL');
+  });
+
   // VIEWER is read-only by design: scope still lets them read, but no capability means no mutation
   // and, on the client, no capability-gated nav item.
   it('grants a viewer nothing', () => {

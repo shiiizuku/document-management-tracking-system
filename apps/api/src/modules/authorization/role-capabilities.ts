@@ -25,6 +25,9 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'DOCUMENT_RESUBMIT',
     'DOCUMENT_INITIAL',
     'DOCUMENT_SUBMIT_FOR_SIGNATURE',
+    // Retained as break-glass, not as the intended signatory: an audit trail reading
+    // "System Administrator signed it" is not evidence of approval (ADR-0006). Pilot
+    // configuration must provision a real DIRECTOR account.
     'DOCUMENT_SIGN',
     'DOCUMENT_PREPARE_RELEASE',
     'DOCUMENT_RELEASE',
@@ -43,6 +46,9 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     ORG_MANAGE,
     ACCOUNT_REQUEST_REVIEW,
   ],
+  // Custodians of the record, not signatories to its content (ADR-0006): `DOCUMENT_SIGN` was
+  // removed from this role when `DIRECTOR` was introduced. Records staff still see every
+  // document in the office — that is the custody role — and sign none of them.
   RECORDS_STAFF: [
     'DOCUMENT_CREATE',
     'DOCUMENT_EDIT',
@@ -50,7 +56,6 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'DOCUMENT_REQUEST_REVISION',
     'DOCUMENT_RESUBMIT',
     'DOCUMENT_SUBMIT_FOR_SIGNATURE',
-    'DOCUMENT_SIGN',
     'DOCUMENT_PREPARE_RELEASE',
     'DOCUMENT_RELEASE',
     'DOCUMENT_COMPLY',
@@ -59,9 +64,21 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'REPORT_VIEW',
     'FILE_SCAN_RECORD',
   ],
+  /*
+   * The Regional Director, and the only holder of `DOCUMENT_SIGN` outside the break-glass
+   * administrator (ADR-0006). Deliberately the narrowest non-viewer role in the table: signing is
+   * the highest-consequence act in the system, so the role that holds it is given nothing else it
+   * does not need to perform or justify a signature.
+   *
+   * It does **not** hold `DOCUMENT_INITIAL`. Initialling is a division head's endorsement taken
+   * *before* the Director signs, and an ORD draft skips `FOR_INITIAL` entirely (ADR-0007), so
+   * granting it here would only let the Director endorse a draft they are about to sign.
+   */
+  DIRECTOR: ['DOCUMENT_SIGN', 'REPORT_VIEW'],
   // `DOCUMENT_INITIAL` is a division head's endorsement of an outgoing draft, taken before the
-  // Director signs it (ADR-0006). It is held here and nowhere else below: the whole point of
-  // splitting it out of `DOCUMENT_SIGN` is that the two acts belong to two authorities.
+  // Director signs it (ADR-0006). It is held here and nowhere else: the whole point of splitting
+  // it out of `DOCUMENT_SIGN` — which this role no longer holds — is that the two acts belong to
+  // two authorities. A head who could also sign would make the initial ceremonial.
   DIVISION_HEAD: [
     'DOCUMENT_CREATE',
     'DOCUMENT_EDIT',
@@ -70,7 +87,6 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'DOCUMENT_RESUBMIT',
     'DOCUMENT_INITIAL',
     'DOCUMENT_SUBMIT_FOR_SIGNATURE',
-    'DOCUMENT_SIGN',
     'DOCUMENT_PREPARE_RELEASE',
     'DOCUMENT_RELEASE',
     'DOCUMENT_COMPLY',

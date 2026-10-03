@@ -53,6 +53,20 @@ const seedUsers = (): UserRow[] => [
     sectionId: null,
     canAccessConfidential: true,
   }),
+  // The only seeded holder of DOCUMENT_SIGN that is not the break-glass administrator
+  // (ADR-0006), so the REST suites sign as the authority that actually holds the capability.
+  // Placed in the records division rather than a separate ORD because these suites run against
+  // in-memory repositories with no organization tree — what matters is that the role is right.
+  seedUser({
+    id: '00000000-0000-4000-8000-000000000005',
+    email: 'director@dts.local',
+    displayName: 'Regional Director',
+    passwordHash: hashSync('Director@1234!', 4),
+    role: 'DIRECTOR',
+    divisionId: 'division-records',
+    sectionId: null,
+    canAccessConfidential: true,
+  }),
   seedUser({
     id: '00000000-0000-4000-8000-000000000003',
     email: 'viewer@dts.local',

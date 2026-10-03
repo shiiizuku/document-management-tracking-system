@@ -105,6 +105,14 @@ describe('REST /api/v1 document attachments', () => {
     return sessionCookie(response);
   };
 
+  /*
+   * Signing is the Director's act alone (ADR-0006): records staff lost `DOCUMENT_SIGN` when the
+   * role landed. The outgoing suites below therefore drive the whole path as the records officer
+   * and switch actors for the one step that is no longer theirs — which is what the privilege
+   * reduction looks like from the outside.
+   */
+  const directorLogin = () => login('director@dts.local', 'Director@1234!');
+
   const createOutgoing = async (
     cookie: string[],
     overrides: Record<string, unknown> = {},
@@ -219,7 +227,9 @@ describe('REST /api/v1 document attachments', () => {
     // does not move here — every expectedVersion below is one lower than before the revision.
     await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
     await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
-    const signed = await act(cookie, created.id, 'SIGN', { expectedVersion: 3 }).expect(201); // -> 4
+    const signed = await act(await directorLogin(), created.id, 'SIGN', {
+      expectedVersion: 3,
+    }).expect(201); // -> 4
     expect(signed.body.data.signedAttachmentVersionId).toBe(versionId);
     await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 4 }).expect(201); // -> 5
 
@@ -228,6 +238,39 @@ describe('REST /api/v1 document attachments', () => {
       releaseMethod: 'MAILED',
     }).expect(201);
     expect(released.body.data).toMatchObject({ status: 'RELEASED', releaseMethod: 'MAILED' });
+  });
+
+  /*
+   * The other half of ADR-0006, and the one worth a test of its own: the privilege *reduction*.
+   * A records officer can still carry an outgoing draft right up to the signature line, which is
+   * what makes the refusal meaningful — it is not a scope failure or a missing document, it is the
+   * one act custody does not confer. Division heads are refused by the same table; they initial.
+   */
+  it('refuses signing to records staff, who may do everything up to it', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const created = await createOutgoing(cookie); // version 1
+
+    const uploaded = await uploadFile(
+      cookie,
+      created.id,
+      PDF,
+      'plan.pdf',
+      'application/pdf',
+    ).expect(201); // -> 2
+    const versionId = dataOf<{ id: string }>(uploaded).id;
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/attachments/${versionId}/scan`)
+      .set('Cookie', cookie)
+      .send({ status: 'CLEAN' })
+      .expect(201);
+
+    await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
+    await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
+
+    await act(cookie, created.id, 'SIGN', { expectedVersion: 3 }).expect(403);
+
+    // The refusal left the document where it was, so the Director can still take it from here.
+    await act(await directorLogin(), created.id, 'SIGN', { expectedVersion: 3 }).expect(201);
   });
 
   it('blocks release when a newer unsigned version supersedes the signed one', async () => {
@@ -248,7 +291,7 @@ describe('REST /api/v1 document attachments', () => {
 
     await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
     await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
-    await act(cookie, created.id, 'SIGN', { expectedVersion: 3 }).expect(201); // -> 4, signs v1
+    await act(await directorLogin(), created.id, 'SIGN', { expectedVersion: 3 }).expect(201); // -> 4, signs v1
 
     // A second version of the same attachment supersedes the signed one and resets clean-state.
     await uploadFile(cookie, created.id, PDF, 'v2.pdf', 'application/pdf', attachmentId).expect(
@@ -346,7 +389,7 @@ describe('REST /api/v1 document attachments', () => {
 
     await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
     await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
-    await act(cookie, created.id, 'SIGN', { expectedVersion: 3 }).expect(201); // -> 4
+    await act(await directorLogin(), created.id, 'SIGN', { expectedVersion: 3 }).expect(201); // -> 4
     await act(cookie, created.id, 'PREPARE_RELEASE', { expectedVersion: 4 }).expect(201); // -> 5
 
     const blocked = await act(cookie, created.id, 'RELEASE', {

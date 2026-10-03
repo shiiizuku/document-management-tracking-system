@@ -10,7 +10,14 @@ import { capabilitiesByRole } from '../src/modules/authorization/role-capabiliti
 
 const service = new AuthorizationService();
 
-const ROLES: Role[] = ['ADMINISTRATOR', 'RECORDS_STAFF', 'DIVISION_HEAD', 'STAFF_MEMBER', 'VIEWER'];
+const ROLES: Role[] = [
+  'ADMINISTRATOR',
+  'RECORDS_STAFF',
+  'DIRECTOR',
+  'DIVISION_HEAD',
+  'STAFF_MEMBER',
+  'VIEWER',
+];
 
 const actor = (role: Role, overrides: Partial<AuthorizationActor> = {}): AuthorizationActor => ({
   id: 'actor-1',
@@ -72,6 +79,19 @@ describe('AuthorizationService matrix', () => {
 
     const crossDivisionHead = actor('DIVISION_HEAD', { divisionId: 'division-b' });
     expect(service.can(crossDivisionHead, 'user:read', targetUser)).toBe(false);
+  });
+
+  /*
+   * The Director reads every *document* but no extra *people*. Open question from the slice-3
+   * plan, settled here: the timeline and signature panels resolve actor names through a join
+   * inside the scoped document query (`documents.repository.ts`), not through `/users`, so the
+   * Director never needs `user:read` to see who signed what. Pinned as a test because the
+   * tempting fix for a missing name is to widen this policy instead.
+   */
+  it('does not widen people-reading for the director', () => {
+    const director = actor('DIRECTOR', { divisionId: 'division-ord', sectionId: null });
+    expect(service.can(director, 'user:read', targetUser)).toBe(false);
+    expect(service.can(director, 'user:list', null)).toBe(false);
   });
 
   it('refuses to deactivate oneself even as an administrator', () => {
