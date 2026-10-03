@@ -9,6 +9,11 @@ are now ticked where they were ticked, and the pre-rebuild filenames some ticks 
 This document is both a **status report** (what is real today) and a **working backlog**
 (what to build next), sized for short daily sessions.
 
+> **Ordering the remainder:** the nine open boxes and four policy gaps left after the 2026-10-03
+> reconciliation are sequenced, with their dependencies, in
+> [`phase-7-sequencing.md`](phase-7-sequencing.md). Read that before picking a box — three of them
+> have prerequisites that are not obvious from the box text.
+
 ## How to use this backlog
 
 - Each `- [ ]` box is scoped to roughly **one ~2-hour session**. Tick it when the _Done-when_
