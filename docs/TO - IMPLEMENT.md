@@ -315,6 +315,126 @@ Two notes for the next session:
   `feat/director-role`; verified by stashing. Worth its own look.
 
 
+### Slice 5 plan — Reference Documents
+
+Planned 2026-10-03 for the next session. Implements decisions 165–167. The join table is half an
+hour's work; **decision 166 is the slice** — "a reference the reader may not read is
+indistinguishable from one that does not exist" is a statement about error messages and payload
+shapes, and it is broken by the obvious implementation of every endpoint below.
+
+**Three things are already called "reference", and this is a fourth.** `documents.reference_number`
+is the organization's identifier for an *outgoing* document; the sender's reference number is free
+text on an *incoming* one; both are strings. A Reference Document is a **relationship**
+(`CONTEXT.md` glossary). Nothing in this slice may be named `reference` unqualified — and SQL
+settles it anyway, since `REFERENCES` is a reserved word and a column of that name would need
+quoting everywhere. Use `document_references` for the table, and in payloads name the two
+directions for what they are: `referencedDocumentIds` on the outgoing side, `replyDocumentIds` on
+the incoming one.
+
+**The relation is directional and that buys a guarantee.** An outgoing document names incoming
+documents; the inverse is read from the incoming side as its replies (decision 165). Enforcing
+direction therefore makes cycles unrepresentable — an incoming document can never be the naming
+side — so no cycle check, depth limit or recursive guard is needed anywhere. Say so in the schema
+comment, or someone will add one later for safety.
+
+**Steps, in order**
+
+1. **Migration `0008` and the table.** `document_references`:
+   `outgoing_document_id` / `incoming_document_id` (both FK to `documents`, both `NOT NULL`),
+   `created_by_id`, `created_at`. Composite unique on the pair — that is what makes linking
+   idempotent rather than requiring a read-before-write — plus an index on
+   `incoming_document_id` for the reverse read, which is the half a composite key does not serve.
+   Direction (`outgoing` is `OUTGOING`, `incoming` is `INCOMING`) cannot be a column constraint
+   without a trigger, so it is a service-level check with a schema comment saying where the rule
+   actually lives. A `CHECK (outgoing_document_id <> incoming_document_id)` is still worth having:
+   it costs nothing and self-reference is the one malformed row the direction rule would not catch
+   if the direction check were ever bypassed.
+2. **Contracts.** `linkReferenceDocumentSchema` = `{ incomingDocumentId: z.uuid() }`. Deliberately
+   one id per call rather than a set: a batch endpoint has to decide what happens when three ids
+   are valid and the fourth is unreadable, and under decision 166 every answer to that leaks —
+   partial success tells the caller which id was the bad one. One id per call, each with the same
+   indistinguishable 404, has no such seam. The UI loops.
+3. **Read scope, both directions.** `getDocument` gains `referencedDocuments` (outgoing side) and
+   `replyDocuments` (incoming side), each a list of summaries — tracking number, title, direction,
+   status, `createdAt` — resolved in **one** scoped query per direction: `inArray` over the joined
+   ids, `and(isNull(documents.deletedAt), documentScopeFor(actor))`. Not a loop of
+   `findReadableById`, both for the round trips and because a loop invites a
+   "`null` for the ones you can't see" placeholder, which is exactly the leak decision 166
+   forbids. **A reference the reader cannot read is absent, not nulled, not counted.** Two readers
+   seeing different lengths for the same document is the intended behaviour, not a bug to
+   reconcile.
+4. **Then the write path, which is where the leak actually happens.** `POST
+   /documents/:id/references` must return the *same* `404 Document not found` for an
+   `incomingDocumentId` that does not exist, is soft-deleted, is confidential and the author is not
+   cleared, or sits outside the author's scope. A `403` on the last of those — the natural thing to
+   write, and what the capability helpers would give you — turns the endpoint into an existence
+   oracle: it answers "this id is real and you may not see it", which is the one thing the decision
+   says must be unanswerable. So the referenced document is loaded with
+   `requireReadableDocument`, whose miss is already a 404, and no capability check is run against
+   it at all. The author's own `DOCUMENT_EDIT` on the *outgoing* document is the authorization;
+   readability of the target is a precondition, not a permission.
+5. **`DELETE /documents/:id/references/:incomingDocumentId`** has the same shape and the same trap:
+   deleting a link whose target you cannot read must 404 identically to deleting a link that was
+   never there. The delete is therefore `DELETE … WHERE` both ids match **and** the target is
+   readable, and a zero-row result is a 404 — not a lookup followed by a permission check.
+6. **Freeze and capability — decision 178.** Linking is gated by `requireEditableDocument` on the
+   outgoing document, which already refuses `RELEASED` and `ARCHIVED` and already enforces
+   `DOCUMENT_EDIT`, so the reference set is **immutable once the letter goes out**: a reference
+   added afterwards would rewrite the record of a document already sent. Note the consequence the
+   decision carries — the UI must offer linking before `PREPARE_RELEASE`, because after it there is
+   no path at all.
+7. **Audit, no version bump — decision 179.** `document.reference-linked` /
+   `document.reference-unlinked` audit and outbox rows in one transaction, per the global
+   convention. No `expectedVersion` and no bump to `documents.version`: nothing on the document row
+   changes, the unique pair makes the write idempotent, and bumping would invalidate every open form
+   on a document because someone attached a reply to it. Same reasoning as `ACCEPT`, which stamps a
+   route row and leaves the document untouched. The insert is `ON CONFLICT DO NOTHING` returning
+   whether a row appeared, so a double submit is a quiet success rather than a 409 — and so the
+   audit trail does not grow a second identical event.
+
+**Deliberately out of scope**
+
+- **Decision 167's modal** — the referenced record and its attachments with inline preview. That is
+  slice 6, and it needs no new API: `/documents/:id` and `/documents/:id/attachments` are both
+  already scoped through `requireReadableDocument`, so a reference the reader may open resolves
+  through the endpoints that exist. Confirmed rather than assumed, because "the modal needs its own
+  endpoint" would be the natural guess.
+- **Any workflow coupling.** The glossary is explicit that linking a reply is *evidence* of
+  compliance and not the act of it — some incoming documents need no reply and some need several.
+  Linking must not trigger, suggest or unblock `COMPLY`, and a test should pin that the status does
+  not move.
+- **References on the routing slip.** The bureau form (decision 171) has no row for them.
+- **Setting references at registration.** `createDocumentSchema` stays untouched. Folding them into
+  the create transaction means the direction check runs against a document that does not exist yet
+  and the first metadata revision has to describe a relation, for no gain: the UI can link straight
+  after creating.
+
+**Tests that will matter**
+
+- **The indistinguishability pair, twice.** Linking a nonexistent id and linking a real id outside
+  the author's scope must produce byte-identical responses; same for the two deletes. Assert the
+  bodies are equal to each other, not merely that both are 404 — the status is the easy half and
+  the message is where the leak reappears.
+- **Confidentiality.** An outgoing document that references a confidential incoming one: a cleared
+  reader sees the reference, an uncleared reader sees a list with one fewer entry and no indication
+  anything was removed.
+- **Both directions through scope**, in `query-scope.int.test.ts`'s idiom: the reply list on the
+  incoming side is filtered by the same predicate as the reference list on the outgoing side, so a
+  reader who may see the letter but not the reply sees no reply.
+- **Direction and self-reference refusals**: outgoing→outgoing, incoming→anything, and a document
+  naming itself.
+- **Idempotence**: linking the same pair twice is one row, one audit event, and not a 409.
+- **The freeze**: linking on a `RELEASED` outgoing document is refused by the existing rule.
+- `in-memory-documents.repository.ts` needs the join and both scoped reads, or the REST suites will
+  disagree with Postgres about which references exist — the same parity obligation slice 4 had.
+
+**Done when:** an outgoing document names two incoming documents and shows both; each of those
+shows the outgoing one as a reply; a reader scoped to only one of them sees exactly one reference
+and cannot tell there is another; naming an unreadable document and naming a nonexistent one are
+indistinguishable in both the link and the unlink path, with a test comparing the two responses;
+linking a reply does not move either document's status; and the reference set is immutable once the
+outgoing document is released.
+
 ---
 
 ## Phase status (updated 2026-10-01)
