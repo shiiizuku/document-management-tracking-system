@@ -1,6 +1,10 @@
 # Implementation status & build backlog
 
-_Last audited: 2026-10-01._
+_Last audited: 2026-10-03._ Every box below was re-checked against the code rather than against
+the previous audit. Where a box and the code disagreed, the code won: boxes M7 had already satisfied
+are now ticked where they were ticked, and the pre-rebuild filenames some ticks cited
+(`registry-controls.tsx`, `metadata-edit-modal.tsx`, `route-modal.tsx`, `notifications-panel.tsx`,
+`reports-view.tsx`) have been replaced with the files that exist.
 
 This document is both a **status report** (what is real today) and a **working backlog**
 (what to build next), sized for short daily sessions.
@@ -15,8 +19,10 @@ This document is both a **status report** (what is real today) and a **working b
   pattern everything else reuses. After that, M1–M5 can interleave; **M6 is continuous**
   (pick from it whenever a slice reaches "verify").
 - A box that spills past one session is a sign it should be split — split it.
-- At ~2 h/day, 5 days/week, the ~70 boxes below are roughly a **6–8 month horizon** (about
-  the 24–30 week program the spec describes, re-expressed as free-time increments).
+- At ~2 h/day, 5 days/week, the ~70 boxes below were roughly a **6–8 month horizon** (about
+  the 24–30 week program the spec describes, re-expressed as free-time increments). As of the
+  2026-10-03 reconciliation **9 boxes are open and 7 partial**, and all but three of them sit in
+  M6 — the programme is now a hardening exercise, not a build-out.
 
 > **A note on the two specs.** `docs/Document-management-tracking-system.md` (30 weeks) and
 > `docs/CONTEXT.md` (25 weeks) both number phases 0–7, but the numbers collide and mean
@@ -69,6 +75,15 @@ holds the capability for.
 **What is left on the frontend is quality, not surface area:** the axe sweep, responsive/browser
 matrix and Playwright E2E that the rebuild plan's decision 8 deferred to Phase 7.
 
+**The core workflow revision landed after that audit.** Decisions 152–175 and ADR-0005/0006/0007 were
+delivered as seven slices, all merged (PRs #83–#88): migration `0005`–`0008`, one status vocabulary in
+`@dts/contracts` with `PENDING` derived rather than stored, the direction-branched workflow matrix,
+the `DIRECTOR` role holding `DOCUMENT_SIGN` (taken from records staff and division heads),
+non-destructive routing with custody on the route row, the Reference Document join table, the detail
+view's right rail and reference modal, and `GET /roles` with a capability panel under every role
+picker. `docs/TO - IMPLEMENT.md` carries the inherited constraints those slices impose on new code —
+read them before adding a list, a report or anything that resolves a reference.
+
 ### Module verdict
 
 | Module                | Today                                    | Gap to pilot                                                        |
@@ -76,9 +91,9 @@ matrix and Playwright E2E that the rebuild plan's decision 8 deferred to Phase 7
 | workflow              | **DONE** (pure FSM, tested)              | Persist transitions to `workflow_events`; transactional version bump |
 | authorization         | **DONE** (pure RBAC/scope, tested)       | Enforce over _persisted_ users/divisions/sections                   |
 | auth / session        | **DONE** (Postgres users, JWT + bcrypt)  | —                                                                   |
-| documents / search    | **Postgres-backed** (Phase 2–3)          | UI **built** (registry list/filters/sort/pagination/search, create, detail+timeline, metadata edit, forward/route, delete/restore, routing slip). Remaining: `EXPLAIN` indexes |
+| documents / search    | **Postgres-backed** (Phase 2–3)          | UI **built** (registry list/filters/sort/pagination/search, create, detail+timeline, metadata edit, forward/route, delete/restore, routing slip). Remaining: the indexes exist (`documents_scope_status_idx`, `documents_created_at_idx`, `document_routes_unaccepted_idx`, `document_references_incoming_idx`); what is missing is an `EXPLAIN` pass over pilot-sized data to confirm they are the right ones |
 | files / versions      | **Postgres metadata + MinIO storage + ClamAV auto-scan** (Phase 4) | UI **built** (upload, scan-status badges, gated download, inline preview of CLEAN PDFs/images). Remaining: — |
-| notifications         | **Postgres in-tx + outbox relay/worker + realtime WS** (Phase 5) | UI **built** (inbox, unread badge, mark-read, live WS updates). Remaining: reconnect/catch-up hardening |
+| notifications         | **Postgres in-tx + outbox relay/worker + realtime WS** (Phase 5) | UI **built** (inbox, unread badge, mark-read, live WS updates). Remaining: reconnect catch-up — the socket reconnects but invalidates nothing on `connect`, so events missed while down wait for the next refetch |
 | reports / print       | **Postgres data + real XLSX/PDF** (Phase 6) | Reports UI **built** (month view + XLSX/PDF export), routing-slip download, audit-trail viewer, scope-aware dashboard. Remaining: — |
 | admin / identity / org| **DONE** (account requests, org CRUD, roles, audit query, profile photos) | Admin & org UI and the request-an-account screen are **built**. Remaining: — |
 
@@ -87,12 +102,12 @@ matrix and Playwright E2E that the rebuild plan's decision 8 deferred to Phase 7
 | Capability                     | Defined in code                                        | Connected to running app? |
 | ------------------------------ | ------------------------------------------------------ | ------------------------- |
 | Postgres + Drizzle             | Full schema (19 tables/7 enums), client, migration, seed | **Yes for identity + documents** — `DatabaseModule` provides the `DATABASE` token; identity and the document aggregate read/write Postgres. Attachment bytes/notifications not yet migrated |
-| Object storage (MinIO/S3)      | `StoragePort` + `MinioStorageAdapter` + `objectKey` columns | **Yes** — the running app writes bytes to MinIO (`minio` SDK); tests override the port with the in-memory adapter. _(Local caveat: the currently-running compose container is the license-gated AIStor image and denies S3 — `docker compose up --build` picks up the vendored AGPL build.)_ |
+| Object storage (MinIO/S3)      | `StoragePort` + `MinioStorageAdapter` + `objectKey` columns | **Yes** — the running app writes bytes to MinIO (`minio` SDK); tests override the port with the in-memory adapter. _(Local caveat: compose builds the vendored AGPL MinIO from `./minio` as `dts-minio:from-source`; a container still running the license-gated AIStor image will deny every S3 operation, so rebuild with `docker compose up --build`.)_ |
 | BullMQ / Redis                 | `outbox-queue.ts` (queue + worker factories)           | **Yes** — the worker runs a relay + BullMQ consumer against Redis; tested in CI's integration job |
 | Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay + consumer** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published; the consumer fans out realtime notifications |
 | Antivirus scan                 | `ClamAvScanner` (INSTREAM) + scan consumer + `POST …/scan` override | **Yes** — the worker scans each upload via clamd and records the verdict; manual endpoint remains for re-scans |
 | WebSockets                     | Socket.IO `NotificationsGateway` + Redis `RealtimeBridge` | **Yes** — authenticated per-user realtime delivery; worker publishes, each API instance relays |
-| Rate limiting                  | `ThrottlerModule`                                      | **Partial** — enforced on auth + account-request endpoints; not yet on all mutations |
+| Rate limiting                  | `ThrottlerModule`                                      | **Yes, globally** — `ThrottlerGuard` is an `APP_GUARD` with a 120/min default on every route, plus tight buckets on login (5/min) and account-request submission (3/min). Remaining: dedicated buckets for upload and report export |
 | Config validation              | `config/environment.ts` + `ConfigModule.forRoot`        | **Yes** — validated at boot, fails fast |
 | Structured logging + correlation IDs | `StructuredLogger`, `CorrelationIdMiddleware`     | **Yes** — global logger + per-request IDs |
 | JWT auth                       | `JwtModule` + `AuthGuard`                              | **Yes** (stateless)       |
@@ -135,9 +150,13 @@ has UI). Everything after this reuses the module + repository shape you establis
 
 **Audit / verify**
 
-- [ ] (2h) Reconcile the three `seed.ts` users with the capabilities/divisions the app expects,
-      and delete the in-memory user seed from the `DtsApplicationService` constructor. _Done-when:_
-      no user state remains in any `Map` and the authorization tests still pass.
+- [x] (2h) Reconcile the `seed.ts` users with the capabilities/divisions the app expects, and
+      delete the in-memory user seed from the `DtsApplicationService` constructor. _Done-when:_
+      no user state remains in any `Map` and the authorization tests still pass. ✓ — four users are
+      seeded against real placements (`admin` unplaced, `records` in RECORDS/INTAKE, `director` in
+      the ORD with no section, `staff` in PILOT/GENERAL) and `DtsApplicationService` no longer
+      exists anywhere in the tree. _(Decision 152's other half — the Records Unit as a Section
+      inside the ORD — is tracked under M6 "Audit / policy", not here.)_
 
 ---
 
@@ -183,12 +202,16 @@ Depends on Slice 0's `UsersRepository`.
 
 **Frontend**
 
-- [ ] (2h) "Request an account" screen on the login page wired to the account-request endpoint.
-      _Done-when:_ an unauthenticated visitor can submit a request.
-- [ ] (2h) Admin console page: pending-request queue with approve/reject. _Done-when:_ an admin
-      approves a request from the UI.
-- [ ] (2h) Admin console: user table + role assignment + division/section management.
-      _Done-when:_ the org is manageable from the UI.
+> Built in M7's F2, which supersedes these three boxes. Ticked here so the module reads true.
+
+- [x] (2h) "Request an account" screen on the login page wired to the account-request endpoint.
+      _Done-when:_ an unauthenticated visitor can submit a request. ✓ (`/request-account`,
+      `features/admin/request-account-form.tsx`)
+- [x] (2h) Admin console page: pending-request queue with approve/reject. _Done-when:_ an admin
+      approves a request from the UI. ✓ (`/admin/requests`, `account-requests-screen.tsx`)
+- [x] (2h) Admin console: user table + role assignment + division/section management.
+      _Done-when:_ the org is manageable from the UI. ✓ (`/admin/users` → `users-screen.tsx` with
+      `role-field.tsx`'s capability panel; `/admin/organization` → `organization-screen.tsx`)
 
 **Connections**
 
@@ -197,13 +220,16 @@ Depends on Slice 0's `UsersRepository`.
 
 **Test**
 
-- [ ] (2h) Integration tests: request → approve → login, plus authz (a non-admin cannot approve).
-      _Done-when:_ green in CI against Postgres.
+- [x] (2h) Integration tests: request → approve → login, plus authz (a non-admin cannot approve).
+      _Done-when:_ green in CI against Postgres. ✓ (`identity.int.test.ts`, "runs the account
+      lifecycle: admin sets up the org, approves a request, the user signs in")
 
 **Audit / verify**
 
-- [ ] (2h) Confirm every new endpoint enforces capability + scope, and that approvals/role changes
-      write to `audit_events`. _Done-when:_ privileged actions appear in the audit trail.
+- [x] (2h) Confirm every new endpoint enforces capability + scope, and that approvals/role changes
+      write to `audit_events`. _Done-when:_ privileged actions appear in the audit trail. ✓ —
+      `identity.int.test.ts` proves auth and admin actions land in a trail only administrators may
+      read, and that the trail filters by user, action and date range.
 
 ---
 
@@ -236,12 +262,13 @@ storage and fills the document-management UI gaps.
 **Frontend**
 
 - [x] (2h) List controls: filters (status/priority/type/direction/division/section), sort, and
-      pagination. ✓ (`registry-controls.tsx` + `pagination.tsx` drive the server query.)
-- [x] (2h) Metadata edit UI with a revision-history view. ✓ (`metadata-edit-modal.tsx`.)
-- [x] (2h) Routing/forwarding UI in the detail panel. ✓ (`route-modal.tsx`; the detail panel's
+      pagination. ✓ (`registry-screen.tsx` + `documents/url-state.ts` drive the server query.)
+- [x] (2h) Metadata edit UI with a revision-history view. ✓ (`metadata-dialog.tsx`.)
+- [x] (2h) Routing/forwarding UI in the detail panel. ✓ (`route-dialog.tsx`; the detail view's
       "Forward" action.)
-- [ ] (2h) Logical deletion + restore UI, guarded by capability. _Done-when:_ delete/restore works
-      from the UI.
+- [x] (2h) Logical deletion + restore UI, guarded by capability. _Done-when:_ delete/restore works
+      from the UI. ✓ (`delete-document-dialog.tsx` + `deleted-documents-dialog.tsx` over
+      `GET /documents/deleted`, gated on `DOCUMENT_DELETE` / `DOCUMENT_RESTORE`.)
 
 **Connections**
 
@@ -251,13 +278,19 @@ storage and fills the document-management UI gaps.
 
 **Test**
 
-- [ ] (2h) Integration flow: create → edit → route → workflow → delete over Postgres, plus a
-      concurrency-conflict case. _Done-when:_ green in CI.
+- [x] (2h) Integration flow: create → edit → route → workflow → delete over Postgres, plus a
+      concurrency-conflict case. _Done-when:_ green in CI. ✓ — `documents.int.test.ts` covers
+      registration, a 12-way concurrent reference allocation, metadata edit with a `409` on a stale
+      edit, non-destructive routing, forwards and shares, the work queue, and soft-delete →
+      restore.
 
 **Audit / verify**
 
-- [ ] (2h) Confirm every mutation writes a timeline + audit row and that cross-division reads are
-      impossible. _Done-when:_ audit coverage complete, no scope leakage.
+- [x] (2h) Confirm every mutation writes a timeline + audit row and that cross-division reads are
+      impossible. _Done-when:_ audit coverage complete, no scope leakage. ✓ — `query-scope.int.test.ts`
+      and `authorization.test.ts` (30 cases, including forwarded sections, copied-in heads, and
+      filtering before pagination and counting) hold the scope line; `documents.int.test.ts` asserts
+      cross-scope documents stay out of both results and totals.
 
 ---
 
@@ -310,8 +343,12 @@ behind it.
 
 **Audit / verify**
 
-- [ ] (2h) Re-verify allow-list, size limit, untrusted-filename handling, and the IDOR guard against
-      the MinIO-backed paths. _Done-when:_ all file-security checks pass on real storage.
+- [~] (2h) Re-verify allow-list, size limit, untrusted-filename handling, and the IDOR guard against
+      the MinIO-backed paths. _Partial:_ `file-api.test.ts` and `files.int.test.ts` cover the
+      allow-list by magic bytes (spoofed media type, macro-enabled `.docm` refused), the empty
+      upload, the fail-closed download, the preview lockdown, and the IDOR guard through a sibling
+      document. _Remaining:_ nothing asserts an over-`UPLOAD_MAX_BYTES` upload is rejected, and the
+      file suites run against the in-memory `StoragePort`, so none of it is yet proven on MinIO.
 
 ---
 
@@ -338,10 +375,13 @@ module makes them durable, event-driven, and live.
 **Frontend**
 
 - [x] (2h) Notifications inbox: render the fetched list (stop discarding it), with relative times
-      and unread styling. ✓ (`notifications-panel.tsx`.)
+      and unread styling. ✓ (`notifications-sheet.tsx`.)
 - [x] (2h) Mark-as-read (single + all) wired to the endpoint; the badge updates. ✓
 - [~] (2h) Live updates over WS/SSE with reconnect + catch-up on focus. _Partial:_ live WS updates
-      work (`use-notifications.ts` + `realtime.ts`); reconnect/catch-up-on-focus hardening remains.
+      work (`features/realtime/use-realtime-sync.ts`). _Remaining:_ Socket.IO reconnects on its own,
+      but the `connect` handler only sets `connected` — it invalidates nothing — so every event that
+      arrived while the socket was down is picked up on the next navigation or refetch rather than on
+      reconnect. One `invalidateNotifications` in that handler is most of the fix.
 
 **Connections**
 
@@ -351,12 +391,17 @@ module makes them durable, event-driven, and live.
 
 **Test**
 
-- [ ] (2h) Tests: outbox delivered exactly once; realtime reconnect/catch-up. _Done-when:_ green.
+- [~] (2h) Tests: outbox delivered exactly once; realtime reconnect/catch-up. _Partial:_
+      `notifications.int.test.ts` proves committed outbox events reach the queue exactly once and a
+      worker consumes them. _Remaining:_ the reconnect/catch-up case, which needs the client fix in
+      the box above before it can be asserted.
 
 **Audit / verify**
 
-- [ ] (2h) Confirm notifications are scope-correct (no cross-division leakage) and the WS handshake
-      is authenticated. _Done-when:_ verified.
+- [x] (2h) Confirm notifications are scope-correct (no cross-division leakage) and the WS handshake
+      is authenticated. _Done-when:_ verified. ✓ — `realtime.int.test.ts` delivers to the recipient's
+      authenticated socket, withholds a notification meant for another user, and rejects a socket
+      that presents no session.
 
 ---
 
@@ -373,30 +418,39 @@ module makes them durable, event-driven, and live.
 **Frontend**
 
 - [x] (2h) Reports page: month picker, on-screen view, and XLSX/PDF download (endpoints already
-      exist). ✓ (`reports-view.tsx`.)
-- [ ] (2h) Routing-slip download from the document detail panel. _Done-when:_ the slip downloads.
-- [ ] (2h) Audit-trail viewer page with filters. _Done-when:_ the audit log is browsable.
-      _(The sidebar "Audit trail" nav button is present but inert.)_
-- [ ] (2h) Dashboard richness: pending-by-division, overdue highlighting, recent-activity feed.
-      _Done-when:_ the richer metrics render. _(Current metric tiles are counted client-side from the
-      loaded page; wire `GET /dashboard/summary` for scope-correct numbers.)_
+      exist). ✓ (`reports-screen.tsx`.)
+- [x] (2h) Routing-slip download from the document detail panel. _Done-when:_ the slip downloads. ✓
+      (`routing-slip-dialog.tsx`; the slip carries the bureau letterhead and the approved seal from
+      `apps/api/assets/mgb-seal.png`.)
+- [x] (2h) Audit-trail viewer page with filters. _Done-when:_ the audit log is browsable. ✓
+      (`/audit` → `audit-screen.tsx`, filters held in the URL by `audit/url-state.ts`.)
+- [x] (2h) Dashboard richness: pending-by-division, overdue highlighting, recent-activity feed.
+      _Done-when:_ the richer metrics render. ✓ (`dashboard-screen.tsx` over
+      `GET /dashboard/summary`; `pendingByDivision` composes the `documentIsPending` predicate, so
+      the tiles are scope-correct rather than counted from the loaded page.)
 
 **Test**
 
-- [ ] (2h) Tests: report math over seeded Postgres, audit-filter correctness, and the
-      spreadsheet-injection guard (`sanitizeSpreadsheetCell`). _Done-when:_ green.
+- [x] (2h) Tests: report math over seeded Postgres, audit-filter correctness, and the
+      spreadsheet-injection guard (`sanitizeSpreadsheetCell`). _Done-when:_ green. ✓ —
+      `monthly-report.test.ts` (report math + the injection guard), `identity.int.test.ts` (audit
+      filtering and pagination), `routing-slip.test.ts`, and `documents.int.test.ts`'s
+      cross-division assignment counted on the assignee's monthly report.
 
 **Audit / verify**
 
-- [ ] (2h) Confirm report/audit access is gated by `REPORT_VIEW` / `AUDIT_VIEW`. _Done-when:_
-      unauthorized callers are blocked.
+- [x] (2h) Confirm report/audit access is gated by `REPORT_VIEW` / `AUDIT_VIEW`. _Done-when:_
+      unauthorized callers are blocked. ✓ — `documents.service.ts` refuses the report without
+      `REPORT_VIEW`; `identity.policies.ts` gates the audit list on `AUDIT_VIEW`, asserted by
+      `identity.int.test.ts` and `role-capabilities.test.ts`.
 
 ---
 
 ## M7 · Frontend rebuild on shadcn/ui
 
-Design, decisions and module seams: `docs/frontend-rebuild-plan.md`. This module supersedes the
-unticked _Frontend_ boxes in M1–M5: build those surfaces here, not in `DtsApp`. Order is fixed:
+Design, decisions and module seams: `docs/frontend-rebuild-plan.md`. This module **superseded** the
+_Frontend_ boxes in M1–M5 — those surfaces were built here, not in `DtsApp`, which is why the boxes
+up there are ticked with files under `apps/web/src/features/`. Order was fixed:
 **F0 → F1 → F2**.
 
 **F0 — Foundation**
@@ -478,8 +532,12 @@ Pull from this list whenever a slice above reaches "verify."
 **Backend / infra**
 
 - [~] (2h) `ConfigModule` env validation across all services + `ThrottlerModule` rate limiting on
-      auth and mutations. _Partial:_ env validated at boot; throttler enforced on auth + account-request
-      endpoints. _Remaining:_ extend rate limits to the mutation endpoints.
+      auth and mutations. _Partial:_ env validated at boot. `ThrottlerGuard` is an `APP_GUARD`, so a
+      default bucket of **120 requests/minute covers every route**, with tight per-route buckets on
+      login (5/min) and account-request submission (3/min); `rate-limit.test.ts` proves the login cap
+      returns `429` and that the tight window does not leak onto ordinary authenticated routes.
+      _Remaining:_ the expensive mutations — attachment upload and report export — still sit on the
+      120/min default and want buckets of their own.
 - [x] (2h) Readiness probes every critical dependency, split by process so each probes its own
       request path: the API's `GET /health/ready` (and `/ready`) probes **Postgres + object storage**,
       and the worker's `/ready` probes **Postgres + Redis**. Each probe runs under a 2s timeout and
@@ -487,13 +545,20 @@ Pull from this list whenever a slice above reaches "verify."
 
 **Test / evidence**
 
-- [ ] (2h) Postgres + MinIO integration harness (compose or testcontainers) running in CI.
-      _Done-when:_ CI spins up the real dependencies.
+- [~] (2h) Postgres + MinIO integration harness (compose or testcontainers) running in CI.
+      _Partial:_ CI's `integration (postgres)` job provisions **Postgres + Redis** as services and runs
+      `test:integration`. _Remaining:_ **MinIO and ClamAV are not in CI** — the file suites override
+      `StoragePort` with the in-memory adapter, so no CI job exercises real object storage or a real
+      scanner. This box blocks the M3 EICAR test and the M3 audit box below it.
 - [ ] (2h) Playwright E2E: login → register document → upload → workflow → release. _Done-when:_
       the E2E flow is green in CI.
 - [ ] (2h) Accessibility automation (axe) on the key screens. _Done-when:_ no critical violations.
-- [ ] (2h) Security tests: authorization matrix, IDOR, upload abuse, rate limits. _Done-when:_ the
-      suite is green.
+- [~] (2h) Security tests: authorization matrix, IDOR, upload abuse, rate limits. _Partial:_ the
+      authorization matrix (`authorization.test.ts`, 30 cases incl. the confidentiality gate and the
+      Director's office-wide read), IDOR (`file-api.test.ts`, `files.int.test.ts`), media-type
+      spoofing and macro refusal, CSRF (`csrf.guard.test.ts`) and rate limits
+      (`rate-limit.test.ts`) are all covered. _Remaining:_ the oversize upload, a dependency and
+      container scan, a secure-headers/CORS-allowlist assertion, and a log-redaction check.
 - [ ] (2h) Representative-load test (search + upload + workflow). _Done-when:_ latency/throughput
       are recorded against a target.
 - [ ] (2h) Backup/restore rehearsal for coordinated Postgres + MinIO using `scripts/backup.sh` and
@@ -501,11 +566,32 @@ Pull from this list whenever a slice above reaches "verify."
 
 **Audit / policy**
 
-- [ ] (2h) Resolve the open policy decisions — records policy, branding, reference format, SLA
-      calendar, signature meaning, file allow-list/limits, retention — and encode each (no
-      hard-coded placeholder heuristics). _Done-when:_ every decision is made and reflected in code.
-- [ ] (2h) Configure audit retention (currently preserve-by-default, dev only, no purge).
-      _Done-when:_ retention matches the agreed policy.
+- [~] (2h) Resolve the open policy decisions and encode each (no hard-coded placeholder heuristics).
+      _Partial:_ all 14 rows of `policy-register.md` now carry a decision, and records policy (P-01),
+      reference format (P-02), **branding (P-03 — the letterhead is transcribed verbatim and the
+      approved seal ships at `apps/api/assets/mgb-seal.png`, read once by `ReportExportService`)**,
+      the SLA calendar (P-04), signature meaning (P-05), the allow-list and 25 MB limit (P-06),
+      scanner posture (P-07), disposal (P-09), session timeout (P-10), provisioning (P-11),
+      cross-division visibility (P-12) and PII-in-logs (P-14) are each reflected in code.
+      _Remaining, and each a real code change:_
+      - **Audit retention (P-08)** — 5-year retain-then-relocate is decided; the code retains
+        everything in the primary database with no window and no relocation path. Nothing to decide,
+        only to build.
+      - **Release methods (decision 27 as amended)** — still the `release_method` pgEnum
+        (`MAILED`, `EMAILED`, `PICKED_UP`, `DELIVERED`). The decision calls for configurable rows
+        seeded Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered, so LBC and JRS are
+        currently unrepresentable.
+      - **Decision 152's other half** — the Records Unit should be a Section inside the ORD, not the
+        standalone `RECORDS` division `seed.ts` still creates. Until it lands the seeded records
+        officer sits outside the ORD and its drafts take the ordinary `FOR_INITIAL` path, so
+        ADR-0007's exemption is reachable only by hand.
+      - **Director account** — `director@dts.local` carries the shared development password.
+        ADR-0006 makes a real Regional Director account a deployment-ordering constraint, because
+        release is gated on a signature nobody else may make.
+      - **Parallel-route completion semantics** — still deferred as an open policy question.
+- [ ] (2h) Runbooks for the remaining failure modes. _Done-when:_ each has a rehearsed runbook.
+      _(`docs/runbooks/backup-restore.md` exists; incident response, scanner-down and Redis-loss do
+      not.)_
 
 ---
 
