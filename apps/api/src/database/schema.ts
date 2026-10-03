@@ -16,12 +16,16 @@ import {
 } from 'drizzle-orm/pg-core';
 import { customBytea, identityColumns, timestampColumns, versionColumn } from './schema-helpers.js';
 
+// Written out by hand rather than derived from `roleSchema`, unlike the status enum below: the
+// order here is the order values were added to the Postgres type, and `ALTER TYPE ... ADD VALUE`
+// appends. Keep the list in step with `roleSchema` in `@dts/contracts`.
 export const roleEnum = pgEnum('role', [
   'ADMINISTRATOR',
   'RECORDS_STAFF',
   'DIVISION_HEAD',
   'STAFF_MEMBER',
   'VIEWER',
+  'DIRECTOR',
 ]);
 export const directionEnum = pgEnum('document_direction', ['INCOMING', 'OUTGOING']);
 export const priorityEnum = pgEnum('document_priority', ['LOW', 'NORMAL', 'HIGH', 'URGENT']);

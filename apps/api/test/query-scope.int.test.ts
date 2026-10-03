@@ -150,6 +150,22 @@ describe('documentScopeFor / scopeToActor against a real database', () => {
     ).toContain(DOC_A_CONFIDENTIAL);
   });
 
+  /*
+   * The Director's branch, which the in-memory policy asserts separately. Worth its own case
+   * against real Postgres because this is the first role that is placed in a division *and* reads
+   * the whole office: a scope predicate that leaned on `divisionId === null` to mean "unplaced"
+   * would quietly narrow the Director to its own division, and only SQL would show it.
+   */
+  it('gives the director every division but still withholds confidential rows', async () => {
+    const director = actor({ role: 'DIRECTOR', divisionId: DIV_B });
+    expect(await visibleTo(director)).toEqual(
+      [DOC_A_SECTION, DOC_A_DIVISION, DOC_B, DOC_ASSIGNED, DOC_SHARED].sort(),
+    );
+    expect(await visibleTo({ ...director, canAccessConfidential: true })).toContain(
+      DOC_A_CONFIDENTIAL,
+    );
+  });
+
   it('limits a division head to their own division', async () => {
     expect(await visibleTo(actor({ role: 'DIVISION_HEAD', divisionId: DIV_A }))).toEqual(
       [DOC_A_SECTION, DOC_A_DIVISION, DOC_ASSIGNED, DOC_SHARED].sort(),

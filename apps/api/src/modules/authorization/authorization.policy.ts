@@ -1,4 +1,23 @@
-export type Role = 'ADMINISTRATOR' | 'RECORDS_STAFF' | 'DIVISION_HEAD' | 'STAFF_MEMBER' | 'VIEWER';
+export type Role =
+  'ADMINISTRATOR' | 'RECORDS_STAFF' | 'DIRECTOR' | 'DIVISION_HEAD' | 'STAFF_MEMBER' | 'VIEWER';
+
+/**
+ * The roles whose read scope is the whole office rather than their placement.
+ *
+ * `DIRECTOR` is the first of these that is *placed* — it sits in the ORD (ADR-0006) — so the
+ * office-wide branch can no longer be read as "the roles with no division". It must still review
+ * any division's work in order to sign it. Records staff and the Director are not interchangeable
+ * even though they share this branch: records staff see everything and sign nothing, the Director
+ * sees everything and signs.
+ *
+ * Exported because `documentScopeFor` in `query-scope.ts` is the SQL twin of `canRead` and must
+ * branch on the same set; the two drifting apart is the failure this constant exists to prevent.
+ */
+export const OFFICE_WIDE_READ_ROLES: ReadonlySet<Role> = new Set<Role>([
+  'ADMINISTRATOR',
+  'RECORDS_STAFF',
+  'DIRECTOR',
+]);
 
 export interface AuthorizationActor {
   id: string;
@@ -24,7 +43,9 @@ export class AuthorizationPolicy {
       return false;
     }
 
-    if (actor.role === 'ADMINISTRATOR' || actor.role === 'RECORDS_STAFF') {
+    // The confidentiality gate above has already run, and it is the only thing standing between
+    // an office-wide reader and a restricted document.
+    if (OFFICE_WIDE_READ_ROLES.has(actor.role)) {
       return true;
     }
 

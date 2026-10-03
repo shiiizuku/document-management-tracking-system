@@ -9,18 +9,18 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 ## Core workflow revision (2026-10-02)
 
 The revision recorded in `CONTEXT.md` (decisions 152–175) and ADR-0005/0006/0007 is being delivered
-as six dependency-ordered slices. **Slices 1–2 are done**; the rest are not started.
+as six dependency-ordered slices. **Slices 1–3 are done**; the rest are not started.
 
 | Slice | Work | Status |
 | ----- | ---- | ------ |
 | 1 | Migration `0005` (custody columns on `document_routes`, derived `PENDING`, enum replacement) + one status vocabulary in `@dts/contracts` | ✅ done |
 | 2 | Workflow engine: `FOR_INITIAL`, `COMPLIED`, direction-branched matrix and `RESTORE`, re-entrant `ACCEPT` | ✅ done |
-| 3 | `DIRECTOR` role; remove `DOCUMENT_SIGN` from `RECORDS_STAFF` and `DIVISION_HEAD` | ⬜ not started |
+| 3 | `DIRECTOR` role; remove `DOCUMENT_SIGN` from `RECORDS_STAFF` and `DIVISION_HEAD` | ✅ done |
 | 4 | Non-destructive routing: `relocate` must stop overwriting `documents.division_id`; scope resolves through accepted routes; multi-recipient forwards write `for_information` rows | ⬜ not started |
 | 5 | Reference Document join table (decisions 165–167) | ⬜ not started |
 | 6 | UI: detail-view right rail, reference-document modal, inline routing slip, list-view control, Inter | ⬜ not started |
 
-**What slices 1–2 changed that later slices inherit**
+**What slices 1–3 changed that later slices inherit**
 
 - `documents.status` no longer holds `PENDING`; the enum type was replaced. `PENDING` is derived
   from unaccepted `document_routes` rows through one predicate, `documentIsPending` in
@@ -36,15 +36,23 @@ as six dependency-ordered slices. **Slices 1–2 are done**; the rest are not st
 - `ACCEPT` does not bump `documents.version`; it stamps a route row under an
   `accepted_at IS NULL` conditional update. Double acceptance is `422 ROUTE_ALREADY_ACCEPTED`, not
   a version conflict.
-- Slice 3 is still owed: `DOCUMENT_SIGN` remains on `RECORDS_STAFF` and `DIVISION_HEAD`, because
-  removing it before the `DIRECTOR` role exists would leave outgoing documents unsignable.
+- `DOCUMENT_SIGN` is held by `DIRECTOR` and, as break-glass only, `ADMINISTRATOR`. Records staff
+  and division heads no longer sign. Any new test or fixture that drives the outgoing path past
+  `FOR_SIGNATURE` needs a Director actor for that one step.
+- Office-wide read is now a named set, `OFFICE_WIDE_READ_ROLES` in `authorization.policy.ts`, shared
+  by `canRead` and its SQL twin `documentScopeFor`. `DIRECTOR` is in it *and* is placed in a
+  division, so no scope code may infer "reads everything" from an absent `divisionId` any more.
 
 **Known gaps carried forward**
 
-- The seed (`apps/api/src/database/seed.ts`) still creates `RECORDS` / `PILOT` divisions. Decision
-  152 makes the ORD a Division with the Records Unit as a Section inside it, coded `ORD`; until
-  that lands, **no division is the ORD**, so every outgoing draft requires a division head's
-  initial. Safe but stricter than intended — see ADR-0007.
+- The seed now creates an `ORD` division alongside `RECORDS` / `PILOT`, so a division *is* the ORD
+  and ADR-0007's exemption is reachable. The other half of decision 152 is still owed: the Records
+  Unit should be a Section **inside** the ORD rather than its own `RECORDS` division. Until that
+  lands the seeded records officer sits outside the ORD, so drafts it registers take the ordinary
+  `FOR_INITIAL` path.
+- `director@dts.local` is seeded with a development password. Pilot configuration must replace it
+  with a real account for the Regional Director — ADR-0006 makes the existence of that account a
+  deployment-ordering constraint, because release is gated on a signature nobody else may make.
 - Release methods are still a database enum. Decision 27 as amended calls for configurable rows
   seeded with Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered.
 
@@ -116,6 +124,20 @@ the implicit rule in both halves of the authorization layer, which is the real w
 **Done when:** a Director account signs an outgoing document end to end; records staff and division
 heads are refused `SIGN` with a 403 and a negative test proves it; the authorization matrix passes
 for six roles; and the Director can read another division's document but not a confidential one.
+
+**Outcome (2026-10-03).** All six steps landed; migration `0006_director_role.sql` adds the enum
+value. Two things in the plan above turned out not to need code:
+
+- **Step 2 was already satisfied.** All four copies of the membership predicate are written as
+  "every role except `ADMINISTRATOR` and `RECORDS_STAFF` needs a division; `STAFF_MEMBER` and
+  `VIEWER` need a section", which gives `DIRECTOR` exactly the intended answer — division yes,
+  section no — with no clause added. Only the comments changed, to say that this is deliberate
+  rather than accidental.
+- **Step 7 is settled: the Director does not need `user:read`.** The timeline and signature panels
+  resolve actor names through a join inside the scoped document query
+  (`documents.repository.ts`), not through `/users`, so office-wide document read is enough.
+  `authorization.service.test.ts` pins the refusal so the next missing-name bug is not "fixed" by
+  widening the people policy.
 
 ---
 
