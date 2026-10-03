@@ -821,26 +821,28 @@ and P-11 reads the same in the register and in the code.
 
 ---
 
-## Phase status (updated 2026-10-01)
+## Phase status (reconciled against the code 2026-10-03)
 
 | Phase                              | Backend            | Frontend      | Notes                                                                 |
 | ---------------------------------- | ------------------ | ------------- | --------------------------------------------------------------------- |
 | 0 — Foundations                    | ✅ done            | n/a           | Cold-boot + IT sign-off are external gates (see `policy-register.md`) |
-| 1 — Identity & Organization        | ✅ done            | ⬜ not started | Backend merged in PR #39. Frontend still owes: admin/org console, request-an-account screen |
-| 2 — Document registry              | ✅ done            | ◑ mostly done | Aggregate Postgres-backed, `DtsApplicationService` retired (PR #40). UI: registry list/filters/sort/pagination/search, create+org picker, detail+timeline, metadata edit, forward/route all built (PRs #51–#56); delete/restore UI remains |
-| 3 — Workflow & routing             | ◑ mostly done      | ◑ mostly done | Transitions, assignment, routing/forwarding, sharing, work queue persisted (PR #41); parallel-route completion semantics deferred (open policy). UI: allowed-actions bar + forward/route built; work-queue view remains |
-| 4 — Files & scanning               | ✅ done            | ◑ mostly done | `file_records`/`file_versions` + `signature_events` persisted; MinIO adapter + ClamAV auto-scan worker wired. UI: upload + scan badges + gated download built (PR #53); inline PDF/image preview remains |
-| 5 — Outbox, notifications, dashboard | ✅ done          | ◑ partial     | Notifications persisted in the domain tx; outbox **relay + BullMQ worker** on real Redis; realtime WS gateway live. UI: notifications inbox + live updates built (PR #50); scope-aware dashboard (pending-by-division, overdue, recent activity) still owed |
-| 6 — Reports, routing slip, audit UI | ✅ done            | ◑ partial     | Monthly report (JSON/PDF/XLSX), routing-slip PDF, audit query all Postgres-backed and audited (`feat/phase-6-reports-audit`). UI: reports view + XLSX/PDF export built (PR #54); routing-slip download control + audit-trail viewer remain |
-| 7 — Hardening & readiness          | ⬜ not started     | ⬜ not started |                                                                       |
+| 1 — Identity & Organization        | ✅ done            | ✅ done        | Backend merged in PR #39. UI: `/request-account`, `/admin/requests`, `/admin/users`, `/admin/organization`, all built in M7's F2 |
+| 2 — Document registry              | ✅ done            | ✅ done        | Aggregate Postgres-backed, `DtsApplicationService` deleted (PR #40 — confirmed absent from the tree). UI: registry list/filters/sort/pagination/search, create+org picker, detail+timeline, metadata edit, forward/route, and delete/restore (`deleted-documents-dialog.tsx` over `GET /documents/deleted`) |
+| 3 — Workflow & routing             | ◑ mostly done      | ✅ done        | Transitions, assignment, routing/forwarding, sharing, work queue persisted (PR #41). **Parallel-route completion semantics remain deferred as an open policy** — the only gap in this row. UI: allowed-actions bar, forward/route, `/my-work` work queue |
+| 4 — Files & scanning               | ✅ done            | ✅ done        | `file_records`/`file_versions` + `signature_events` persisted; MinIO adapter + ClamAV auto-scan worker wired. UI: upload, scan badges, gated download, inline PDF/image preview (`preview-dialog.tsx`) |
+| 5 — Outbox, notifications, dashboard | ✅ done          | ◑ partial     | Notifications persisted in the domain tx; outbox **relay + BullMQ worker** on real Redis; realtime WS gateway live. UI: inbox, live updates, and the scope-aware dashboard over `GET /dashboard/summary`. Remaining: `use-realtime-sync.ts` invalidates nothing in its `connect` handler, so a reconnect does not catch up on what was missed |
+| 6 — Reports, routing slip, audit UI | ✅ done            | ✅ done        | Monthly report (JSON/PDF/XLSX), routing-slip PDF with the bureau letterhead and the approved seal, audit query — all Postgres-backed. UI: reports view + export, `routing-slip-dialog.tsx`, and the `/audit` viewer with URL-held filters |
+| Core workflow revision (152–175)   | ✅ done            | ✅ done        | All seven slices merged, PRs #83–#88. The section at the top of this file states what later code inherits |
+| 7 — Hardening & readiness          | ⬜ not started     | ⬜ not started | Effectively the whole remaining programme; tracked box by box as M6 in `IMPLEMENTATION_STATUS.md` |
 
 Legend: ✅ done · ◑ partial · ⏳ deferred (planned for a later phase) · ⬜ not started. **The frontend
-was deferred backend-first** by an explicit decision (`docs/phase-1-completion-report.md`); as of
-2026-10-01 the operational workspace UI has been built out (PRs #50–#56 — notifications, registry
-controls, org picker, attachments, reports, metadata edit, routing). The remaining UI surfaces are the
-**admin/organization console**, the **request-an-account screen**, the **audit-trail viewer**, the
-**scope-aware dashboard**, **delete/restore controls**, and **inline file preview** — plus all of
-Phase 7.
+was deferred backend-first** by an explicit decision (`docs/phase-1-completion-report.md`), and that
+deferral is now closed: every surface the MVP boundary names is built and routed (PRs #50–#56, rebuilt
+on shadcn/ui in #64–#66, extended by #84 and #88). **No UI surface is outstanding** — the list this
+table used to carry (admin/organization console, request-an-account, audit viewer, scope-aware
+dashboard, delete/restore, inline preview) has all shipped. What remains is Phase 7 quality work — the
+axe sweep, the responsive/browser matrix, Playwright E2E, a load test, the backup/restore rehearsal —
+plus the five encoded-policy gaps listed under M6 "Audit / policy" in `IMPLEMENTATION_STATUS.md`.
 
 ---
 
