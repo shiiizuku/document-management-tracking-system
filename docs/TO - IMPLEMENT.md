@@ -9,8 +9,8 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 ## Core workflow revision (2026-10-02)
 
 The revision recorded in `CONTEXT.md` (decisions 152–175) and ADR-0005/0006/0007 is being delivered
-as six dependency-ordered slices. **All six are done.** Decision 175 is carried forward, deliberately:
-it reads like UI but it is a policy change, and it is recorded below.
+as six dependency-ordered slices. **All six are done.** Decision 175 was carried forward, deliberately:
+it reads like UI but it is a policy change, so it is slice 7, planned below.
 
 | Slice | Work | Status |
 | ----- | ---- | ------ |
@@ -20,6 +20,7 @@ it reads like UI but it is a policy change, and it is recorded below.
 | 4 | Non-destructive routing: `relocate` must stop overwriting `documents.division_id`; scope resolves through accepted routes; multi-recipient forwards write `for_information` rows | ✅ done |
 | 5 | Reference Document join table (decisions 165–167) | ✅ done |
 | 6 | UI: detail-view right rail, reference-document modal, inline routing slip, list-view control, Inter | ✅ done |
+| 7 | Decision 175: `GET /roles` for role assigners, capability panel under every role picker | ⬜ planned |
 
 **What slices 1–5 changed that later slices inherit**
 
@@ -701,6 +702,122 @@ timeline names the division that accepted each hop; an outgoing document lists w
 opens any of them, attachments previewing in the same modal; the routing slip opens on screen in the
 bureau's layout with the seal and one row per custody hop; and the audit log distinguishes the
 officer who looked at it from the one who exported it.
+
+### Slice 7 plan — the capabilities a role grants (decision 175)
+
+Planned 2026-10-03. Implements decision 175, the one decision in 152–179 that slice 6 set aside on
+purpose. The interface is a read-only list under a role picker, an afternoon's work. **The slice is
+the policy change underneath it**: `capabilitiesByRole` is described in two places as something the
+browser never sees, and this slice is what makes that sentence false. It has to be made false on
+purpose, in writing, with a rule about what the browser may do with the map once it has it.
+
+**What the browser already knows.** `/auth/me` returns the signed-in user's own capabilities
+(`auth.service.ts:125`), so every client already holds one row of the table — its own. What is new
+is the other five rows, and only an administrator needs them: the three screens that pick a role —
+create user, edit user, approve account request — are gated on `USER_MANAGE` and
+`ACCOUNT_REQUEST_REVIEW`, both administrator-only.
+
+**The concern the existing comments record is not secrecy, it is anticipation.** The comment on
+`capabilitySchema` (`packages/contracts/src/index.ts`) gives the reason: a client holding the map is
+invited to anticipate the server's answer instead of asking for it — to gate a control on
+`map[role].includes(x)` rather than on the session's capability array. That is the rule to keep, so
+the slice keeps it explicitly: **the map is display data for the role picker and nothing reads it
+for gating.** Gating stays on `/auth/me`'s array, as it is today.
+
+**A stale register row rides along.** P-11 in `policy-register.md` reads `AGREED` — administrator
+only, no self-service — while `role-capabilities.ts` and the `capabilitySchema` comment still call it
+provisional. The register's own rule is that a row and the code disagreeing is the failure it exists
+to prevent, and this slice rewrites both comments anyway.
+
+It is four parts, in the order to do them in. The decision is written down before the endpoint
+exists so the endpoint's guard and the comments it contradicts change in one review.
+
+#### Part 1 — record the decision
+
+- Amend decision 175 in `CONTEXT.md` (dated, as 22, 24 and 27 were): the role-to-capability map is
+  readable by an actor who may assign roles; the client uses it to describe a role and never to
+  decide what the actor may do.
+- Rewrite `role-capabilities.ts:4-6` and the `capabilitySchema` comment to say the same — *served*
+  to role assigners, *gated on* by nobody — and drop "provisional" from both now that P-11 is agreed.
+- No ADR: this narrows an existing rule rather than reversing an architectural one.
+
+#### Part 2 — `GET /roles`
+
+- `RolesController` in `modules/identity`, beside `UsersController`, under `AuthGuard` + `CsrfGuard`.
+- A `RolePolicy` with one action, `role:list`, granted to `USER_MANAGE` **or**
+  `ACCOUNT_REQUEST_REVIEW` — the two capabilities whose screens pick a role. Anyone else is `403`; a
+  `404` is not needed, since the endpoint's existence is not secret.
+- Response, schema'd in `@dts/contracts` as `roleGrantSchema`:
+  `{ data: [{ role, capabilities: Capability[], readsOfficeWide: boolean }] }`, one entry per
+  `roleSchema` option, in that order.
+- **`readsOfficeWide` is the one addition beyond the decision's text, and is proposed rather than
+  required.** Read scope is not a capability — it is `OFFICE_WIDE_READ_ROLES` — and it is the thing
+  an administrator most needs to know when choosing between Records Staff and Division Head: one
+  reads the whole office, the other one division. A panel listing capabilities alone shows those two
+  roles as nearly identical. It comes from the same set `canRead` uses, never a copy.
+- The handler **serializes the table**: `capabilitiesByRole[role]`, not a second literal. A test
+  asserts equality with the table so the two can never be maintained separately.
+- Not audited. It reads a constant, not a record, and the audit trail is for who touched what.
+  `Cache-Control: private, max-age=300` — the table changes only on deploy.
+
+#### Part 3 — capability labels, in the web app
+
+`enumLabel('DOCUMENT_SUBMIT_FOR_SIGNATURE')` reads "Document submit for signature", which is not
+something to show an administrator deciding what a person may do. Add
+`features/admin/capability-labels.ts`: a `Record<Capability, { label: string; group: ... }>` with
+three groups — Documents, Reports and audit, Administration. Typing it as a full `Record` makes a
+capability added to the contract without a label a compile error, which is the exhaustiveness check
+the role table already gets from `role-capabilities.test.ts`.
+
+Labels are the office's words, not the code's: "Sign (Regional Director)", "Initial (division
+head's endorsement)", "Record as complied". The draft set is for the office to read once before the
+pilot, the same as the routing slip's metadata rows.
+
+#### Part 4 — the panel, in all three role pickers
+
+- **Extract one `RoleField` first.** The role select and its membership rule are written twice
+  today — `membershipNeeds` at `users-screen.tsx:89`, and inline at `account-requests-screen.tsx:277`
+  — and the panel goes under both. Extracting before adding the panel is the rework-avoiding order;
+  adding it to two copies is how they drift.
+- Under the select, a read-only grouped list of what the selected role grants, re-rendered as the
+  role changes, with one line for read scope ("Reads every division" / "Reads its own division").
+  `VIEWER` shows "Read only — takes no action on documents". Compact: label chips per group, no
+  card, no per-capability descriptions.
+- The existing "Granted separately from the role, and audited" note on confidential access stays
+  where it is; the panel is the role's grant, that checkbox is the person's.
+- `useRoleGrants()` lives in `features/admin` with `staleTime: Infinity`. **A failed fetch hides the
+  panel and blocks nothing**: the form must still submit, because the panel describes a choice the
+  server validates anyway.
+- An ESLint `no-restricted-imports` entry keeps `features/admin/role-grants` from being imported
+  outside `features/admin`. A comment cannot enforce "display only"; a lint rule can enforce where
+  the map is reachable from.
+
+**Deliberately out of scope**
+
+- **Per-user capability overrides.** Decision 175 says capabilities stay server-defined and not
+  editable per user; the panel has no inputs.
+- **Editing the role table from the UI**, and any change to which role holds what. This slice
+  publishes the table as it stands.
+- **The ORD/Records org restructure** (decision 152's second half) and **configurable release
+  methods** (decision 27 as amended) — still carried forward, and the other two candidates for a
+  slice of their own.
+
+**Tests that will matter**
+
+- Policy matrix: `role:list` allowed for `ADMINISTRATOR`, `403` for each of the other five roles.
+- `GET /roles` returns every `roleSchema` option once, in order, and each entry's `capabilities`
+  deep-equals `capabilitiesByRole[role]`; `readsOfficeWide` is true for exactly the members of
+  `OFFICE_WIDE_READ_ROLES`.
+- The response parses against `roleGrantSchema`.
+- Web: the panel shows the selected role's labels and changes when the role does; `VIEWER` shows the
+  empty line; a failed `/roles` fetch leaves the form submittable with no panel.
+- `RoleField` drives the division/section requirement the same way in create, edit and approve — the
+  existing tests for both screens pass against the extracted component unchanged.
+
+**Done when:** an administrator choosing a role — creating an account, editing one, or approving a
+request — sees what that role may do and whether it reads the whole office, before saving; the
+contracts and role-table comments say the map is served to role assigners and gated on by nobody;
+and P-11 reads the same in the register and in the code.
 
 ---
 
