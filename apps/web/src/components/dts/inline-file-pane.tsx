@@ -28,16 +28,24 @@ import { cn } from '@/lib/utils';
  * files in memory. Having one owner of that rule is the actual reason to share this rather than
  * copy the markup: the leak is in the lifecycle, not in the JSX.
  *
- * The frame is sandboxed with no `allow-` tokens, which puts a rendered PDF in an opaque origin
- * with no scripting: a document that arrived from outside the office is untrusted content, and
- * rendering it is a place where that matters. The API sends a matching `Content-Security-Policy`
- * for anyone who reaches the URL directly.
+ * The frame is sandboxed. `trusted` picks which sandbox, and the choice is forced rather than
+ * stylistic: Chromium renders PDFs with a viewer that is itself scripted, so `sandbox=""` shows a
+ * blank frame where a PDF should be. `allow-scripts` without `allow-same-origin` lets that viewer
+ * run while keeping the frame in an opaque origin — it cannot reach this page, its storage or its
+ * cookies, and it still has no top-navigation, forms, popups or downloads.
+ *
+ * What it does permit is outbound requests from inside that opaque origin, and for a `blob:` URL
+ * there is no second line of defence: the API's `Content-Security-Policy` travels with the
+ * *response*, and a blob URL does not carry it. So a document that arrived from outside the office
+ * keeps the strict `sandbox=""` — a blank frame is a worse preview but it is not a channel — and
+ * only bytes this system produced itself, the routing slip, are rendered with the viewer enabled.
  */
 export function InlineFilePane({
   path,
   name,
   className,
-}: Readonly<{ path: string; name: string; className?: string }>) {
+  trusted = false,
+}: Readonly<{ path: string; name: string; className?: string; trusted?: boolean }>) {
   const [content, setContent] = useState<InlineContent | null>(null);
 
   /*
@@ -113,7 +121,7 @@ export function InlineFilePane({
     <iframe
       src={content.url}
       title={`Preview of ${name}`}
-      sandbox=""
+      sandbox={trusted ? 'allow-scripts' : ''}
       className={cn('w-full rounded-md border border-border bg-secondary/30', className)}
     />
   );

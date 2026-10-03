@@ -70,6 +70,9 @@ export function RoutingSlipDialog({ document }: Readonly<{ document: DocumentDet
             path={routingSlipPreviewPath(document.id)}
             name={`routing slip for ${document.trackingNumber}`}
             className="h-[70vh] max-h-[70vh]"
+            // Our own PDF, rendered by this codebase from this database — so the browser's PDF
+            // viewer may run. Nothing that arrived from outside the office is shown this way.
+            trusted
           />
         ) : null}
 
