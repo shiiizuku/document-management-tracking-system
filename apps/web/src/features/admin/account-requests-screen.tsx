@@ -9,7 +9,6 @@ import type { z } from 'zod';
 import {
   accountRequestStatusSchema,
   approveAccountRequestSchema,
-  roleSchema,
   type ApproveAccountRequestInput,
 } from '@dts/contracts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -55,6 +54,7 @@ import {
   useRejectAccountRequest,
   type AccountRequest,
 } from './queries';
+import { RoleField, membershipNeeds } from './role-field';
 
 /**
  * The account request queue.
@@ -270,12 +270,8 @@ function ApproveDialog({
   const divisions = useDivisions();
   const divisionId = form.watch('divisionId');
   const sections = useSections(divisionId ?? null);
-  const role = form.watch('role');
-
-  // The server's membership rules in the one place the form can act on them: what the reviewer must
-  // supply depends on the role they just picked, so the labels have to follow it.
-  const needsDivision = role !== 'ADMINISTRATOR' && role !== 'RECORDS_STAFF';
-  const needsSection = role === 'STAFF_MEMBER' || role === 'VIEWER';
+  // What the reviewer must supply depends on the role they just picked, so the labels follow it.
+  const { division: needsDivision, section: needsSection } = membershipNeeds(form.watch('role'));
 
   const onSubmit = (values: ApproveAccountRequestInput) => {
     setFormError(null);
@@ -321,33 +317,10 @@ function ApproveDialog({
               </Alert>
             )}
 
-            <FormField
+            <RoleField
               control={form.control}
               name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Role</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {roleSchema.options.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {enumLabel(option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    The role decides what this account may do. It is not what the applicant asked
-                    for.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+              description="The role decides what this account may do. It is not what the applicant asked for."
             />
 
             <FormField

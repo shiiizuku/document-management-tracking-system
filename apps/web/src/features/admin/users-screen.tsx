@@ -60,6 +60,7 @@ import {
   type AdminUser,
   type UserFilters,
 } from './queries';
+import { RoleField, membershipNeeds } from './role-field';
 
 /**
  * The user directory and the controls that change it.
@@ -78,18 +79,6 @@ import {
 
 /** Radix cannot hold `''` as a select value, and "no section" is a real choice. */
 const NO_SECTION = '__none__';
-
-/**
- * Which parts of the organization tree a role must be pinned to.
- *
- * The same rule `membershipRules` enforces in `@dts/contracts`, read here only to mark the fields
- * required or optional. It is a presentation decision, not a second validation: the schema rejects a
- * missing division either way, so a disagreement costs a label rather than a bad save.
- */
-const membershipNeeds = (role: string | undefined): { division: boolean; section: boolean } => ({
-  division: role !== 'ADMINISTRATOR' && role !== 'RECORDS_STAFF',
-  section: role === 'STAFF_MEMBER' || role === 'VIEWER',
-});
 
 export function UsersScreen() {
   // Local state rather than the URL: this is an administrative lookup, not a view anyone links to.
@@ -448,30 +437,7 @@ function CreateUserDialog() {
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Role</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {roleSchema.options.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {enumLabel(option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <RoleField control={form.control} name="role" />
 
             <FormField
               control={form.control}
@@ -676,34 +642,7 @@ function EditUserDialog({ user, onClose }: Readonly<{ user: AdminUser; onClose: 
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Role</FormLabel>
-                  <Select
-                    value={field.value ?? user.role}
-                    onValueChange={field.onChange}
-                    disabled={isSelf}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {roleSchema.options.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {enumLabel(option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <RoleField control={form.control} name="role" fallback={user.role} disabled={isSelf} />
 
             <FormField
               control={form.control}

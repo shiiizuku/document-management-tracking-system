@@ -5,6 +5,7 @@ import {
   AccountRequestPolicy,
   AuditEventPolicy,
   OrganizationPolicy,
+  RolePolicy,
   UserPolicy,
   type UserResource,
 } from './identity.policies.js';
@@ -23,6 +24,7 @@ export class AuthorizationService {
       new AccountRequestPolicy(),
       new OrganizationPolicy(),
       new AuditEventPolicy(),
+      new RolePolicy(),
     ].map((policy) => [policy.resourceType, policy as Policy<never>]),
   );
 

@@ -27,6 +27,7 @@ import { AccountRequestsRepository } from './modules/identity/account-requests.r
 import { IdentityService } from './modules/identity/identity.service.js';
 import { MeController } from './modules/identity/me.controller.js';
 import { ProfilePhotosRepository } from './modules/identity/profile-photos.repository.js';
+import { RolesController } from './modules/identity/roles.controller.js';
 import { UsersController } from './modules/identity/users.controller.js';
 import { DashboardController } from './modules/dashboard/dashboard.controller.js';
 import { NotificationsController } from './modules/notifications/notifications.controller.js';
@@ -72,6 +73,7 @@ import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
     AuthController,
     AccountRequestsController,
     UsersController,
+    RolesController,
     MeController,
     OrganizationController,
     DocumentsController,

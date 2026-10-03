@@ -93,6 +93,25 @@ export class OrganizationPolicy implements Policy<null> {
   }
 }
 
+export type RoleAction = 'role:list';
+
+/**
+ * Reading what each role grants (`GET /roles`). Open to whoever picks a role for someone else —
+ * creating or editing a user, or approving an account request — because those are the screens the
+ * map describes. The endpoint's existence is not secret, so anyone else gets a plain 403.
+ */
+export class RolePolicy implements Policy<null> {
+  readonly resourceType = 'role';
+
+  can(actor: AuthorizationActor, action: string): boolean {
+    return (
+      actionVerb(action) === 'list' &&
+      (actor.capabilities.includes(USER_MANAGE) ||
+        actor.capabilities.includes(ACCOUNT_REQUEST_REVIEW))
+    );
+  }
+}
+
 export type AuditEventAction = 'audit-event:list';
 
 /**

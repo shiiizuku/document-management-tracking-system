@@ -3,12 +3,13 @@ import type { Role } from './authorization.policy.js';
 
 // The capability vocabulary itself lives in `@dts/contracts` (`capabilitySchema`), so the client
 // gates its navigation on the same strings this table grants. What stays here is the mapping from
-// role to capabilities — a server-side policy decision the browser never sees.
+// role to capabilities. It is *served* to role assigners by `GET /roles`, so the role picker can
+// describe what a role grants (decision 175 as amended), and it is *gated on* by nobody outside
+// the server: the client decides what its own user may do from `/auth/me`, never from this map.
 
-// Identity and organization capabilities. Provisional per policy register P-11: the approver
-// role is not yet fixed by the office, so account provisioning, user management and
-// organization changes are all administrator-only until it is. Changing that means editing
-// P-11 and this constant in the same PR.
+// Identity and organization capabilities. Administrator-only, as agreed in policy register P-11:
+// account provisioning, user management and organization changes stay with the administrator,
+// and there is no self-service. Changing that means editing P-11 and this constant in the same PR.
 export const USER_MANAGE: Capability = 'USER_MANAGE';
 export const ORG_MANAGE: Capability = 'ORG_MANAGE';
 export const ACCOUNT_REQUEST_REVIEW: Capability = 'ACCOUNT_REQUEST_REVIEW';
@@ -33,9 +34,8 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'DOCUMENT_RELEASE',
     'DOCUMENT_COMPLY',
     'DOCUMENT_ARCHIVE',
-    // Logical deletion and its reversal are paired and administrator-only (policy register P-11,
-    // provisional): the records office has not yet delegated deletion, so it stays with the admin
-    // role alongside restore until P-11 fixes an owner.
+    // Logical deletion and its reversal are paired and administrator-only: the records office has
+    // not delegated deletion, so it stays with the admin role alongside restore.
     'DOCUMENT_DELETE',
     'DOCUMENT_RESTORE',
     'DOCUMENT_ASSIGN',

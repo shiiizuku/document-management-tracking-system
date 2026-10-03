@@ -70,9 +70,10 @@ export const roleSchema = z.enum([
  * resolving against one enum is what stops a capability from being renamed on the server while a
  * nav item still gates on the old string, or a screen from gating on a capability no role holds.
  *
- * Which roles hold which capabilities deliberately stays on the server (policy register P-11,
- * still provisional): that mapping is a policy decision, and shipping it to the browser would
- * invite the client to anticipate the server's answer instead of asking for it.
+ * Which roles hold which capabilities is decided on the server. `GET /roles` serves that map to
+ * the people who assign roles, so the role picker can describe a role (decision 175 as amended),
+ * and that is all the client may use it for: gating on `map[role]` instead of on the session's
+ * own array would anticipate the server's answer instead of asking for it.
  */
 export const capabilitySchema = z.enum([
   'DOCUMENT_CREATE',
@@ -105,6 +106,19 @@ export const capabilitySchema = z.enum([
 
 /** The capability names as a list, for exhaustiveness checks over the whole set. */
 export const CAPABILITIES = capabilitySchema.options;
+
+/**
+ * What one role grants, as `GET /roles` serves it to the people who assign roles (decision 175 as
+ * amended). Display data for the role picker and nothing else: gating stays on `/auth/me`.
+ *
+ * `readsOfficeWide` is the role's read scope, which is not a capability — without it Records Staff
+ * and Division Head look nearly identical, when one reads every division and the other its own.
+ */
+export const roleGrantSchema = z.object({
+  role: roleSchema,
+  capabilities: z.array(capabilitySchema),
+  readsOfficeWide: z.boolean(),
+});
 
 export const documentDirectionSchema = z.enum(['INCOMING', 'OUTGOING']);
 export const documentPrioritySchema = z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']);
@@ -430,6 +444,7 @@ export type StoredWorkflowStatus = z.infer<typeof storedWorkflowStatusSchema>;
 export type WorkflowAction = z.infer<typeof workflowActionSchema>;
 export type Role = z.infer<typeof roleSchema>;
 export type Capability = z.infer<typeof capabilitySchema>;
+export type RoleGrant = z.infer<typeof roleGrantSchema>;
 export type DocumentDirection = z.infer<typeof documentDirectionSchema>;
 export type DocumentPriority = z.infer<typeof documentPrioritySchema>;
 export type ReleaseMethod = z.infer<typeof releaseMethodSchema>;
