@@ -88,7 +88,7 @@ export function RequestAccountForm() {
     <div className="space-y-6">
       <div>
         <p className="eyebrow">Request access</p>
-        <h1 className="mt-1 font-serif text-3xl text-foreground">Apply for an account</h1>
+        <h1 className="mt-1 text-3xl text-foreground">Apply for an account</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Accounts are created by an administrator. Tell us who you are and why you need access.
         </p>

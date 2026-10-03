@@ -107,6 +107,16 @@ export function useDownloadAttachment(documentId: string) {
 }
 
 /**
+ * Where a version's bytes are served for in-page rendering.
+ *
+ * Exported as a path rather than kept inside the hook below because `InlineFilePane` is addressed
+ * by path — it renders the routing slip from a different route entirely — and the one place that
+ * knows how attachments are addressed should still be this module.
+ */
+export const attachmentContentPath = (documentId: string, versionId: string): string =>
+  `/documents/${documentId}/attachments/${versionId}/content`;
+
+/**
  * Fetches a version's bytes for the in-page preview.
  *
  * A mutation rather than a query, and deliberately: the result owns an object URL that has to be
@@ -116,7 +126,7 @@ export function useDownloadAttachment(documentId: string) {
 export function usePreviewAttachment(documentId: string) {
   return useMutation({
     mutationFn: (version: AttachmentVersion): Promise<InlineContent> =>
-      inlineContent(`/documents/${documentId}/attachments/${version.id}/content`),
+      inlineContent(attachmentContentPath(documentId, version.id)),
   });
 }
 

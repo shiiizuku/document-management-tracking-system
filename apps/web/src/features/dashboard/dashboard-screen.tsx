@@ -138,8 +138,8 @@ function Tile({
       <p
         className={
           emphasis
-            ? 'mt-1 font-serif text-3xl text-destructive tabular-nums'
-            : 'mt-1 font-serif text-3xl text-foreground tabular-nums'
+            ? 'mt-1 text-3xl font-semibold text-destructive tabular-nums'
+            : 'mt-1 text-3xl font-semibold text-foreground tabular-nums'
         }
       >
         {value.toLocaleString()}

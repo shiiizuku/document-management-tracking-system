@@ -19,6 +19,7 @@ import type {
   NewWorkflowEvent,
   PlacementResult,
   ReferenceDocumentSummary,
+  RoutingSlipRoute,
   SignatureEventRow,
   WorkflowEventRow,
 } from '../src/modules/documents/documents.repository.js';
@@ -387,6 +388,35 @@ export class InMemoryDocumentsRepository {
 
   listRoutes(documentId: string): Promise<DocumentRouteRow[]> {
     return Promise.resolve([...(this.routes.get(documentId) ?? [])]);
+  }
+
+  /**
+   * The routing slip's rows. There are no organization tables here, so an id stands in for the
+   * name the SQL repository joins — which is enough for the suites that assert how many rows the
+   * slip has and which of them are custody.
+   */
+  routingSlipRoutes(documentId: string): Promise<RoutingSlipRoute[]> {
+    const routes = [...(this.routes.get(documentId) ?? [])].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+    );
+    return Promise.resolve(
+      routes.map((route) => ({
+        id: route.id,
+        fromDivisionName: route.fromDivisionId,
+        toDivisionName: route.toDivisionId,
+        toSectionName: route.toSectionId,
+        routedByName: route.routedById,
+        forInformation: route.forInformation,
+        remarks: route.remarks,
+        acceptedAt: route.acceptedAt,
+        acceptedByName: route.acceptedById,
+        createdAt: route.createdAt,
+      })),
+    );
+  }
+
+  divisionName(divisionId: string): Promise<string | null> {
+    return Promise.resolve(divisionId);
   }
 
   insertSignatureEvent(signature: {

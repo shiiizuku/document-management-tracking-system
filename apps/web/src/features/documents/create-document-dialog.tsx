@@ -108,6 +108,9 @@ export function CreateDocumentDialog() {
        * the panel holding the offending field never opened.
        */
       email: '',
+      // Mounted only for incoming documents (decision 168), so it is defaulted here for the same
+      // reason as the three above: `applyServerErrors` only attaches to names it can find.
+      referenceNumber: '',
       sectionId: undefined,
       dueAt: undefined,
     },
@@ -129,6 +132,9 @@ export function CreateDocumentDialog() {
 
   const divisions = useDivisions();
   const divisionId = form.watch('divisionId');
+  // Decision 168: the sender's reference belongs to an incoming letter and has no meaning on an
+  // outgoing one, whose reference the server allocates (decision 169).
+  const incoming = form.watch('direction') === 'INCOMING';
   const sections = useSections(divisionId || null);
 
   // Default to the user's own division once the list arrives, or to the only one there is. Doing
@@ -341,6 +347,52 @@ export function CreateDocumentDialog() {
             />
 
             {/*
+              Subject is on the form, not folded into an optional panel. It is the line the bureau's
+              routing slip prints under "Subject" and the line a colleague reads when a document
+              reaches them, so a record registered without one is a record nobody can identify from
+              its slip — whatever the schema says about the column being nullable.
+            */}
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Subject</FormLabel>
+                  <FormControl>
+                    <Textarea rows={2} {...field} value={field.value ?? ''} />
+                  </FormControl>
+                  <FormDescription>What the document is about, in a line or two.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/*
+              Beside the sender, not folded away with the optional details. It is the string a
+              reply is matched against the letter by, so it is transcribed off the paper at the
+              moment the rest of the letter is — which is exactly what decision 168 is about: it
+              used to be addable only after registration, by reopening the record.
+            */}
+            {incoming ? (
+              <FormField
+                control={form.control}
+                name="referenceNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sender&rsquo;s reference</FormLabel>
+                    <FormControl>
+                      <Input maxLength={120} {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormDescription>
+                      The reference the sending office printed on their letter, if there is one.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
+
+            {/*
               The rest, folded away. `defaultOpen` is driven by whether anything inside is in
               error, which is the part that cannot be left out: a server-rejected email in a
               collapsed panel is a form that refuses to submit and will not say why.
@@ -350,7 +402,15 @@ export function CreateDocumentDialog() {
               summary="Priority, section, target date, company, email"
               hasError={hasDetailErrors}
             >
-              <div className="grid gap-3 sm:grid-cols-3 [&>*]:min-w-0">
+              {/*
+                Two across, not three. At the dialog's width three columns leave the Section select
+                about 150px, which is narrower than "Division-level (no section)" — and a Radix
+                trigger sized `w-fit` to text that long spills over the control beside it. Giving
+                the row two columns and the date its own line fixes the cause rather than truncating
+                the label into "Division-level (no sec…", which is the one option in that list a
+                reader has to be able to tell from a named section.
+              */}
+              <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
                 <FormField
                   control={form.control}
                   name="priority"
@@ -476,8 +536,8 @@ export function CreateDocumentDialog() {
             </OptionalSection>
 
             <OptionalSection
-              title="Attachments and subject"
-              summary="Files to attach, and what the document is about"
+              title="Attachments"
+              summary="Files to attach, uploaded once the record is saved"
               hasError={hasContentErrors}
             >
               <FormItem>
@@ -493,20 +553,6 @@ export function CreateDocumentDialog() {
                 />
                 <FormDescription>Uploaded once the record is saved.</FormDescription>
               </FormItem>
-
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Subject</FormLabel>
-                    <FormControl>
-                      <Textarea rows={3} {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </OptionalSection>
 
             <DialogFooter>

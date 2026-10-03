@@ -161,7 +161,9 @@ describe('AttachmentsSection preview control', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Preview' }));
 
-    expect(await screen.findByText('This file could not be previewed')).toBeInTheDocument();
+    // The pane that renders this now serves the routing slip too, so its refusal is worded for
+    // any inline file rather than for an attachment.
+    expect(await screen.findByText('This file could not be shown')).toBeInTheDocument();
     expect(screen.queryByTitle('Preview of budget.pdf')).not.toBeInTheDocument();
   });
 });

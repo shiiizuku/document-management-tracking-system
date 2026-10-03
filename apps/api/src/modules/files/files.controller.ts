@@ -14,22 +14,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { recordScanSchema, type RecordScanInput } from '@dts/contracts';
 import { AuthGuard } from '../../common/auth.guard.js';
+import { INLINE_CONTENT_CSP } from '../../common/inline-content.js';
 import { CurrentUser } from '../../common/current-user.decorator.js';
 import type { RequestUser } from '../../common/request-user.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { AttachmentsService, MAX_ATTACHMENT_BYTES } from './attachments.service.js';
-
-/**
- * What an inline response is permitted to do once it is in the browser.
- *
- * `default-src 'none'` with only `img-src 'self'` leaves a PDF or an image able to render itself
- * and nothing else: no script, no stylesheet, no frame, and no outbound request — so a crafted
- * document cannot phone home or reach anything in the session that fetched it. `sandbox` drops
- * the response into an opaque origin, which is what stops it scripting its way back to the app
- * even though it is served from the API's own host.
- */
-const INLINE_CONTENT_CSP =
-  "default-src 'none'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; sandbox";
 
 // The subset of multer's in-memory file object this controller consumes. Declared locally
 // rather than relying on the `Express.Multer.File` ambient global, which does not resolve

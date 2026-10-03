@@ -255,7 +255,7 @@ function Tile({ label, value, hint }: Readonly<{ label: string; value: number; h
   return (
     <article className="rounded-lg border border-border bg-card p-4">
       <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p className="mt-1 font-serif text-3xl text-foreground tabular-nums">
+      <p className="mt-1 text-3xl font-semibold text-foreground tabular-nums">
         {value.toLocaleString()}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">{hint}</p>

@@ -17,7 +17,7 @@ export default function RequestAccountPage() {
       <section className="relative hidden flex-col justify-center overflow-hidden bg-primary px-[8vw] py-16 text-primary-foreground lg:flex">
         {/* The seal. Decorative, so it is hidden from assistive technology. */}
         <span
-          className="mb-10 flex size-16 items-center justify-center rounded-full border-2 border-gold/70 font-serif text-xl tracking-widest"
+          className="mb-10 flex size-16 items-center justify-center rounded-full border-2 border-gold/70 text-xl font-semibold tracking-widest"
           aria-hidden
         >
           DTS
@@ -25,7 +25,7 @@ export default function RequestAccountPage() {
         <p className="text-[11px] font-bold tracking-[0.14em] text-gold uppercase">
           Government records operations
         </p>
-        <h1 className="mt-3 font-serif text-5xl leading-[1.08]">
+        <h1 className="mt-3 text-5xl leading-[1.08]">
           Access is
           <br />
           granted, never

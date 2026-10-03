@@ -35,8 +35,14 @@ function DialogOverlay({
          * `bg-scrim-veil` rather than `bg-black/50`: the scrim is a role like any other, and MD3
          * puts it at 32%. The dialog no longer leans on the scrim for separation now that it sits
          * a tone above the page (see DialogContent), which is what makes the lighter value work.
+         *
+         * The blur is what the 32% veil alone cannot do: a dim page behind a dialog is still a
+         * page of legible rows competing for the eye, and a records screen behind a form is dense
+         * enough that it reads as the subject. Blurring puts it out of focus in the literal sense,
+         * so the dialog is the only thing with edges. `supports-[backdrop-filter]` because a
+         * browser without it must still get the veil rather than nothing.
          */
-        'fixed inset-0 z-50 bg-scrim-veil',
+        'fixed inset-0 z-50 bg-scrim-veil supports-[backdrop-filter]:backdrop-blur-sm',
         /*
          * Enter and exit do not share a curve. Appearing is decelerated and unhurried; dismissing
          * is accelerated and shorter, because the user has already decided and is waiting on it.

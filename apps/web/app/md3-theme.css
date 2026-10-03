@@ -761,9 +761,9 @@
   /* ----------------------------------------------------------------------------------------------
    * TYPE SCALE — fifteen MD3 roles, as `text-body-medium`, `text-label-large` and so on.
    *
-   * The brand's DM Sans stands in for Roboto as the plain font, and DM Serif Display is kept for
-   * the three display roles, where MD3 explicitly invites a brand face. Sizes, line heights and
-   * tracking are the spec's.
+   * Inter stands in for Roboto throughout, including the three display roles that MD3 invites a
+   * brand face into — decision 172 retires the display serif, so the scale carries the hierarchy
+   * on its own. Sizes, line heights and tracking are the spec's.
    * -------------------------------------------------------------------------------------------- */
   --text-display-large: 3.5625rem; /* 57 */
   --text-display-large--line-height: 4rem;

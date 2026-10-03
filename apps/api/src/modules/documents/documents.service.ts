@@ -51,6 +51,7 @@ import {
   type DocumentRouteRow,
   type DocumentSearchFilters,
   type ReferenceDocumentSummary,
+  type RoutingSlipRoute,
 } from './documents.repository.js';
 
 /** The wire shape of a document row. Built by hand so a column added later is never served by accident. */
@@ -153,6 +154,44 @@ export interface DocumentDetail extends PublicDocument {
   signatures: SignatureEntry[];
   timeline: TimelineEntry[];
   allowedActions: WorkflowAction[];
+}
+
+/**
+ * One custody hop, as the bureau's routing table prints it (decision 171).
+ *
+ * Five columns, and each is read straight off the route row that ADR-0005 moved custody onto: the
+ * *sender's* `created_at` is DATE-TIME RELEASED and the *recipient's* `accepted_at` is DATE-TIME
+ * RECEIVED. A hop awaiting acceptance prints an empty RECEIVED cell, which is exactly what the
+ * paper form does.
+ *
+ * The bureau's own `.doc` template has four columns and leaves TO to be inferred from the next
+ * row's FROM; the scanned sample of the form in use has all five, and decision 171 makes TO
+ * explicit and governs either way.
+ */
+export interface RoutingSlipHop {
+  from: string;
+  receivedAt: Date | null;
+  to: string;
+  releasedAt: Date;
+  action: string;
+  /**
+   * The for-information recipients consulted by this hop (decision 160). Printed as a line
+   * attached to the hop, **never as rows of their own** — a copy is not custody, and three rows
+   * where one division held the document would read as three divisions having held it.
+   */
+  copiedTo: string[];
+}
+
+/** Everything the routing slip prints, with every id already resolved to a name. */
+export interface RoutingSlip {
+  document: PublicDocument;
+  /**
+   * The unit the document was registered to. The system has no addressee field of its own — the
+   * paper form's row is filled in by hand — and the registering placement is the nearest truthful
+   * answer: it is the unit the registrar put the document in front of.
+   */
+  addressee: string | null;
+  hops: RoutingSlipHop[];
 }
 
 /**
@@ -366,6 +405,85 @@ export class DocumentsService {
     };
   }
 
+  /**
+   * The routing slip's content for one document, resolved server-side.
+   *
+   * Scoped through the same read check as the detail view, so viewing or exporting a slip can
+   * never reach a document the caller could not open. Both the inline and the download routes call
+   * this; what differs between them is the disposition and the audit action, which is why they are
+   * two routes rather than one with a flag.
+   */
+  async routingSlip(actor: RequestUser, id: string): Promise<RoutingSlip> {
+    const row = await this.requireReadable(actor, id);
+    const [routes, timeline, releaseMethod, clean, addressee] = await Promise.all([
+      this.repository.routingSlipRoutes(id),
+      this.repository.listTimeline(id),
+      this.repository.findReleaseMethod(id),
+      this.cleanFlag(row),
+      this.repository.divisionName(row.divisionId),
+    ]);
+
+    return {
+      document: this.toPublic(row, releaseMethod, clean),
+      addressee,
+      hops: this.toRoutingSlipHops(routes, timeline),
+    };
+  }
+
+  /**
+   * Folds route rows and workflow events into one row per custody hop.
+   *
+   * A for-information row is attached to the lead hop it was consulted by — the most recent lead
+   * hop at or before it, since a multi-recipient forward writes all its rows in one transaction —
+   * rather than becoming a row of its own (decision 160).
+   *
+   * ACTION TAKEN is the hop's own remark followed by whatever was done while it held the document:
+   * the workflow events between this hop's release and the next one's. That is what the
+   * handwritten column holds on the paper form — the instruction given, and what came of it.
+   */
+  private toRoutingSlipHops(
+    routes: readonly RoutingSlipRoute[],
+    timeline: readonly { action: string; occurredAt: Date }[],
+  ): RoutingSlipHop[] {
+    const leads = routes.filter((route) => !route.forInformation);
+    const copies = routes.filter((route) => route.forInformation);
+
+    return leads.map((lead, index) => {
+      const next = leads[index + 1];
+      const unit =
+        lead.toSectionName === null
+          ? lead.toDivisionName
+          : `${lead.toDivisionName} — ${lead.toSectionName}`;
+
+      const copiedTo = copies
+        .filter(
+          (copy) =>
+            copy.createdAt.getTime() >= lead.createdAt.getTime() &&
+            (next === undefined || copy.createdAt.getTime() < next.createdAt.getTime()),
+        )
+        .map((copy) => copy.toDivisionName);
+
+      const during = timeline
+        .filter(
+          (event) =>
+            event.occurredAt.getTime() >= lead.createdAt.getTime() &&
+            (next === undefined || event.occurredAt.getTime() < next.createdAt.getTime()),
+        )
+        .map((event) => event.action.replaceAll('_', ' '));
+
+      const action = [lead.remarks, ...during].filter((part) => part !== null && part !== '');
+
+      return {
+        from: lead.fromDivisionName ?? '—',
+        receivedAt: lead.acceptedAt,
+        to: unit,
+        releasedAt: lead.createdAt,
+        action: action.join(' · '),
+        copiedTo,
+      };
+    });
+  }
+
   async getDocument(actor: RequestUser, id: string): Promise<DocumentDetail> {
     const row = await this.requireReadable(actor, id);
     const [
@@ -474,6 +592,24 @@ export class DocumentsService {
     const { row: current, facts } = await this.requireReadableWithFacts(actor, id);
     if (!this.authorization.can(actor, this.asResource(current, facts), 'DOCUMENT_EDIT'))
       throw new ForbiddenException('Editing this document is not allowed');
+
+    /*
+     * An outgoing document's reference number is the office's own, allocated from
+     * `reference_counters` inside the create transaction (decision 169). Editing it by hand is a
+     * records-integrity problem — the identifier on a letter that has gone out is not something a
+     * later edit may contradict — and it also fights the partial unique index that keeps those
+     * identifiers distinct.
+     *
+     * Refused here rather than only hidden in the dialog. The form declining to offer the field is
+     * courtesy; this is the rule, and a rule that lives only in a form is one that holds until
+     * somebody uses the API.
+     */
+    if (current.direction === 'OUTGOING' && input.referenceNumber !== undefined)
+      throw new BadRequestException({
+        code: 'REFERENCE_NUMBER_READ_ONLY',
+        message:
+          "An outgoing document's reference number is issued by the system and cannot be edited",
+      });
 
     const { patch, before, after } = this.diffMetadata(current, input);
     if (Object.keys(after).length === 0)

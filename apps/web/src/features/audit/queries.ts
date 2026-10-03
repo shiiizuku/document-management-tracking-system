@@ -121,6 +121,11 @@ export const AUDIT_ACTION_GROUPS: readonly { label: string; actions: readonly st
       'document.shared',
       'document.deleted',
       'document.restored',
+      'document.reference-linked',
+      'document.reference-unlinked',
+      // Two actions, not one (decision 170): looking at a slip and taking a copy of it away are
+      // different events, and telling them apart is the reason an auditor opens this filter.
+      'document.routing-slip-viewed',
       'document.routing-slip-exported',
     ],
   },

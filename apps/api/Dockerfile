@@ -21,5 +21,8 @@ COPY --from=build /app/packages/contracts/dist ./packages/contracts/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/drizzle ./apps/api/drizzle
+# The seal the routing slip embeds. Resolved relative to the compiled module, so it has to sit
+# beside dist/ in the image exactly as it does in the repo.
+COPY --from=build /app/apps/api/assets ./apps/api/assets
 EXPOSE 4000
 CMD ["node", "apps/api/dist/main.js"]
