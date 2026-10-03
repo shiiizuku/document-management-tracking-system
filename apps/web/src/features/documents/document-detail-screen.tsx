@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/dts/empty-state';
 import { DetailSkeleton } from '@/components/dts/skeletons';
 import { PriorityLabel, StatusBadge, documentTypeLabel } from '@/components/dts/status-badge';
 import { AttachmentsSection } from '@/features/attachments/attachments-section';
+import { useDivisions } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -20,7 +21,7 @@ import { DeleteDocumentDialog } from './delete-document-dialog';
 import { DocumentActions } from './document-actions';
 import { MetadataDialog } from './metadata-dialog';
 import { RouteDialog } from './route-dialog';
-import { useDocument, useRoutingSlip, type DocumentDetail } from './queries';
+import { currentCustody, useDocument, useRoutingSlip, type DocumentDetail } from './queries';
 
 /** A released or archived document is a closed record: its files no longer change. */
 const isClosed = (document: DocumentDetail) =>
@@ -30,9 +31,13 @@ const isClosed = (document: DocumentDetail) =>
  * One document, in full: what it is, what may be done to it, its files, and everything that has
  * happened to it.
  *
- * Replaces the side panel the registry used to open. A route of its own means a tracking number
- * can be bookmarked, pasted into an email, and reached with the back button — which is what
- * people actually do with a reference number.
+ * Two columns since decision 174: the record itself scrolls on the left, while the things you act
+ * from — its status, where it is, the available actions and its history — stay in a rail on the
+ * right. The previous single column put the timeline below the attachments, which meant scrolling
+ * past the document to find out where it had been and scrolling back to do anything about it.
+ *
+ * The rail is **second in the DOM**, so the narrow layout, where the grid collapses, gives a
+ * reader the document before its history rather than the other way round.
  */
 export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: string }>) {
   const document = useDocument(documentId);
@@ -53,88 +58,142 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
   const closed = isClosed(detail);
 
   return (
-    <div className="max-w-5xl space-y-6">
-      <div>
-        <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2 text-muted-foreground">
-          <Link href="/documents">
-            <ArrowLeft />
-            Registry
-          </Link>
-        </Button>
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-start">
+      <div className="min-w-0 space-y-6">
+        <div>
+          <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2 text-muted-foreground">
+            <Link href="/documents">
+              <ArrowLeft />
+              Registry
+            </Link>
+          </Button>
 
-        <p className="eyebrow">{detail.trackingNumber}</p>
-        <h1 className="mt-1 flex items-start gap-2 text-3xl text-foreground">
-          <span className="min-w-0">{detail.title}</span>
-          {detail.confidential ? (
-            <Lock
-              className="mt-2 size-4 shrink-0 text-muted-foreground"
-              aria-label="Confidential"
-            />
-          ) : null}
-        </h1>
+          <p className="eyebrow">{detail.trackingNumber}</p>
+          <h1 className="mt-1 flex items-start gap-2 text-3xl text-foreground">
+            <span className="min-w-0">{detail.title}</span>
+            {detail.confidential ? (
+              <Lock
+                className="mt-2 size-4 shrink-0 text-muted-foreground"
+                aria-label="Confidential"
+              />
+            ) : null}
+          </h1>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <StatusBadge status={detail.status} />
-          <Badge variant="outline">{documentTypeLabel(detail.type)}</Badge>
-          <Badge variant="outline">
-            {detail.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}
-          </Badge>
-          <PriorityLabel priority={detail.priority} />
-          <div className="ml-auto flex items-center gap-2">
-            {/*
-              Both editing controls are gated on DOCUMENT_EDIT — and hidden on a closed record,
-              where the server refuses them anyway. The routing slip is not: a released document is
-              exactly the one whose printable dossier people still need.
-            */}
-            {can('DOCUMENT_EDIT') && !closed ? <RouteDialog document={detail} /> : null}
-            {can('DOCUMENT_EDIT') && !closed ? <MetadataDialog document={detail} /> : null}
-            <RoutingSlipButton document={detail} />
-            {can('DOCUMENT_DELETE') ? <DeleteDocumentDialog document={detail} /> : null}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {/* Status is not repeated here: the rail states it beside where the document is now,
+                which is the pairing that answers "what happens next". */}
+            <Badge variant="outline">{documentTypeLabel(detail.type)}</Badge>
+            <Badge variant="outline">
+              {detail.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}
+            </Badge>
+            <PriorityLabel priority={detail.priority} />
+            <div className="ml-auto flex items-center gap-2">
+              {/*
+                Both editing controls are gated on DOCUMENT_EDIT — and hidden on a closed record,
+                where the server refuses them anyway. The routing slip is not: a released document
+                is exactly the one whose printable dossier people still need.
+              */}
+              {can('DOCUMENT_EDIT') && !closed ? <RouteDialog document={detail} /> : null}
+              {can('DOCUMENT_EDIT') && !closed ? <MetadataDialog document={detail} /> : null}
+              <RoutingSlipButton document={detail} />
+              {can('DOCUMENT_DELETE') ? <DeleteDocumentDialog document={detail} /> : null}
+            </div>
           </div>
         </div>
+
+        <Separator />
+
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+          <Field label="Sender" value={detail.sender} />
+          <Field label="Company / agency" value={detail.company} />
+          <ReferenceNumberField document={detail} />
+          <Field label="Email address" value={detail.email} />
+          <Field label="Registered" value={new Date(detail.createdAt).toLocaleDateString()} />
+          <DueField document={detail} />
+          {detail.releaseMethod === null ? null : (
+            <Field
+              label="Released by"
+              value={detail.releaseMethod.replaceAll('_', ' ').toLowerCase()}
+            />
+          )}
+        </dl>
+
+        {detail.description === null || detail.description === '' ? null : (
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Description</h3>
+            <p className="mt-1 text-sm whitespace-pre-line text-muted-foreground">
+              {detail.description}
+            </p>
+          </div>
+        )}
+
+        <Separator />
+
+        <AttachmentsSection documentId={detail.id} canUpload={can('DOCUMENT_EDIT') && !closed} />
       </div>
 
-      <Separator />
+      <DetailRail document={detail} />
+    </div>
+  );
+}
 
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-        <Field label="Sender" value={detail.sender} />
-        <Field label="Company / agency" value={detail.company} />
-        <Field label="External reference" value={detail.referenceNumber} />
-        <Field label="Email address" value={detail.email} />
-        <Field label="Registered" value={new Date(detail.createdAt).toLocaleDateString()} />
-        <DueField document={detail} />
-        {detail.releaseMethod === null ? null : (
-          <Field
-            label="Released by"
-            value={detail.releaseMethod.replaceAll('_', ' ').toLowerCase()}
-          />
-        )}
-      </dl>
-
-      {detail.description === null || detail.description === '' ? null : (
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">Description</h3>
-          <p className="mt-1 text-sm whitespace-pre-line text-muted-foreground">
-            {detail.description}
-          </p>
-        </div>
-      )}
+/**
+ * The sticky rail: where the document stands, what can be done to it, and how it got here.
+ *
+ * `top-20` is `3.5rem` for the shell's `sticky top-0 h-14` header plus the `py-6` the main region
+ * gives every page. The shell scrolls the window — there is no inner overflow container — so
+ * getting this wrong produces a rail that slides under a header it is supposed to sit below, which
+ * is the usual failure of this pattern.
+ *
+ * The height is capped at the same arithmetic so the column can be a flex box whose last child
+ * takes what is left. That is what sizes the timeline's scroll box: it is whatever remains after
+ * the status block and the actions, rather than a guessed number that is wrong the moment a
+ * document has four allowed actions instead of one.
+ */
+function DetailRail({ document }: Readonly<{ document: DocumentDetail }>) {
+  return (
+    <aside className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-3.5rem-3rem)]">
+      <LocationBlock document={document} />
 
       <Separator />
 
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-foreground">Available actions</h3>
-        <DocumentActions document={detail} />
+      <section className="space-y-2">
+        <h2 className="text-label-medium tracking-wide text-muted-foreground uppercase">
+          Available actions
+        </h2>
+        <DocumentActions document={document} />
       </section>
 
       <Separator />
 
-      <AttachmentsSection documentId={detail.id} canUpload={can('DOCUMENT_EDIT') && !closed} />
+      <Timeline document={document} />
+    </aside>
+  );
+}
 
-      <Separator />
+/**
+ * Status, and where the document physically is.
+ *
+ * The location is read off the routes, never off `divisionId`: forwarding is non-destructive
+ * (ADR-0005), so that column records where the document was *registered* and stops moving after
+ * the first hop. Decision 177 — a document's location is its most recent lead hop — is the rule
+ * `currentCustody` expresses, and the registry filter and the dashboard chart resolve the same way.
+ */
+function LocationBlock({ document }: Readonly<{ document: DocumentDetail }>) {
+  const divisions = useDivisions();
+  const custody = currentCustody(document);
+  const name = divisions.data?.find((division) => division.id === custody.divisionId)?.name;
 
-      <Timeline document={detail} />
-    </div>
+  return (
+    <section className="space-y-2">
+      <StatusBadge status={document.status} />
+      <div>
+        <h2 className="text-label-medium tracking-wide text-muted-foreground uppercase">
+          Currently with
+        </h2>
+        <p className="mt-0.5 text-sm text-foreground">{name ?? '—'}</p>
+      </div>
+    </section>
   );
 }
 
@@ -169,6 +228,23 @@ function RoutingSlipButton({ document }: Readonly<{ document: DocumentDetail }>)
 }
 
 /**
+ * The reference number, which is two different fields wearing one column (decisions 168, 169).
+ *
+ * On an outgoing document it is the office's own `ORD-2026-00014`, allocated from
+ * `reference_counters` inside the create transaction; on an incoming one it is whatever the
+ * sending office printed on their letter. Labelling both "External reference" was wrong in both
+ * directions — the outgoing one is not external, and the incoming one is not ours.
+ */
+function ReferenceNumberField({ document }: Readonly<{ document: DocumentDetail }>) {
+  return (
+    <Field
+      label={document.direction === 'OUTGOING' ? 'Reference number' : "Sender's reference"}
+      value={document.referenceNumber}
+    />
+  );
+}
+
+/**
  * The target date, and how far from it this document is (policy register P-04).
  *
  * Counted in whole elapsed calendar days — no working hours, no holidays — which is the whole of
@@ -184,7 +260,9 @@ function DueField({ document }: Readonly<{ document: DocumentDetail }>) {
 
   return (
     <div>
-      <dt className="text-xs tracking-wide text-muted-foreground uppercase">Target date</dt>
+      <dt className="text-label-medium tracking-wide text-muted-foreground uppercase">
+        Target date
+      </dt>
       <dd className="mt-0.5 text-sm text-foreground">
         {new Date(document.dueAt).toLocaleDateString()}
         {label === null ? null : (
@@ -205,64 +283,134 @@ function DueField({ document }: Readonly<{ document: DocumentDetail }>) {
 function Field({ label, value }: Readonly<{ label: string; value: string | null }>) {
   return (
     <div>
-      <dt className="text-xs tracking-wide text-muted-foreground uppercase">{label}</dt>
+      <dt className="text-label-medium tracking-wide text-muted-foreground uppercase">{label}</dt>
       <dd className="mt-0.5 text-sm text-foreground first-letter:uppercase">{value ?? '—'}</dd>
     </div>
   );
 }
 
+interface TimelineRow {
+  key: string;
+  at: string;
+  title: string;
+  detail: string | null;
+  transition: string | null;
+  /** A for-information copy. Marked as such, and never drawn as custody (decision 160). */
+  copy?: boolean;
+}
+
 /**
- * Everything that has happened to this document, oldest first.
+ * Builds the merged history. Exported for its own test: the mapping from route rows to readable
+ * hops is the part of this screen with rules in it, and asserting it through a rendered rail would
+ * test the layout instead.
  *
- * Workflow events and routing handoffs are merged into one list: they are the same thing to a
- * user asking "where has this been", and two separate lists would make them reconstruct the order
+ * Every route row becomes one entry for the forward itself and, where the recipient has taken
+ * custody, a second one for the acceptance — the pair ADR-0005 moved onto the route row so the
+ * slip could print both times. A hop with no `acceptedAt` yields only the forward, which is what
+ * makes the document pending at that hop.
+ */
+export function timelineRows(
+  document: DocumentDetail,
+  divisionName: (id: string) => string,
+): TimelineRow[] {
+  const events: TimelineRow[] = document.timeline.map((event) => ({
+    key: event.id,
+    at: event.occurredAt,
+    title: workflowActionLabel(event.action),
+    detail: event.remarks,
+    transition:
+      event.fromStatus === null
+        ? null
+        : `${event.fromStatus.replaceAll('_', ' ')} → ${event.toStatus.replaceAll('_', ' ')}`,
+  }));
+
+  const hops: TimelineRow[] = document.routes.flatMap((route) => {
+    const to = divisionName(route.toDivisionId);
+    const forward: TimelineRow = route.forInformation
+      ? {
+          key: route.id,
+          at: route.createdAt,
+          title: `Copied to ${to} for information`,
+          detail: route.remarks,
+          transition: null,
+          copy: true,
+        }
+      : {
+          key: route.id,
+          at: route.createdAt,
+          title: `Forwarded to ${to}`,
+          detail: route.remarks,
+          transition: null,
+        };
+
+    // A for-information recipient can remark but never takes custody, so its row carries no
+    // acceptance even if one were ever stamped on it.
+    if (route.forInformation || route.acceptedAt === null) return [forward];
+    return [
+      forward,
+      {
+        key: `${route.id}:accepted`,
+        at: route.acceptedAt,
+        title: `Accepted by ${to}`,
+        detail: null,
+        transition: null,
+      },
+    ];
+  });
+
+  return [...events, ...hops].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+}
+
+/**
+ * Everything that has happened to this document, oldest first, scrolling inside the rail.
+ *
+ * Workflow events and routing handoffs are merged into one list: they are the same thing to a user
+ * asking "where has this been", and two separate lists would make them reconstruct the order
  * themselves.
+ *
+ * It used to flatten every route row to the string "Forwarded to another division" and throw away
+ * `acceptedAt`, `forInformation` and both division ids — which is to say the screen read none of
+ * what non-destructive routing had been recording. Division names resolve through `useDivisions`,
+ * readable by any authenticated user; an id that resolves to nothing prints as an em dash rather
+ * than as a UUID.
+ *
+ * The scroll is on the list and not on the heading, so the heading stays put while the history
+ * moves under it.
  */
 function Timeline({ document }: Readonly<{ document: DocumentDetail }>) {
-  const entries = [
-    ...document.timeline.map((event) => ({
-      key: event.id,
-      at: event.occurredAt,
-      title: workflowActionLabel(event.action),
-      detail: event.remarks,
-      transition:
-        event.fromStatus === null
-          ? null
-          : `${event.fromStatus.replaceAll('_', ' ')} → ${event.toStatus.replaceAll('_', ' ')}`,
-    })),
-    ...document.routes.map((route) => ({
-      key: route.id,
-      at: route.createdAt,
-      title: 'Forwarded to another division',
-      detail: route.remarks,
-      transition: null,
-    })),
-  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  const divisions = useDivisions();
+  const divisionName = (id: string) =>
+    divisions.data?.find((division) => division.id === id)?.name ?? '—';
+  const entries = timelineRows(document, divisionName);
 
   return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-semibold text-foreground">Timeline</h3>
+    <section className="flex min-h-0 flex-col gap-2">
+      <h2 className="text-label-medium tracking-wide text-muted-foreground uppercase">Timeline</h2>
       {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           Nothing has happened to this document since it was registered.
         </p>
       ) : (
-        <ol className="space-y-4 border-l border-border pl-5">
+        <ol className="min-h-0 space-y-3 overflow-y-auto border-l border-border pl-4">
           {entries.map((entry) => (
             <li key={entry.key} className="relative">
               <span
-                className="absolute top-1.5 -left-[1.4rem] size-2 rounded-full bg-primary"
+                className={cn(
+                  'absolute top-1.5 -left-[1.15rem] size-2 rounded-full',
+                  // A copy is not custody, so it does not get the solid dot a hop does.
+                  entry.copy ? 'bg-card ring-1 ring-outline' : 'bg-primary',
+                )}
                 aria-hidden
               />
               <p className="text-sm font-medium text-foreground">{entry.title}</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground tabular-nums">
                 <time dateTime={entry.at}>{new Date(entry.at).toLocaleString()}</time>
                 {entry.transition === null ? null : (
                   <span className="lowercase"> · {entry.transition}</span>
                 )}
               </p>
               {entry.detail === null || entry.detail === '' ? null : (
-                <p className="mt-1 text-sm whitespace-pre-line text-muted-foreground">
+                <p className="mt-0.5 text-sm whitespace-pre-line text-muted-foreground">
                   {entry.detail}
                 </p>
               )}

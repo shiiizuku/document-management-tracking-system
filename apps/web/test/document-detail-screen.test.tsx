@@ -2,9 +2,10 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DocumentDetailScreen } from '../src/features/documents/document-detail-screen';
+import type { DocumentDetail } from '../src/features/documents/queries';
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
-import { documentDetail, sessionUser } from './fixtures';
+import { division, documentDetail, sessionUser } from './fixtures';
 import { renderWithQuery } from './query-harness';
 
 const { apiMock, downloadMock } = vi.hoisted(() => ({ apiMock: vi.fn(), downloadMock: vi.fn() }));
@@ -27,6 +28,13 @@ const serve = (detail: ReturnType<typeof documentDetail> | Error, user = session
     if (path === '/documents/doc-1')
       return detail instanceof Error ? Promise.reject(detail) : Promise.resolve(detail);
     if (path.endsWith('/attachments')) return Promise.resolve([]);
+    // The rail resolves route rows and the custody line to names through this list.
+    if (path === '/divisions')
+      return Promise.resolve([
+        division({ id: 'division-1', name: 'Records Division' }),
+        division({ id: 'division-2', name: 'Legal Division' }),
+        division({ id: 'division-3', name: 'Finance Division' }),
+      ]);
     return Promise.resolve([]);
   });
 };
@@ -55,31 +63,68 @@ describe('DocumentDetailScreen', () => {
     expect(screen.queryByText('Incoming budget letter')).not.toBeInTheDocument();
   });
 
-  it('merges routing handoffs into the timeline in order', async () => {
+  /**
+   * One route row, three shapes. Slice 4 records custody on the route — who it went to, whether
+   * they accepted, and whether they were only copied — and until decision 174 the screen flattened
+   * all of it to "Forwarded to another division". These are the three readings that has to produce.
+   */
+  const route = (overrides: Partial<DocumentDetail['routes'][number]> = {}) => ({
+    id: 'route-1',
+    fromDivisionId: 'division-1',
+    toDivisionId: 'division-2',
+    toSectionId: null,
+    routedById: 'user-1',
+    remarks: 'For legal review.',
+    forInformation: false,
+    acceptedAt: null,
+    acceptedById: null,
+    createdAt: '2026-09-02T09:00:00.000Z',
+    ...overrides,
+  });
+
+  it('names the division a document was forwarded to, and carries the remark', async () => {
+    serve(documentDetail({ routes: [route()] }));
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Forwarded to Legal Division')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('For legal review.')).toBeInTheDocument();
+    // Nobody has accepted it, so there is no acceptance entry — which is what leaves it pending.
+    expect(screen.queryByText(/^Accepted by/)).not.toBeInTheDocument();
+  });
+
+  it('shows an accepted hop as both the forward and the acceptance', async () => {
+    serve(
+      documentDetail({
+        routes: [route({ acceptedAt: '2026-09-03T01:00:00.000Z', acceptedById: 'user-2' })],
+      }),
+    );
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Forwarded to Legal Division')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('Accepted by Legal Division')).toBeInTheDocument();
+  });
+
+  it('marks a for-information recipient as a copy and never as custody', async () => {
     serve(
       documentDetail({
         routes: [
-          {
-            id: 'route-1',
-            fromDivisionId: 'division-1',
-            toDivisionId: 'division-2',
-            toSectionId: null,
-            routedById: 'user-1',
-            remarks: 'For legal review.',
-            forInformation: false,
-            acceptedAt: null,
-            acceptedById: null,
-            createdAt: '2026-09-02T09:00:00.000Z',
-          },
+          route(),
+          route({ id: 'route-2', toDivisionId: 'division-3', forInformation: true, remarks: null }),
         ],
       }),
     );
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
 
     await waitFor(() =>
-      expect(screen.getByText('Forwarded to another division')).toBeInTheDocument(),
+      expect(screen.getByText('Copied to Finance Division for information')).toBeInTheDocument(),
     );
-    expect(screen.getByText('For legal review.')).toBeInTheDocument();
+    expect(screen.queryByText('Forwarded to Finance Division')).not.toBeInTheDocument();
+    // Custody is the most recent *lead* hop, so the copy does not move the document (decision 177).
+    expect(screen.getByText('Legal Division')).toBeInTheDocument();
   });
 
   it('says so when nothing has happened yet', async () => {
