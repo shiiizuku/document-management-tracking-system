@@ -4,7 +4,7 @@ import {
   NotificationsGateway,
   sessionTokenFromHandshake,
 } from '../src/modules/realtime/notifications.gateway.js';
-import { realtimeMessageForEvent } from '../src/modules/realtime/realtime.events.js';
+import { realtimeMessagesForEvent } from '../src/modules/realtime/realtime.events.js';
 import {
   NOTIFICATION_EVENT,
   parseRealtimeMessage,
@@ -38,22 +38,32 @@ describe('sessionTokenFromHandshake', () => {
   });
 });
 
-describe('realtimeMessageForEvent', () => {
+describe('realtimeMessagesForEvent', () => {
   it('maps an assignment to a notification for the recipient', () => {
-    const message = realtimeMessageForEvent('document.assigned', {
+    const messages = realtimeMessagesForEvent('document.assigned', {
       documentId: 'doc-1',
       recipientUserId: 'user-9',
     });
-    expect(message).toEqual({
-      userId: 'user-9',
-      event: NOTIFICATION_EVENT,
-      payload: { documentId: 'doc-1' },
+    expect(messages).toEqual([
+      { userId: 'user-9', event: NOTIFICATION_EVENT, payload: { documentId: 'doc-1' } },
+    ]);
+  });
+
+  it('maps a forward to one notification per recipient', () => {
+    const messages = realtimeMessagesForEvent('document.routed', {
+      documentId: 'doc-1',
+      recipientUserIds: ['head-b', 'staff-b1', 7],
     });
+    expect(messages).toEqual([
+      { userId: 'head-b', event: NOTIFICATION_EVENT, payload: { documentId: 'doc-1' } },
+      { userId: 'staff-b1', event: NOTIFICATION_EVENT, payload: { documentId: 'doc-1' } },
+    ]);
   });
 
   it('ignores events with no recipient and other event types', () => {
-    expect(realtimeMessageForEvent('document.assigned', { documentId: 'doc-1' })).toBeNull();
-    expect(realtimeMessageForEvent('document.routed', { documentId: 'doc-1' })).toBeNull();
+    expect(realtimeMessagesForEvent('document.assigned', { documentId: 'doc-1' })).toEqual([]);
+    expect(realtimeMessagesForEvent('document.routed', { documentId: 'doc-1' })).toEqual([]);
+    expect(realtimeMessagesForEvent('document.created', { documentId: 'doc-1' })).toEqual([]);
   });
 });
 

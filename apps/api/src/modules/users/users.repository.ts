@@ -12,6 +12,7 @@ export interface UserFilters {
   search?: string | undefined;
   role?: Role | undefined;
   divisionId?: string | undefined;
+  sectionId?: string | undefined;
   active?: boolean | undefined;
 }
 
@@ -66,6 +67,7 @@ export class UsersRepository {
     }
     if (filters.role) conditions.push(eq(users.role, filters.role));
     if (filters.divisionId) conditions.push(eq(users.divisionId, filters.divisionId));
+    if (filters.sectionId) conditions.push(eq(users.sectionId, filters.sectionId));
     if (filters.active !== undefined) conditions.push(eq(users.active, filters.active));
     return this.database
       .select()

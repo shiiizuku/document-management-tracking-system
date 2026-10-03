@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { hashSync } from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { count, eq, sql } from 'drizzle-orm';
+import { and, count, eq, sql } from 'drizzle-orm';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -12,7 +12,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { DATABASE } from '../src/database/database.constants.js';
 import type { Database } from '../src/database/client.js';
-import { documentReferences, divisions, notifications, sections } from '../src/database/schema.js';
+import {
+  documentReferences,
+  divisions,
+  notifications,
+  outboxEvents,
+  sections,
+} from '../src/database/schema.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -69,6 +75,8 @@ describe('document registry REST against a real database', () => {
   let staffId: string;
   let headId: string;
   let divCHeadId: string;
+  let divBHeadId: string;
+  let secBStaffId: string;
   // The auth window is a tight 5/minute, so each principal signs in once in `beforeAll` and
   // the session is reused across tests rather than logging in per case.
   let records: Session;
@@ -161,6 +169,29 @@ describe('document registry REST against a real database', () => {
       canAccessConfidential: false,
     });
     divCHeadId = divCHeadUser.id;
+    // Division B is where the forward test sends a document, so it needs someone to be told.
+    divBHeadId = (
+      await users.insert({
+        email: 'div-b-head@dts.local',
+        displayName: 'Division B Head',
+        passwordHash: hashSync(HEAD_PASSWORD, 4),
+        role: 'DIVISION_HEAD',
+        divisionId: DIV_B,
+        sectionId: null,
+        canAccessConfidential: false,
+      })
+    ).id;
+    secBStaffId = (
+      await users.insert({
+        email: 'sec-b-staff@dts.local',
+        displayName: 'Section B1 Staff',
+        passwordHash: hashSync(STAFF_PASSWORD, 4),
+        role: 'STAFF_MEMBER',
+        divisionId: DIV_B,
+        sectionId: SEC_B,
+        canAccessConfidential: false,
+      })
+    ).id;
     await users.insert({
       email: 'admin@dts.local',
       displayName: 'System Administrator',
@@ -526,13 +557,38 @@ describe('document registry REST against a real database', () => {
       .set('Cookie', staff.cookies)
       .expect(200);
 
-    // The copy for information notified Division C's head, who is exactly who it made a reader.
+    /*
+     * The forward notified the whole receiving division — Section B1's member that it came to
+     * their section, the head that it came to their division — and Division C's head for the
+     * copy. The lead used to get nothing, which left a forward silent on the receiving end.
+     */
     const notified = await app
       .get<Database>(DATABASE)
-      .select({ recipientUserId: notifications.recipientUserId, type: notifications.type })
+      .select({ recipientUserId: notifications.recipientUserId, title: notifications.title })
       .from(notifications)
       .where(eq(notifications.documentId, created.id));
-    expect(notified).toEqual([{ recipientUserId: divCHeadId, type: 'DOCUMENT_ROUTED' }]);
+    expect(notified).toHaveLength(3);
+    expect(notified).toEqual(
+      expect.arrayContaining([
+        { recipientUserId: divBHeadId, title: 'Forwarded to your division' },
+        { recipientUserId: secBStaffId, title: 'Forwarded to your section' },
+        { recipientUserId: divCHeadId, title: 'Copied in for information' },
+      ]),
+    );
+    // And the event the worker fans out names the same people, so their inboxes update live.
+    const [event] = await app
+      .get<Database>(DATABASE)
+      .select({ payload: outboxEvents.payload })
+      .from(outboxEvents)
+      .where(
+        and(
+          eq(outboxEvents.aggregateId, created.id),
+          eq(outboxEvents.eventType, 'document.routed'),
+        ),
+      );
+    const pinged = (event?.payload as { recipientUserIds?: string[] } | undefined)
+      ?.recipientUserIds;
+    expect([...(pinged ?? [])].sort()).toEqual([divBHeadId, secBStaffId, divCHeadId].sort());
 
     // The registry's division filter answers "which documents are at this division", so the
     // forwarded document is listed under B and no longer under A.

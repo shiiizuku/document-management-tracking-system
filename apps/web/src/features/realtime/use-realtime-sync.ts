@@ -52,8 +52,8 @@ export function useRealtimeSync(): RealtimeStatus {
     socket.on('disconnect', () => setConnected(false));
     socket.on(NOTIFICATION_EVENT, (payload: unknown) => {
       invalidateNotifications(client);
-      // The ping is sent because something happened TO a document — an assignment today — so the
-      // document itself and every list it appears in are stale as well, not just the inbox.
+      // The ping is sent because something happened TO a document — an assignment or a forward —
+      // so the document itself and every list it appears in are stale as well, not just the inbox.
       const documentId = documentIdFrom(payload);
       invalidateDocument(client, documentId);
     });

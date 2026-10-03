@@ -15,7 +15,7 @@ import { FileVersionsRepository } from './modules/files/file-versions.repository
 import { MinioStorageAdapter } from './modules/files/minio-storage.adapter.js';
 import { scanUploadedVersion } from './modules/files/scan-consumer.js';
 import { RealtimePublisher } from './modules/realtime/realtime.publisher.js';
-import { realtimeMessageForEvent } from './modules/realtime/realtime.events.js';
+import { realtimeMessagesForEvent } from './modules/realtime/realtime.events.js';
 
 config({ path: new URL('../../../.env', import.meta.url) });
 const environment = validateEnvironment(process.env);
@@ -70,8 +70,8 @@ const worker = createOutboxWorker(environment.REDIS_URL, async (job) => {
     return;
   }
   logger.log(`delivered ${job.data.eventType} for ${job.data.aggregateId}`, 'OutboxConsumer');
-  const message = realtimeMessageForEvent(job.data.eventType, job.data.payload);
-  if (message !== null) await realtimePublisher.publish(message);
+  for (const message of realtimeMessagesForEvent(job.data.eventType, job.data.payload))
+    await realtimePublisher.publish(message);
 });
 worker.on('failed', (job, error) => logger.error(error, `OutboxConsumer:${job?.id ?? 'unknown'}`));
 
