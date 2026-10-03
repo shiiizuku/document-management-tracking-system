@@ -1,33 +1,37 @@
 import { hash } from 'bcryptjs';
 import { config } from 'dotenv';
 import { createDatabase } from './client.js';
+import { validateDirectorAccount } from '../config/environment.js';
 import { ORD_DIVISION_CODE } from '../modules/organization/organization.constants.js';
 import { divisions, sections, users } from './schema.js';
 
 config({ path: new URL('../../../../.env', import.meta.url) });
 
+/*
+ * Decided before a connection is opened. `validateDirectorAccount` throws when a production
+ * deployment has configured no Director, and a seed that failed halfway would leave an
+ * organization tree with no signatory in it — which is the state ADR-0006 exists to prevent.
+ */
+const director = validateDirectorAccount(process.env);
+
 const { db, pool } = createDatabase();
 try {
-  const [recordsDivision] = await db
-    .insert(divisions)
-    .values({ code: 'RECORDS', name: 'Records Office' })
-    .onConflictDoUpdate({ target: divisions.code, set: { name: 'Records Office' } })
-    .returning();
   /*
-   * The Office of the Regional Director. Seeded as its own division so the Director has a
-   * placement: ADR-0006 makes a `DIRECTOR` account a deployment-ordering constraint rather than a
-   * convenience, because release is gated on a signature record and nobody else may sign.
+   * The Office of the Regional Director, with the **Records Unit as a Section inside it**
+   * (decision 152, completed by migration 0009). There is no standalone `RECORDS` division any
+   * more: an existing one is deactivated rather than deleted by that migration, because division
+   * codes are embedded in reference numbers already issued on paper (decision 153).
    *
-   * Decision 152 makes the Records Unit a Section *inside* the ORD. That restructure is not done
-   * here — the Records Office above is still its own division — so this row is additive and moves
-   * no existing user. Folding the two together is the remaining half of decision 152.
+   * Placing the records officer here is what makes ADR-0007's exemption reachable without
+   * hand-editing rows — a draft it registers is owned by the ORD, so it goes straight to
+   * `FOR_SIGNATURE` rather than collecting the Director's own initial first.
    */
   const [ordDivision] = await db
     .insert(divisions)
     .values({ code: ORD_DIVISION_CODE, name: 'Office of the Regional Director' })
     .onConflictDoUpdate({
       target: divisions.code,
-      set: { name: 'Office of the Regional Director' },
+      set: { name: 'Office of the Regional Director', active: true },
     })
     .returning();
   const [pilotDivision] = await db
@@ -35,14 +39,15 @@ try {
     .values({ code: 'PILOT', name: 'Pilot Division' })
     .onConflictDoUpdate({ target: divisions.code, set: { name: 'Pilot Division' } })
     .returning();
-  if (!recordsDivision || !pilotDivision || !ordDivision)
-    throw new Error('Unable to seed divisions');
-  const [intakeSection] = await db
+  if (!ordDivision || !pilotDivision) throw new Error('Unable to seed divisions');
+  // "Records Unit", not "Records Office": `docs/CONTEXT.md` retires the latter, because "Office"
+  // now means the ORD.
+  const [recordsSection] = await db
     .insert(sections)
-    .values({ divisionId: recordsDivision.id, code: 'INTAKE', name: 'Intake' })
+    .values({ divisionId: ordDivision.id, code: 'RECORDS', name: 'Records Unit' })
     .onConflictDoUpdate({
       target: [sections.divisionId, sections.name],
-      set: { code: 'INTAKE', active: true, updatedAt: new Date() },
+      set: { code: 'RECORDS', active: true, updatedAt: new Date() },
     })
     .returning();
   const [pilotSection] = await db
@@ -66,7 +71,7 @@ try {
       canAccessConfidential: true,
     })
     .onConflictDoNothing();
-  if (intakeSection)
+  if (recordsSection)
     await db
       .insert(users)
       .values({
@@ -74,8 +79,8 @@ try {
         displayName: 'Records Officer',
         passwordHash: await hash('Records@1234!', 12),
         role: 'RECORDS_STAFF',
-        divisionId: recordsDivision.id,
-        sectionId: intakeSection.id,
+        divisionId: ordDivision.id,
+        sectionId: recordsSection.id,
         canAccessConfidential: true,
       })
       .onConflictDoNothing();
@@ -84,15 +89,25 @@ try {
    * skipped this account would register and route correspondence perfectly and then stall at
    * `FOR_SIGNATURE` with no account able to clear it.
    *
+   * Which account it is comes from `DIRECTOR_EMAIL` / `DIRECTOR_PASSWORD` when they are set, and
+   * from the development default only when they are not — which production can never reach,
+   * because `validateDirectorAccount` refuses to return null there. That is the whole of A3:
+   * `director@dts.local` and its repository-resident password are now a convenience for local
+   * work, not something a pilot can inherit by forgetting to configure anything.
+   *
    * Placed in the ORD with no section: `DIRECTOR` needs a division and must not be narrowed to a
    * section, and its office-wide read scope comes from the role rather than the placement.
    */
+  const directorAccount = director ?? {
+    email: 'director@dts.local',
+    password: 'Director@1234!',
+  };
   await db
     .insert(users)
     .values({
-      email: 'director@dts.local',
+      email: directorAccount.email,
       displayName: 'Regional Director',
-      passwordHash: await hash('Director@1234!', 12),
+      passwordHash: await hash(directorAccount.password, 12),
       role: 'DIRECTOR',
       divisionId: ordDivision.id,
       canAccessConfidential: true,

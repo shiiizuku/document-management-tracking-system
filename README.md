@@ -177,14 +177,26 @@ else **fails closed**. When every upload sits at "scan pending", one of these is
 
 `npm run db:seed` creates four users (`apps/api/src/database/seed.ts`):
 
-| Role          | Email                | Password         | Placement                        |
-| ------------- | -------------------- | ---------------- | -------------------------------- |
-| Administrator | `admin@dts.local`    | `Admin@12345!`   | none; confidential access        |
-| Director      | `director@dts.local` | `Director@1234!` | Office of the Regional Director  |
-| Records Staff | `records@dts.local`  | `Records@1234!`  | Records Office / Intake          |
-| Staff Member  | `staff@dts.local`    | `Staff@12345!`   | Pilot Division / General Section |
+| Role          | Email                | Password         | Placement                                      |
+| ------------- | -------------------- | ---------------- | ---------------------------------------------- |
+| Administrator | `admin@dts.local`    | `Admin@12345!`   | none; confidential access                      |
+| Director      | `director@dts.local` | `Director@1234!` | Office of the Regional Director                |
+| Records Staff | `records@dts.local`  | `Records@1234!`  | Office of the Regional Director / Records Unit |
+| Staff Member  | `staff@dts.local`    | `Staff@12345!`   | Pilot Division / General Section               |
 
-Override the administrator password with `SEED_ADMIN_PASSWORD`. There is no seeded viewer account;
+The Records Unit is a **Section inside the ORD**, not a division of its own (decision 152,
+migration `0009`). That is what makes a draft the records officer registers an ORD draft, which
+goes straight to `FOR_SIGNATURE` rather than collecting the Director's own initial first
+(ADR-0007). An existing `RECORDS` division is deactivated rather than deleted, because its code is
+embedded in reference numbers already issued on paper (decision 153).
+
+Override the administrator password with `SEED_ADMIN_PASSWORD`.
+
+**The Director is deployment configuration, not seed data** (ADR-0006). Set `DIRECTOR_EMAIL` and
+`DIRECTOR_PASSWORD` and the seed creates that account instead; with `NODE_ENV=production` both the
+API and the seed refuse to run without them, because release is gated on a signature record and
+nobody else may make one. `director@dts.local` above is a local convenience that production cannot
+reach by forgetting to configure anything. There is no seeded viewer account;
 create one by signing in as the administrator and posting to `/api/v1/users` with
 `"role": "VIEWER"` (the admin UI for this is not built yet). Seeding uses `onConflictDoNothing`, so
 re-running it will not reset a password on an existing user.
