@@ -3,11 +3,13 @@
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, CheckCheck, Lock } from 'lucide-react';
-import { DataTable, type DataTableColumn } from '@/components/dts/data-table';
+import type { DataTableColumn } from '@/components/dts/data-table';
 import { EmptyState } from '@/components/dts/empty-state';
 import { PageHeader } from '@/components/dts/page-header';
 import { PriorityLabel, StatusBadge, documentTypeLabel } from '@/components/dts/status-badge';
 import { api } from '@/lib/api';
+import { DocumentList, ListViewControl } from './document-list';
+import { useListView } from './list-view';
 import type { DocumentListItem } from './queries';
 
 /**
@@ -82,6 +84,8 @@ export function MyWorkScreen() {
   const router = useRouter();
   const queue = useAssignedDocuments();
   const rows = queue.data ?? [];
+  // The same per-device choice the registry reads, so switching on one screen switches both.
+  const { view, setView } = useListView();
 
   return (
     <>
@@ -90,13 +94,14 @@ export function MyWorkScreen() {
         title="My work"
         count={queue.data?.length}
         description="Documents currently assigned to you. Clearing this queue is what moves them on."
+        actions={<ListViewControl view={view} onChange={setView} />}
       />
 
-      <DataTable<DocumentListItem>
+      <DocumentList
+        view={view}
         caption="Documents assigned to you"
         columns={columns}
         rows={rows}
-        rowKey={(row) => row.id}
         // The endpoint returns the whole queue, so the pager reports one page of everything
         // rather than pretending to a server-side window that does not exist.
         total={rows.length}

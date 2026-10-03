@@ -56,6 +56,13 @@ export interface FilterBarProps {
   /** Extra controls for one screen only — the audit view's date range, for instance. */
   children?: ReactNode;
   /**
+   * Controls that belong beside the bar rather than inside its panel, pinned to the end of the
+   * header row. The document lists' view control lives here: it is not a filter — it changes
+   * nothing about which records are listed — but it is the other thing you reach for above a list,
+   * and giving it a row of its own would push the list down for one button.
+   */
+  trailing?: ReactNode;
+  /**
    * Set when a filter this bar does not own is active, so Clear still offers itself. Without it,
    * a screen with its own date inputs could end up filtered with no visible way back.
    */
@@ -80,6 +87,7 @@ export function FilterBar({
   onSelectChange,
   onClear,
   children,
+  trailing,
   hasOtherActiveFilters = false,
 }: FilterBarProps) {
   const activeCount =
@@ -150,6 +158,8 @@ export function FilterBar({
             Clear
           </Button>
         ) : null}
+
+        {trailing === undefined ? null : <div className="ml-auto">{trailing}</div>}
       </div>
 
       <CollapsiblePrimitive.Content

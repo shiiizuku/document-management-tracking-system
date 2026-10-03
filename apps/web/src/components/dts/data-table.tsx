@@ -1,9 +1,7 @@
 'use client';
 
 import type { KeyboardEvent, ReactNode } from 'react';
-import { AlertCircle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -12,8 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { ListShell } from './list-shell';
 import { TableRowsSkeleton } from './skeletons';
 
 export type SortOrder = 'asc' | 'desc';
@@ -24,6 +22,15 @@ export interface SortState {
   order: SortOrder;
 }
 
+/**
+ * One field of a record: what it is called, how it is drawn, and how it behaves in a column.
+ *
+ * Shared by all three document list views (decision 173), not just by the table. A card and a
+ * single line read the same array the table does — `header` becomes a card's field label and is
+ * dropped by the line view, `cell` draws the value in every one of them. That is the whole reason
+ * the type lives here rather than inside the table: a card view that grew its own idea of what a
+ * document row says would drift from the table within a month.
+ */
 export interface DataTableColumn<Row> {
   /** Stable identity, and the sort field sent to the server when `sortable` is set. */
   id: string;
@@ -47,32 +54,31 @@ export interface DataTableProps<Row> {
   page: number;
   pageSize: number;
   onPageChange: (page: number) => void;
-  sort?: SortState;
-  onSortChange?: (sort: SortState) => void;
-  onRowClick?: (row: Row) => void;
+  sort?: SortState | undefined;
+  onSortChange?: ((sort: SortState) => void) | undefined;
+  onRowClick?: ((row: Row) => void) | undefined;
   /** Marks the row currently shown in a detail panel beside the table. */
-  selectedKey?: string | null;
-  isLoading?: boolean;
-  isFetching?: boolean;
+  selectedKey?: string | null | undefined;
+  isLoading?: boolean | undefined;
+  isFetching?: boolean | undefined;
   error?: unknown;
-  onRetry?: () => void;
+  onRetry?: (() => void) | undefined;
   /** Shown in place of rows when the query succeeded and matched nothing. */
   empty: ReactNode;
 }
 
 /**
- * The app's one table.
+ * The app's table.
  *
- * Four screens list server-paginated, server-sorted records — the document registry, users,
- * account requests and the audit trail — and each of them would otherwise carry its own copy of
- * the same four states (loading, empty, error, rows), the same sort-toggle logic and the same
- * pager arithmetic. This owns all of it. Callers supply columns and say which page and sort they
- * want; they never compute a page count or decide what a pending row looks like.
+ * Several screens list server-paginated, server-sorted records — the document registry, users,
+ * account requests and the audit trail — and each would otherwise carry its own sort-toggle logic
+ * and its own idea of what a pending row looks like. Callers supply columns and say which page and
+ * sort they want.
  *
- * Paging and sorting are *reported*, not performed: this component never slices or reorders
- * `rows`. The server already applied the scope rules that decide which records exist, so sorting
- * a page in the browser would reorder a window rather than the result set, and would silently
- * disagree with the total beside the heading.
+ * The four list states and the pager belong to {@link ListShell}, which this composes and which
+ * the card and line views compose too. What stays here is the part that is genuinely about tables:
+ * a header that remains visible through every state, and an empty state that has to span the
+ * columns rather than sit beside them.
  */
 export function DataTable<Row>({
   caption,
@@ -93,15 +99,6 @@ export function DataTable<Row>({
   onRetry,
   empty,
 }: DataTableProps<Row>) {
-  // At least one page, so "Page 1 of 1" reads correctly for an empty result set.
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const firstOnPage = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const lastOnPage = Math.min(page * pageSize, total);
-
-  if (error !== undefined && error !== null) {
-    return <DataTableError error={error} onRetry={onRetry} />;
-  }
-
   const toggleSort = (column: DataTableColumn<Row>) => {
     if (!onSortChange) return;
     // A first click on a new column sorts descending: every sortable column here is a date or a
@@ -117,16 +114,18 @@ export function DataTable<Row>({
   };
 
   return (
-    <div className="space-y-3">
-      <div
-        className={cn(
-          'overflow-x-auto rounded-lg border border-border bg-card transition-opacity',
-          // A refetch keeps the current page on screen and dims it rather than replacing it with
-          // skeletons: flipping the whole list back to a loading state on every filter change
-          // reads as a slower app than one showing briefly stale rows.
-          isFetching && !isLoading && 'opacity-60',
-        )}
-      >
+    <ListShell
+      total={total}
+      page={page}
+      pageSize={pageSize}
+      onPageChange={onPageChange}
+      rowCount={rows.length}
+      isLoading={isLoading}
+      isFetching={isFetching}
+      error={error}
+      onRetry={onRetry}
+    >
+      {(state) => (
         <Table>
           <caption className="sr-only">{caption}</caption>
           <TableHeader>
@@ -165,11 +164,11 @@ export function DataTable<Row>({
             </TableRow>
           </TableHeader>
 
-          {isLoading ? (
+          {state === 'loading' ? (
             <TableRowsSkeleton columns={columns.length} />
           ) : (
             <TableBody>
-              {rows.length === 0 ? (
+              {state === 'empty' ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={columns.length} className="p-0">
                     {empty}
@@ -207,69 +206,7 @@ export function DataTable<Row>({
             </TableBody>
           )}
         </Table>
-      </div>
-
-      {/* Stays mounted while loading so the footer does not jump as rows arrive. */}
-      <nav className="flex items-center justify-between gap-4 text-sm" aria-label="Pagination">
-        <p className="text-muted-foreground tabular-nums">
-          {total === 0 ? 'No results' : `Showing ${firstOnPage}-${lastOnPage} of ${total}`}
-        </p>
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground tabular-nums">
-            Page {page} of {pageCount}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            onClick={() => onPageChange(page - 1)}
-            disabled={page <= 1}
-            aria-label="Previous page"
-          >
-            <ChevronLeft />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            onClick={() => onPageChange(page + 1)}
-            disabled={page >= pageCount}
-            aria-label="Next page"
-          >
-            <ChevronRight />
-          </Button>
-        </div>
-      </nav>
-    </div>
-  );
-}
-
-/**
- * A failed list. Shows what the server said, offers one retry, and surfaces the correlation ID
- * when there is one — the only thing that lets support find the request in the logs.
- */
-function DataTableError({
-  error,
-  onRetry,
-}: Readonly<{ error: unknown; onRetry?: (() => void) | undefined }>) {
-  const apiError = error instanceof ApiError ? error : null;
-  return (
-    <Alert variant="destructive">
-      <AlertCircle />
-      <AlertTitle>This list could not be loaded</AlertTitle>
-      <AlertDescription>
-        <p>{error instanceof Error ? error.message : 'Something went wrong.'}</p>
-        {apiError?.correlationId ? (
-          <p className="text-xs">
-            Reference <code className="font-mono">{apiError.correlationId}</code>
-          </p>
-        ) : null}
-        {onRetry ? (
-          <Button type="button" variant="outline" size="sm" onClick={onRetry} className="mt-1">
-            Try again
-          </Button>
-        ) : null}
-      </AlertDescription>
-    </Alert>
+      )}
+    </ListShell>
   );
 }

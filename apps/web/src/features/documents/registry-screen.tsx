@@ -8,7 +8,7 @@ import {
   documentPrioritySchema,
   workflowStatusSchema,
 } from '@dts/contracts';
-import { DataTable, type DataTableColumn, type SortState } from '@/components/dts/data-table';
+import type { DataTableColumn, SortState } from '@/components/dts/data-table';
 import { EmptyState } from '@/components/dts/empty-state';
 import { FilterBar } from '@/components/dts/filter-bar';
 import { PageHeader } from '@/components/dts/page-header';
@@ -17,6 +17,8 @@ import { useDivisions } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { CreateDocumentDialog } from './create-document-dialog';
 import { DeletedDocumentsDialog } from './deleted-documents-dialog';
+import { DocumentList, ListViewControl } from './document-list';
+import { useListView } from './list-view';
 import {
   DOCUMENT_PAGE_SIZE,
   DOCUMENT_TYPES,
@@ -136,6 +138,9 @@ export function RegistryScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { can } = useSession();
+  // Per device and outside the URL, unlike every other control on this screen — see `list-view.ts`
+  // for why a shared link must not carry it.
+  const { view, setView } = useListView();
 
   const filters = parseDocumentFilters(searchParams);
   const page = parsePage(searchParams);
@@ -221,13 +226,14 @@ export function RegistryScreen() {
         onSelectChange={(id, value) => applyFilters({ [id]: value })}
         onClear={() => router.push('/documents', { scroll: false })}
         hasOtherActiveFilters={hasActiveDocumentFilters(filters)}
+        trailing={<ListViewControl view={view} onChange={setView} />}
       />
 
-      <DataTable<DocumentListItem>
+      <DocumentList
+        view={view}
         caption="Documents in your authorized scope"
         columns={columns}
         rows={documents.data?.items ?? []}
-        rowKey={(row) => row.id}
         total={documents.data?.total ?? 0}
         page={page}
         pageSize={DOCUMENT_PAGE_SIZE}
