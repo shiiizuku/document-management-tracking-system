@@ -151,7 +151,13 @@ export function RegistryScreen() {
     ...STATIC_FILTER_SELECTS,
     {
       id: 'divisionId',
-      label: 'Division',
+      /*
+       * "Currently with", not "registered by". Forwarding is non-destructive (ADR-0005), so a
+       * document's registering division never changes and the two readings diverge the first time
+       * anything is forwarded; the server filters on current custody, which is also what the
+       * dashboard chart counts. The label says so because the distinction is invisible otherwise.
+       */
+      label: 'Currently with',
       anyLabel: 'Any division',
       options: (divisions.data ?? []).map((division) => ({
         value: division.id,

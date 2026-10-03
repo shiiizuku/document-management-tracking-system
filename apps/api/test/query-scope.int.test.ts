@@ -3,12 +3,17 @@ import { randomUUID } from 'node:crypto';
 import { hashSync } from 'bcryptjs';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { Pool } from 'pg';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AuthorizationActor } from '../src/modules/authorization/authorization.policy.js';
-import { documentIsPending, documentScopeFor } from '../src/modules/authorization/query-scope.js';
+import {
+  custodyDivisionId,
+  custodySectionId,
+  documentIsPending,
+  documentScopeFor,
+} from '../src/modules/authorization/query-scope.js';
 import {
   divisions,
   documentAssignments,
@@ -30,8 +35,13 @@ const db = drizzle(pool);
 // Identifiers are fixed so assertions can name the rows they expect.
 const DIV_A = '00000000-0000-4000-9000-0000000000a0';
 const DIV_B = '00000000-0000-4000-9000-0000000000b0';
+// A third division with no documents of its own, so a copy for information is the only way
+// anything reaches it — which is what the for-information cases need to prove.
+const DIV_C = '00000000-0000-4000-9000-0000000000c0';
 const SEC_A1 = '00000000-0000-4000-9000-0000000000a1';
 const SEC_B1 = '00000000-0000-4000-9000-0000000000b1';
+const SEC_B2 = '00000000-0000-4000-9000-0000000000b2';
+const SEC_C1 = '00000000-0000-4000-9000-0000000000c1';
 
 // Document primary keys are UUIDs; the readable label rides on the tracking number.
 const DOC_A_SECTION = randomUUID();
@@ -103,10 +113,13 @@ describe('documentScopeFor / scopeToActor against a real database', () => {
     await db.insert(divisions).values([
       { id: DIV_A, code: 'DIV-A', name: 'Division A' },
       { id: DIV_B, code: 'DIV-B', name: 'Division B' },
+      { id: DIV_C, code: 'DIV-C', name: 'Division C' },
     ]);
     await db.insert(sections).values([
       { id: SEC_A1, divisionId: DIV_A, code: 'A1', name: 'Section A1' },
       { id: SEC_B1, divisionId: DIV_B, code: 'B1', name: 'Section B1' },
+      { id: SEC_B2, divisionId: DIV_B, code: 'B2', name: 'Section B2' },
+      { id: SEC_C1, divisionId: DIV_C, code: 'C1', name: 'Section C1' },
     ]);
     await db.insert(users).values([seedUser(CREATOR), seedUser(STAFF_B)]);
 
@@ -253,6 +266,198 @@ describe('documentScopeFor / scopeToActor against a real database', () => {
         db.select({ id: documents.id }).from(documents),
       ]);
       expect([...pending, ...settled].sort()).toEqual(all.map((row) => row.id).sort());
+    });
+  });
+
+  /**
+   * The route half of placement scope, against real Postgres (ADR-0005).
+   *
+   * These documents are registered in Division A and then forwarded, so nothing on the document row
+   * names the unit that holds them: `documents.division_id` is the registering placement and never
+   * moves. Every case here has a twin in `authorization.test.ts`, which asserts the same answers
+   * from the in-memory policy — the two agreeing is the only reason a list may be scoped in SQL
+   * while a capability is checked in TypeScript.
+   *
+   * Declared last in the file so its fixture rows cannot disturb the suites above, which assert
+   * exact id lists over the whole table.
+   */
+  describe('placement through custody hops', () => {
+    const FORWARDED = randomUUID();
+    const COPIED = randomUUID();
+
+    const reaching = async (a: AuthorizationActor): Promise<string[]> =>
+      (await visibleTo(a)).filter((id) => id === FORWARDED || id === COPIED);
+
+    beforeAll(async () => {
+      await db
+        .insert(documents)
+        .values([
+          doc(FORWARDED, { divisionId: DIV_A, sectionId: SEC_A1 }),
+          doc(COPIED, { divisionId: DIV_A, sectionId: SEC_A1 }),
+        ]);
+      /*
+       * `createdAt` is set explicitly on every hop. The column defaults to `now()`, which in
+       * Postgres is the *transaction* clock — so hops written in one statement, as these are, would
+       * all share a timestamp and leave "which hop is the latest" to an arbitrary tie-break on a
+       * random id. In production each hop is its own transaction and the question never arises;
+       * here the fixture has to say what the production clock would have said.
+       */
+      const at = (minute: number) => new Date(`2026-10-02T09:0${minute}:00Z`);
+      await db.insert(documentRoutes).values([
+        // How each document reached Division A in the first place: registration hands it over
+        // unaccepted, because registering confers no custody (decision 154).
+        {
+          documentId: FORWARDED,
+          toDivisionId: DIV_A,
+          toSectionId: SEC_A1,
+          routedById: CREATOR,
+          createdAt: at(0),
+        },
+        {
+          documentId: COPIED,
+          toDivisionId: DIV_A,
+          toSectionId: SEC_A1,
+          routedById: CREATOR,
+          createdAt: at(0),
+        },
+        // The forward itself: one lead recipient (decision 159) and, on COPIED, one division
+        // consulted for information (decision 160).
+        {
+          documentId: FORWARDED,
+          fromDivisionId: DIV_A,
+          toDivisionId: DIV_B,
+          toSectionId: SEC_B1,
+          routedById: CREATOR,
+          createdAt: at(1),
+        },
+        {
+          documentId: COPIED,
+          fromDivisionId: DIV_A,
+          toDivisionId: DIV_B,
+          toSectionId: SEC_B1,
+          routedById: CREATOR,
+          createdAt: at(1),
+        },
+        {
+          documentId: COPIED,
+          fromDivisionId: DIV_A,
+          toDivisionId: DIV_C,
+          toSectionId: null,
+          routedById: CREATOR,
+          forInformation: true,
+          // Written after the lead hop, so custody must still report the lead: a copy for
+          // information is the newest row on the document and never the one holding it.
+          createdAt: at(2),
+        },
+      ]);
+    });
+
+    it('reaches the section a document was forwarded to, and its division head', async () => {
+      expect(
+        await reaching(actor({ role: 'STAFF_MEMBER', divisionId: DIV_B, sectionId: SEC_B1 })),
+      ).toEqual([FORWARDED, COPIED].sort());
+      expect(await reaching(actor({ role: 'DIVISION_HEAD', divisionId: DIV_B }))).toEqual(
+        [FORWARDED, COPIED].sort(),
+      );
+    });
+
+    it('does not reach a sibling section in the receiving division', async () => {
+      expect(
+        await reaching(actor({ role: 'STAFF_MEMBER', divisionId: DIV_B, sectionId: SEC_B2 })),
+      ).toEqual([]);
+    });
+
+    /*
+     * Decision 176. No clause in the predicate grants this: the hop by which Section A1 received
+     * the document is still on record, so read accumulates along the custody chain rather than
+     * transferring. The behaviour this replaced did the opposite — `relocate` moved the column and
+     * the sending unit lost the document outright.
+     */
+    it('keeps the forwarding unit on documents it has passed onward', async () => {
+      expect(
+        await reaching(actor({ role: 'STAFF_MEMBER', divisionId: DIV_A, sectionId: SEC_A1 })),
+      ).toEqual([FORWARDED, COPIED].sort());
+    });
+
+    it('reaches a copied-in division head but not that division’s sections', async () => {
+      expect(await reaching(actor({ role: 'DIVISION_HEAD', divisionId: DIV_C }))).toEqual([COPIED]);
+      expect(
+        await reaching(actor({ role: 'STAFF_MEMBER', divisionId: DIV_C, sectionId: SEC_C1 })),
+      ).toEqual([]);
+    });
+
+    /*
+     * Both hops here are unaccepted, and the recipients above reach them anyway. That is the
+     * resolution of ADR-0005's "scope resolves through accepted route rows", which read literally
+     * is unimplementable: `ACCEPT` is reached from the detail view, so a recipient who cannot read
+     * a document could never accept it. Acceptance gates actions; it does not gate visibility.
+     */
+    it('reaches recipients of hops nobody has accepted yet', async () => {
+      // Every hop in this suite is unaccepted — stated rather than assumed, because the reach
+      // asserted above means nothing if the fixtures had quietly been accepted.
+      const accepted = await db
+        .select({ id: documentRoutes.id })
+        .from(documentRoutes)
+        .where(
+          and(
+            inArray(documentRoutes.documentId, [FORWARDED, COPIED]),
+            isNotNull(documentRoutes.acceptedAt),
+          ),
+        );
+      expect(accepted).toEqual([]);
+      expect(
+        await reaching(actor({ role: 'STAFF_MEMBER', divisionId: DIV_B, sectionId: SEC_B1 })),
+      ).toContain(FORWARDED);
+    });
+
+    /**
+     * The custody expressions the registry filter and the dashboard rollup share. They must report
+     * the *lead* hop — a copy for information is consulted, never in hand — and fall back to the
+     * registering placement for rows with no hops at all, which is every document written before
+     * migration `0005`.
+     */
+    it('resolves current custody from the lead hop, ignoring copies for information', async () => {
+      const rows = await db
+        .select({
+          id: documents.id,
+          divisionId: custodyDivisionId(),
+          sectionId: custodySectionId(),
+        })
+        .from(documents);
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      expect(byId.get(FORWARDED)).toEqual({
+        id: FORWARDED,
+        divisionId: DIV_B,
+        sectionId: SEC_B1,
+      });
+      // COPIED's newest hop is the Division C copy; custody is still the lead hop before it.
+      expect(byId.get(COPIED)).toEqual({ id: COPIED, divisionId: DIV_B, sectionId: SEC_B1 });
+      // DOC_A_CONFIDENTIAL has no route rows, so the registering placement is the only answer.
+      expect(byId.get(DOC_A_CONFIDENTIAL)).toEqual({
+        id: DOC_A_CONFIDENTIAL,
+        divisionId: DIV_A,
+        sectionId: SEC_A1,
+      });
+    });
+
+    /*
+     * A hop to a whole division has no section, and custody must then report none. `COALESCE`
+     * would fall through to the registering section and claim the document sits in a section
+     * nobody routed it to, which is why the section expression is a `CASE`.
+     */
+    it('reports no section when the lead hop names a division only', async () => {
+      const divisionOnly = randomUUID();
+      await db
+        .insert(documents)
+        .values(doc(divisionOnly, { divisionId: DIV_A, sectionId: SEC_A1 }));
+      await db
+        .insert(documentRoutes)
+        .values({ documentId: divisionOnly, toDivisionId: DIV_C, routedById: CREATOR });
+      const [row] = await db
+        .select({ divisionId: custodyDivisionId(), sectionId: custodySectionId() })
+        .from(documents)
+        .where(eq(documents.id, divisionOnly));
+      expect(row).toEqual({ divisionId: DIV_C, sectionId: null });
     });
   });
 });

@@ -9,6 +9,7 @@ const resource: AuthorizationResource = {
   id: 'document-1',
   divisionId: 'division-a',
   sectionId: 'section-a1',
+  routes: [],
   assigneeUserIds: ['assigned-user'],
   sharedUserIds: ['shared-user'],
   confidential: false,
@@ -110,6 +111,106 @@ describe('AuthorizationPolicy public seam', () => {
       ),
     ).toBe(false);
     expect(policy.can(actor({ capabilities: [] }), resource, 'DOCUMENT_EDIT')).toBe(false);
+  });
+
+  /*
+   * Route-derived placement scope (ADR-0005). `divisionId` on the resource is now where the
+   * document was *registered* and never moves, so a forwarded document matches nothing on the row
+   * itself — the receiving unit's claim to it is a route row, and these cases are what stop that
+   * claim from being dropped. The SQL twin of each is asserted in `query-scope.int.test.ts`.
+   */
+  describe('placement through custody hops', () => {
+    // Registered in Division A / Section A1, then forwarded to Division B / Section B1.
+    const forwarded: AuthorizationResource = {
+      ...resource,
+      assigneeUserIds: [],
+      sharedUserIds: [],
+      routes: [{ toDivisionId: 'division-b', toSectionId: 'section-b1', forInformation: false }],
+    };
+
+    it('reaches the section the document was forwarded to', () => {
+      expect(
+        policy.canRead(actor({ divisionId: 'division-b', sectionId: 'section-b1' }), forwarded),
+      ).toBe(true);
+    });
+
+    it('does not reach a sibling section in the receiving division', () => {
+      expect(
+        policy.canRead(actor({ divisionId: 'division-b', sectionId: 'section-b2' }), forwarded),
+      ).toBe(false);
+    });
+
+    it('reaches the head of the receiving division', () => {
+      expect(
+        policy.canRead(
+          actor({ role: 'DIVISION_HEAD', divisionId: 'division-b', sectionId: null }),
+          forwarded,
+        ),
+      ).toBe(true);
+    });
+
+    /*
+     * Decision 176: forwarding is non-destructive, so the unit that handled a document keeps it.
+     * Nothing in the predicate says so — the hop by which Section A1 received the document is
+     * still on record, and that is the whole mechanism. Pinned because the behaviour it replaces
+     * did the opposite: `relocate` moved the column and the sender lost the document.
+     */
+    it('keeps the forwarding unit on a document it has passed onward', () => {
+      const onward: AuthorizationResource = {
+        ...forwarded,
+        routes: [
+          { toDivisionId: 'division-a', toSectionId: 'section-a1', forInformation: false },
+          ...forwarded.routes,
+        ],
+      };
+      expect(
+        policy.canRead(actor({ divisionId: 'division-a', sectionId: 'section-a1' }), onward),
+      ).toBe(true);
+    });
+
+    /*
+     * A copy for information is division-level by decision 160: it reaches the division head and
+     * not every section inside the division, which is what "consulted" means as distinct from
+     * "handed to".
+     */
+    it('reaches a copied-in division head but not that division’s sections', () => {
+      const copied: AuthorizationResource = {
+        ...forwarded,
+        routes: [
+          ...forwarded.routes,
+          { toDivisionId: 'division-c', toSectionId: null, forInformation: true },
+        ],
+      };
+      expect(
+        policy.canRead(
+          actor({ role: 'DIVISION_HEAD', divisionId: 'division-c', sectionId: null }),
+          copied,
+        ),
+      ).toBe(true);
+      expect(
+        policy.canRead(actor({ divisionId: 'division-c', sectionId: 'section-c1' }), copied),
+      ).toBe(false);
+    });
+
+    /*
+     * Acceptance is deliberately not part of this predicate — a recipient who could not read a
+     * document could never accept it. `RouteRecipient` carries no `acceptedAt` for exactly that
+     * reason, so the only way to assert the rule is that an unaccepted hop (every hop here is one:
+     * there is no field to accept) reaches its recipient.
+     */
+    it('reaches a recipient before the hop is accepted', () => {
+      expect(
+        policy.can(
+          actor({
+            divisionId: 'division-b',
+            sectionId: 'section-b1',
+            capabilities: ['DOCUMENT_ACCEPT'],
+          }),
+          forwarded,
+          'DOCUMENT_ACCEPT',
+        ),
+      ).toBe(true);
+    });
   });
 
   it('filters lists before pagination and counting', () => {

@@ -8,6 +8,14 @@ import type { WorkflowStatus } from '../workflow/workflow.service.js';
 export type DocumentPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 
 export interface SearchableDocument extends AuthorizationResource {
+  /*
+   * Where the document is now, which is not `divisionId` — that one is the registering placement
+   * and never moves (ADR-0005). The division filter below asks the user's question, so it reads
+   * these; the inherited `divisionId` / `sectionId` are scope's, and conflating the two would
+   * either filter by who filed the document or scope by who currently holds it.
+   */
+  custodyDivisionId: string;
+  custodySectionId: string | null;
   title: string;
   trackingNumber: string;
   referenceNumber: string | null;
@@ -101,8 +109,8 @@ export class DocumentSearchService {
           (query.priority === undefined || document.priority === query.priority) &&
           (query.type === undefined || document.type === query.type) &&
           (query.direction === undefined || document.direction === query.direction) &&
-          (query.divisionId === undefined || document.divisionId === query.divisionId) &&
-          (query.sectionId === undefined || document.sectionId === query.sectionId)
+          (query.divisionId === undefined || document.custodyDivisionId === query.divisionId) &&
+          (query.sectionId === undefined || document.custodySectionId === query.sectionId)
         );
       })
       .sort((left, right) => {

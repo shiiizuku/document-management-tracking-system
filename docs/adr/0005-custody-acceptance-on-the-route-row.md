@@ -67,6 +67,22 @@ resolves through accepted route rows.
 - Documents can be inspected for "who is sitting on this, and since when" without reading the
   audit trail. This is the operational reason the system is being built.
 
+### Correction (2026-10-03, on implementation)
+
+"Authorization scope resolves through accepted route rows", above, is wrong as written, and read
+literally it is unimplementable: `ACCEPT` is reached from the document detail view, so a recipient
+who cannot read a document could never accept it and the hop would stay outstanding forever. The
+rule as built is **scope resolves through route rows; custody gates progress** — any hop addressed
+to a unit makes the document readable there, and acceptance governs what may be *done* with it
+(`leadRouteOutstanding` in the workflow engine). `RouteRecipient` in `authorization.policy.ts`
+deliberately carries no `accepted_at` so the mistaken reading cannot be reintroduced as one
+plausible-looking condition.
+
+Two things this decision left open were settled in implementation and recorded as decisions 176
+and 177: a unit that forwards a document onward **keeps** it, which makes this a widening rather
+than a transfer of access; and a document's location is its most recent *lead* hop, which the
+registry filter and the dashboard chart share as one SQL expression.
+
 ## Alternatives considered
 
 - **Re-enter `PENDING` as a status at each hop.** Rejected: cannot express partial acceptance

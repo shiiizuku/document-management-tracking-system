@@ -1,5 +1,5 @@
 import { hashSync } from 'bcryptjs';
-import type { UserRow } from '../src/modules/users/users.repository.js';
+import type { UserFilters, UserRow } from '../src/modules/users/users.repository.js';
 
 const timestamp = new Date('2026-09-28T00:00:00.000Z');
 
@@ -99,6 +99,22 @@ export class InMemoryUsersRepository {
 
   findById(id: string): Promise<UserRow | null> {
     return Promise.resolve(this.persistedUsers.find((user) => user.id === id) ?? null);
+  }
+
+  /**
+   * Only the filters the forwarding path uses: role, division and active. Enough for
+   * `divisionHeadsOf` to resolve who a for-information copy notifies, which is the one place the
+   * REST suites reach this method.
+   */
+  list(filters: UserFilters = {}): Promise<UserRow[]> {
+    return Promise.resolve(
+      this.persistedUsers.filter(
+        (user) =>
+          (filters.role === undefined || user.role === filters.role) &&
+          (filters.divisionId === undefined || user.divisionId === filters.divisionId) &&
+          (filters.active === undefined || user.active === filters.active),
+      ),
+    );
   }
 
   registerFailedLogin(

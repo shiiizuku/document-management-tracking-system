@@ -118,8 +118,29 @@ export interface RouteEntry {
   toSectionId: string | null;
   routedById: string;
   remarks: string | null;
+  /** A copy for information: read and remark only, and never what the workflow waits on. */
+  forInformation: boolean;
+  acceptedAt: string | null;
+  acceptedById: string | null;
   createdAt: string;
 }
+
+/**
+ * Where the document is now — the most recent hop that took custody, or the registering placement
+ * when it has never been forwarded.
+ *
+ * `document.divisionId` is not this. Forwarding is non-destructive (ADR-0005), so that column
+ * records where the document was registered and stops moving after the first hop; the server's
+ * `custodyDivisionId` is the same answer computed in SQL.
+ */
+export const currentCustody = (
+  document: DocumentDetail,
+): { divisionId: string; sectionId: string | null } => {
+  const hops = document.routes.filter((hop) => !hop.forInformation);
+  const lead = hops[hops.length - 1];
+  if (lead === undefined) return { divisionId: document.divisionId, sectionId: document.sectionId };
+  return { divisionId: lead.toDivisionId, sectionId: lead.toSectionId };
+};
 
 export interface DocumentDetail extends DocumentListItem {
   assigneeUserIds: string[];

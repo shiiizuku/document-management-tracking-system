@@ -17,13 +17,17 @@ import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
 import { AuditWriter } from '../audit/audit.writer.js';
 import { OutboxWriter } from '../audit/outbox.writer.js';
-import { AuthorizationPolicy } from '../authorization/authorization.policy.js';
+import {
+  AuthorizationPolicy,
+  type AuthorizationResource,
+} from '../authorization/authorization.policy.js';
 import { NotificationsRepository } from '../notifications/notifications.repository.js';
 import type { MonthlyReport } from '../reports/monthly-report.js';
 import { UsersRepository } from '../users/users.repository.js';
 import { FileVersionsRepository } from '../files/file-versions.repository.js';
 import {
   IllegalTransitionError,
+  leadCustodyRoute,
   WORKFLOW_ACTION_CAPABILITIES,
   WorkflowConflictError,
   WorkflowRuleError,
@@ -41,6 +45,7 @@ import {
   type DashboardActivityEntry,
   type DashboardCounts,
   type DashboardDivisionPending,
+  type DocumentAuthorizationFacts,
   type DocumentMetadataPatch,
   type DocumentRow,
   type DocumentRouteRow,
@@ -402,10 +407,16 @@ export class DocumentsService {
         remarks: event.remarks,
         occurredAt: event.occurredAt,
       })),
-      allowedActions: this.workflowActionsFor(actor, row, {
-        ...this.workflowShape(row, clean, ord),
-        routes: routes.map((route) => this.toRouteCustody(route)),
-      }),
+      allowedActions: this.workflowActionsFor(
+        actor,
+        row,
+        {
+          ...this.workflowShape(row, clean, ord),
+          routes: routes.map((route) => this.toRouteCustody(route)),
+        },
+        // Already loaded for the payload above, so the capability filter costs no extra query.
+        { routes, assigneeUserIds, sharedUserIds },
+      ),
     };
   }
 
@@ -424,7 +435,8 @@ export class DocumentsService {
   async allowedActions(actor: RequestUser, id: string): Promise<WorkflowAction[]> {
     const row = await this.repository.findReadableById(actor, id);
     if (row === null) return [];
-    return this.workflowActionsFor(actor, row, await this.toWorkflowDocument(row));
+    const [document, facts] = await Promise.all([this.toWorkflowDocument(row), this.factsFor(id)]);
+    return this.workflowActionsFor(actor, row, document, facts);
   }
 
   // -------------------------------------------------------------- metadata edit
@@ -434,8 +446,8 @@ export class DocumentsService {
     id: string,
     input: UpdateDocumentMetadataInput,
   ): Promise<PublicDocument> {
-    const current = await this.requireReadable(actor, id);
-    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_EDIT'))
+    const { row: current, facts } = await this.requireReadableWithFacts(actor, id);
+    if (!this.authorization.can(actor, this.asResource(current, facts), 'DOCUMENT_EDIT'))
       throw new ForbiddenException('Editing this document is not allowed');
 
     const { patch, before, after } = this.diffMetadata(current, input);
@@ -490,8 +502,8 @@ export class DocumentsService {
     id: string,
     expectedVersion: number,
   ): Promise<PublicDocument> {
-    const current = await this.requireReadable(actor, id);
-    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_DELETE'))
+    const { row: current, facts } = await this.requireReadableWithFacts(actor, id);
+    if (!this.authorization.can(actor, this.asResource(current, facts), 'DOCUMENT_DELETE'))
       throw new ForbiddenException('Deleting this document is not allowed');
 
     const deleted = await this.database.transaction(async (tx) => {
@@ -530,7 +542,13 @@ export class DocumentsService {
   async restore(actor: RequestUser, id: string, expectedVersion: number): Promise<PublicDocument> {
     const current = await this.repository.findByIdIncludingDeleted(id);
     if (current === null) throw new NotFoundException('Document not found');
-    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_RESTORE'))
+    if (
+      !this.authorization.can(
+        actor,
+        this.asResource(current, await this.factsFor(id)),
+        'DOCUMENT_RESTORE',
+      )
+    )
       throw new ForbiddenException('Restoring this document is not allowed');
     if (current.deletedAt === null)
       throw new ConflictException({
@@ -575,9 +593,9 @@ export class DocumentsService {
     action: WorkflowAction,
     input: { expectedVersion: number; remarks?: string; releaseMethod?: ReleaseMethod },
   ): Promise<PublicDocument> {
-    const current = await this.requireReadable(actor, id);
+    const { row: current, facts } = await this.requireReadableWithFacts(actor, id);
     const capability = WORKFLOW_ACTION_CAPABILITIES[action];
-    if (!this.authorization.can(actor, this.asResource(current), capability))
+    if (!this.authorization.can(actor, this.asResource(current, facts), capability))
       throw new ForbiddenException('Action is not allowed');
 
     // Signing pins the version being signed; releasing checks that pin against the current
@@ -738,8 +756,8 @@ export class DocumentsService {
     documentId: string,
     recipientUserId: string,
   ): Promise<DocumentDetail> {
-    const current = await this.requireReadable(actor, documentId);
-    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_ASSIGN'))
+    const { row: current, facts } = await this.requireReadableWithFacts(actor, documentId);
+    if (!this.authorization.can(actor, this.asResource(current, facts), 'DOCUMENT_ASSIGN'))
       throw new ForbiddenException('Assignment is not allowed');
     const recipient = await this.users.findById(recipientUserId);
     if (recipient === null || !recipient.active)
@@ -794,17 +812,23 @@ export class DocumentsService {
   // ------------------------------------------------------------ routing / sharing
 
   /**
-   * Forwards a document to another division (optionally a section within it): moves its owning
-   * scope under the optimistic-version guard and records the hop in `document_routes`. Routing
-   * to the current location is rejected as a no-op.
+   * Forwards a document to another division (optionally a section within it): records the hop in
+   * `document_routes` under the optimistic-version guard, and with it one row per division copied
+   * in for information.
+   *
+   * It does **not** move `documents.division_id` any more (ADR-0005). The document's location is
+   * the hop it is sitting at, which is why the no-op check and `from_division_id` below are both
+   * resolved from the route history rather than from the row: the column records where the document
+   * was registered, and after the first forward that is not where it is.
    */
   async route(actor: RequestUser, id: string, input: RouteDocumentInput): Promise<DocumentDetail> {
-    const current = await this.requireReadable(actor, id);
-    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_ASSIGN'))
+    const { row: current, facts } = await this.requireReadableWithFacts(actor, id);
+    if (!this.authorization.can(actor, this.asResource(current, facts), 'DOCUMENT_ASSIGN'))
       throw new ForbiddenException('Routing this document is not allowed');
 
     const toSectionId = input.toSectionId ?? null;
-    if (current.divisionId === input.toDivisionId && current.sectionId === toSectionId)
+    const custody = await this.currentCustody(current);
+    if (custody.divisionId === input.toDivisionId && custody.sectionId === toSectionId)
       throw new BadRequestException({
         code: 'ROUTE_NO_OP',
         message: 'The document is already at that division and section',
@@ -812,26 +836,73 @@ export class DocumentsService {
     const placement = await this.repository.resolvePlacement(input.toDivisionId, toSectionId);
     if (!placement.ok) throw new BadRequestException(placement.reason);
 
+    // Division-level only, by decision 160 — resolved with a null section for exactly that reason.
+    const forInformationDivisionIds = input.forInformationDivisionIds ?? [];
+    for (const divisionId of forInformationDivisionIds) {
+      const copy = await this.repository.resolvePlacement(divisionId, null);
+      if (!copy.ok) throw new BadRequestException(copy.reason);
+    }
+    const informationRecipients = await this.divisionHeadsOf(forInformationDivisionIds);
+    const remarks = input.remarks?.trim() ? input.remarks.trim() : null;
+
     await this.database.transaction(async (tx) => {
-      const moved = await this.repository.relocate(
-        id,
-        input.expectedVersion,
-        input.toDivisionId,
-        toSectionId,
-        tx,
-      );
+      /*
+       * Nothing on the document row changes, so the bump exists only as the concurrency control:
+       * two people forwarding the same document at once must not both succeed, and
+       * `expectedVersion` is the client's one guard against it. `ACCEPT` deliberately does not
+       * bump — it stamps a route row and the document itself is untouched — but a forward changes
+       * custody, and the next forward has to be made to see it.
+       */
+      const moved = await this.repository.bumpVersion(id, input.expectedVersion, tx);
       if (moved === null) throw this.staleConflict();
       await this.repository.insertRoute(
         {
           documentId: id,
-          fromDivisionId: current.divisionId,
+          fromDivisionId: custody.divisionId,
           toDivisionId: input.toDivisionId,
           toSectionId,
           routedById: actor.id,
-          remarks: input.remarks?.trim() ? input.remarks.trim() : null,
+          remarks,
         },
         tx,
       );
+      for (const divisionId of forInformationDivisionIds) {
+        await this.repository.insertRoute(
+          {
+            documentId: id,
+            fromDivisionId: custody.divisionId,
+            toDivisionId: divisionId,
+            toSectionId: null,
+            routedById: actor.id,
+            remarks,
+            forInformation: true,
+          },
+          tx,
+        );
+      }
+      /*
+       * The heads of the copied divisions are notified because they are precisely the people the
+       * copy just made readers: a division-level hop is reachable by the division head, not by
+       * every section inside it (`routesReachUnit`). The lead recipient gets no notification here
+       * and never has — forwarding for action surfaces through the work queue — so this is
+       * deliberately asymmetrical, and that is the thing to revisit if a lead notification is
+       * ever added rather than quietly notifying both from here.
+       */
+      for (const recipient of informationRecipients) {
+        await this.notifications.insert(
+          {
+            recipientUserId: recipient.id,
+            type: 'DOCUMENT_ROUTED',
+            title: 'Copied in for information',
+            body: `${current.trackingNumber}: ${current.title}`,
+            documentId: id,
+            idempotencyKey: `notify:document.routed:${id}:${moved.version}:${recipient.id}`,
+          },
+          tx,
+        );
+      }
+      // One event for one act: a forward that consults three divisions is still one forward, and
+      // the recipient list is what the audit trail needs to reconstruct it.
       await this.audit.write(
         {
           actorId: actor.id,
@@ -840,9 +911,10 @@ export class DocumentsService {
           targetId: id,
           outcome: 'SUCCESS',
           summary: {
-            fromDivisionId: current.divisionId,
+            fromDivisionId: custody.divisionId,
             toDivisionId: input.toDivisionId,
             toSectionId,
+            forInformationDivisionIds,
           },
         },
         tx,
@@ -852,7 +924,12 @@ export class DocumentsService {
           aggregateType: 'document',
           aggregateId: id,
           eventType: 'document.routed',
-          payload: { documentId: id, toDivisionId: input.toDivisionId, toSectionId },
+          payload: {
+            documentId: id,
+            toDivisionId: input.toDivisionId,
+            toSectionId,
+            forInformationDivisionIds,
+          },
           idempotencyKey: `document.routed:${id}:${moved.version}`,
         },
         tx,
@@ -863,8 +940,8 @@ export class DocumentsService {
 
   /** Grants one user read access to a document without moving or reassigning it. */
   async share(actor: RequestUser, id: string, userId: string): Promise<DocumentDetail> {
-    const current = await this.requireReadable(actor, id);
-    if (!this.authorization.can(actor, this.asResource(current), 'DOCUMENT_ASSIGN'))
+    const { row: current, facts } = await this.requireReadableWithFacts(actor, id);
+    if (!this.authorization.can(actor, this.asResource(current, facts), 'DOCUMENT_ASSIGN'))
       throw new ForbiddenException('Sharing this document is not allowed');
     const recipient = await this.users.findById(userId);
     if (recipient === null || !recipient.active)
@@ -913,8 +990,15 @@ export class DocumentsService {
    */
   async deletedQueue(actor: RequestUser): Promise<PublicDocument[]> {
     const rows = await this.repository.listDeleted(actor);
+    const facts = await this.repository.authorizationFacts(rows.map((row) => row.id));
     return rows
-      .filter((row) => this.authorization.can(actor, this.asResource(row), 'DOCUMENT_RESTORE'))
+      .filter((row) =>
+        this.authorization.can(
+          actor,
+          this.asResource(row, facts.get(row.id) ?? this.noFacts()),
+          'DOCUMENT_RESTORE',
+        ),
+      )
       .map((row) => this.toPublic(row));
   }
 
@@ -958,8 +1042,6 @@ export class DocumentsService {
       createdAt: row.createdAt,
       divisionId: row.divisionId,
       sectionId: row.sectionId,
-      assigneeUserIds: [] as string[],
-      sharedUserIds: [] as string[],
       confidential: row.confidential,
     }));
     await this.audit.write({
@@ -992,8 +1074,8 @@ export class DocumentsService {
    * row so the caller can compare version ids for the "is current / is signed" flags.
    */
   async requireEditableDocument(actor: RequestUser, documentId: string): Promise<DocumentRow> {
-    const document = await this.requireReadable(actor, documentId);
-    if (!this.authorization.can(actor, this.asResource(document), 'DOCUMENT_EDIT'))
+    const { row: document, facts } = await this.requireReadableWithFacts(actor, documentId);
+    if (!this.authorization.can(actor, this.asResource(document, facts), 'DOCUMENT_EDIT'))
       throw new ForbiddenException('Editing this document is not allowed');
     if (document.status === 'RELEASED' || document.status === 'ARCHIVED')
       throw new ConflictException({
@@ -1036,12 +1118,17 @@ export class DocumentsService {
     actor: RequestUser,
     row: DocumentRow,
     document: WorkflowDocument,
+    facts: DocumentAuthorizationFacts,
   ): WorkflowAction[] {
     if (actor.role === 'VIEWER') return [];
     return this.workflow
       .allowedActions(document, this.toWorkflowActor(actor))
       .filter((action) =>
-        this.authorization.can(actor, this.asResource(row), WORKFLOW_ACTION_CAPABILITIES[action]),
+        this.authorization.can(
+          actor,
+          this.asResource(row, facts),
+          WORKFLOW_ACTION_CAPABILITIES[action],
+        ),
       );
   }
 
@@ -1107,18 +1194,83 @@ export class DocumentsService {
     };
   }
 
-  // The row is already proven readable by `findReadableById`, so its confidential/division/
-  // section fields are all that `can` still needs; assignee/share membership only ever widens
-  // read access, so leaving those arrays empty here can never grant an action it should deny.
-  private asResource(row: DocumentRow) {
+  /**
+   * The row as the in-memory policy sees it.
+   *
+   * The facts are a required argument, and they used to be stubbed out as empty arrays on the
+   * reasoning that a row already proven readable in SQL needed only its own columns. ADR-0005 ended
+   * that: `documents.division_id` is now the *registering* placement and never moves, so a document
+   * forwarded to another unit matches nothing on the row itself — the receiving division's claim to
+   * it lives only on a route row. Pass the facts and both halves agree; stub them and every
+   * capability check on a forwarded document is a false 403.
+   */
+  private asResource(row: DocumentRow, facts: DocumentAuthorizationFacts): AuthorizationResource {
     return {
       id: row.id,
       divisionId: row.divisionId,
       sectionId: row.sectionId,
-      assigneeUserIds: [] as string[],
-      sharedUserIds: [] as string[],
+      routes: facts.routes,
+      assigneeUserIds: facts.assigneeUserIds,
+      sharedUserIds: facts.sharedUserIds,
       confidential: row.confidential,
     };
+  }
+
+  /**
+   * Where the document is now: the most recent hop that took custody, falling back to the
+   * registering placement.
+   *
+   * The fallback is not defensive padding — documents registered before migration `0005` have no
+   * route rows at all, and for those the column is still the only answer there is.
+   */
+  private async currentCustody(
+    row: DocumentRow,
+  ): Promise<{ divisionId: string; sectionId: string | null }> {
+    const lead = leadCustodyRoute(
+      (await this.repository.listRoutes(row.id)).map((route) => this.toRouteCustody(route)),
+    );
+    if (lead === undefined) return { divisionId: row.divisionId, sectionId: row.sectionId };
+    return { divisionId: lead.toDivisionId, sectionId: lead.toSectionId };
+  }
+
+  /**
+   * The active heads of the named divisions, deduplicated — the readers a copy for information
+   * creates, and so the people it notifies.
+   */
+  private async divisionHeadsOf(divisionIds: readonly string[]): Promise<{ id: string }[]> {
+    if (divisionIds.length === 0) return [];
+    const heads = await Promise.all(
+      divisionIds.map((divisionId) =>
+        this.users.list({ role: 'DIVISION_HEAD', divisionId, active: true }),
+      ),
+    );
+    return [...new Map(heads.flat().map((head) => [head.id, { id: head.id }])).values()];
+  }
+
+  /** The empty facts: no hops, no assignment, no share. Reachable only for a row with no rows. */
+  private noFacts(): DocumentAuthorizationFacts {
+    return { routes: [], assigneeUserIds: [], sharedUserIds: [] };
+  }
+
+  /** {@link DocumentsRepository.authorizationFacts} for one document. */
+  private async factsFor(documentId: string): Promise<DocumentAuthorizationFacts> {
+    const facts = await this.repository.authorizationFacts([documentId]);
+    return facts.get(documentId) ?? this.noFacts();
+  }
+
+  /**
+   * Loads a readable document together with the facts every capability check now needs.
+   *
+   * The capability call sites take this rather than {@link requireReadable} because forgetting the
+   * facts is not a visible mistake — it reads as a plausible 403 on exactly the documents routing
+   * was built to move.
+   */
+  private async requireReadableWithFacts(
+    actor: RequestUser,
+    id: string,
+  ): Promise<{ row: DocumentRow; facts: DocumentAuthorizationFacts }> {
+    const row = await this.requireReadable(actor, id);
+    return { row, facts: await this.factsFor(id) };
   }
 
   private diffMetadata(current: DocumentRow, input: UpdateDocumentMetadataInput) {

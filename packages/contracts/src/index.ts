@@ -323,17 +323,54 @@ export const assignDocumentSchema = z.object({
   recipientUserId: z.uuid(),
 });
 
-// Routing forwards a document to another division (and optionally a section within it),
-// moving its owning scope and recording the hop in the route history. `expectedVersion` keeps
-// it under the same optimistic-concurrency check as the other mutations; `divisionId` is a
-// plain string here (the service validates it exists/active against Postgres, rejecting a
-// malformed id) to match `createDocumentSchema`.
-export const routeDocumentSchema = z.object({
-  expectedVersion: z.number().int().positive(),
-  toDivisionId: z.string().trim().min(1),
-  toSectionId: z.string().trim().min(1).optional(),
-  remarks: z.string().trim().max(4000).optional(),
-});
+/**
+ * How many divisions one forward may copy in for information.
+ *
+ * A limit rather than none: each entry writes a route row and a notification in the forwarding
+ * transaction, and a forward that consults every division in the office is a broadcast, which is
+ * not what decision 160 describes.
+ */
+export const FOR_INFORMATION_RECIPIENT_LIMIT = 10;
+
+// Routing forwards a document to another division (and optionally a section within it) and records
+// the hop in the route history. `expectedVersion` keeps it under the same optimistic-concurrency
+// check as the other mutations; `divisionId` is a plain string here (the service validates it
+// exists/active against Postgres, rejecting a malformed id) to match `createDocumentSchema`.
+//
+// `toDivisionId`/`toSectionId` name the **lead** recipient: the one that takes custody and on whose
+// action the workflow progresses (decision 159). `forInformationDivisionIds` names the rest, who may
+// read and remark only. They are division ids and nothing finer because a for-information copy is
+// division-level by decision 160 — a section cannot be consulted, only its division.
+export const routeDocumentSchema = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    toDivisionId: z.string().trim().min(1),
+    toSectionId: z.string().trim().min(1).optional(),
+    forInformationDivisionIds: z
+      .array(z.string().trim().min(1))
+      .max(FOR_INFORMATION_RECIPIENT_LIMIT)
+      .optional(),
+    remarks: z.string().trim().max(4000).optional(),
+  })
+  .superRefine((value, context) => {
+    const copies = value.forInformationDivisionIds ?? [];
+    if (new Set(copies).size !== copies.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A division may be copied in only once',
+        path: ['forInformationDivisionIds'],
+      });
+    }
+    // The lead already receives the document; naming it again would write a second row for the
+    // same division, one of which says the workflow waits on it and one of which says it does not.
+    if (copies.includes(value.toDivisionId)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The lead recipient cannot also be copied in for information',
+        path: ['forInformationDivisionIds'],
+      });
+    }
+  });
 
 // Sharing grants one user read access to a document without moving or reassigning it.
 export const shareDocumentSchema = z.object({

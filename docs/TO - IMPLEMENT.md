@@ -16,7 +16,7 @@ as six dependency-ordered slices. **Slices 1–3 are done**; the rest are not st
 | 1 | Migration `0005` (custody columns on `document_routes`, derived `PENDING`, enum replacement) + one status vocabulary in `@dts/contracts` | ✅ done |
 | 2 | Workflow engine: `FOR_INITIAL`, `COMPLIED`, direction-branched matrix and `RESTORE`, re-entrant `ACCEPT` | ✅ done |
 | 3 | `DIRECTOR` role; remove `DOCUMENT_SIGN` from `RECORDS_STAFF` and `DIVISION_HEAD` | ✅ done |
-| 4 | Non-destructive routing: `relocate` must stop overwriting `documents.division_id`; scope resolves through accepted routes; multi-recipient forwards write `for_information` rows | ⬜ not started |
+| 4 | Non-destructive routing: `relocate` must stop overwriting `documents.division_id`; scope resolves through accepted routes; multi-recipient forwards write `for_information` rows | ✅ done |
 | 5 | Reference Document join table (decisions 165–167) | ⬜ not started |
 | 6 | UI: detail-view right rail, reference-document modal, inline routing slip, list-view control, Inter | ⬜ not started |
 
@@ -138,6 +138,182 @@ value. Two things in the plan above turned out not to need code:
   (`documents.repository.ts`), not through `/users`, so office-wide document read is enough.
   `authorization.service.test.ts` pins the refusal so the next missing-name bug is not "fixed" by
   widening the people policy.
+
+### Slice 4 plan — non-destructive routing
+
+Planned 2026-10-03 for the next session. Completes the second half of ADR-0005: the half that
+decision 157 and slice 1 already *assumed*. **This is the slice that changes what a column means**,
+so it is the one most able to break reads silently rather than loudly.
+
+**Why it is not just deleting an `UPDATE`.** `relocate` does not merely label a document —
+`documents.division_id` *is* the authorization scope. Both halves of the authorization layer resolve
+a section actor's read through `documents.division_id = actor.divisionId` and nothing else
+(`query-scope.ts:50-55`, `authorization.policy.ts` `canRead`). Stop writing that column and every
+non-office-wide reader loses the document the moment it is forwarded to them: the receiving division
+is named only on a `document_routes` row nobody consults for scope. So the `UPDATE` cannot be
+removed before the route-derived predicate replaces it, in both halves, in that order.
+
+**What the column will mean afterwards.** `documents.division_id` / `section_id` become the
+**registering placement** — where the document entered the office — and are immutable after
+creation. They are not a denormalised "current holder": a maintained copy would need the same
+two-axis logic to compute and would be one more thing to drift. This reading is already the one the
+rest of the code wants:
+
+- `isOrdDivision(row.divisionId)` (ADR-0007) asks where an outgoing document was *drafted*. Under a
+  moving column that answer silently changes on the first forward; under an immutable one it is
+  right for good.
+- The division code embedded in the reference number (decision 153) is the registering division's.
+  Today a forwarded `ORD-2026-0001` reports a `division_id` its own tracking number contradicts.
+
+A rename is deliberately *not* proposed: `documents_scope_status_idx` and nine call sites would
+churn for a comment. The column keeps its name and gains a doc comment saying it is origin, not
+custody.
+
+**The contradiction in ADR-0005 that has to be resolved first.** The ADR says "authorization scope
+resolves through accepted route rows". Taken literally that is unimplementable: a recipient cannot
+accept a document it cannot read, and `ACCEPT` is reachable only from the detail view, which goes
+through `findReadableById`. Scope must therefore resolve through **any** route row addressed to the
+actor's unit, accepted or not; **acceptance gates actions, not visibility**, which is what slice 2
+already built (`leadRouteOutstanding`). Read as "scope resolves through route rows; custody gates
+progress" the ADR is consistent and needs no amendment — but the sentence is worth a correction note
+in its consequences, because the literal reading is a plausible and broken implementation.
+
+**The second question the ADR leaves open: does a division that forwarded a document onward keep
+it?** Recommended answer: **yes**. Non-destructive means nobody loses what they held — the unit that
+handled a document can still answer for it, which is the operational reason the slip exists. The cost
+is honest and should be written down: this is a **widening**. Today forwarding revokes the sender's
+read; afterwards read accumulates along the custody chain. Decide it explicitly, record it as a new
+decision, and pin it with a test either way, because "the division that passed it on can still read
+it" is exactly the sort of thing that looks like a leak to whoever finds it later.
+
+**Steps, in order**
+
+1. **The route-scope predicate, added alongside the column check, not replacing it.** A new
+   `documentReachableByRoute(actor)` in `query-scope.ts` — an `EXISTS` over `document_routes` where
+   `to_division_id = actor.divisionId` and (`to_section_id IS NULL` for a division-level actor, or
+   `to_section_id = actor.sectionId`). Compose it into the `reachable` array next to the existing
+   `eq(documents.divisionId, ...)` branch. At this step both predicates are live, so the change is a
+   pure widening and nothing can break; the column check comes out in step 4.
+2. **The in-memory twin, same shape.** `AuthorizationResource` gains a `routes` field (the
+   `{ toDivisionId, toSectionId, forInformation }` triple is enough — `canRead` must not look at
+   `acceptedAt`, per the resolution above) and `canRead` gains the matching branch. Then fix
+   `asResource` (`documents.service.ts:1113`), which today passes `assigneeUserIds: []` and
+   `sharedUserIds: []` — harmless while the division check carried every case, a false 403 the
+   moment it does not. Every `can(...)` call site on the capability path needs the routes loaded;
+   `requireReadable` already has the row, so the cheapest correct shape is a
+   `requireReadableWithRoutes` used by `route`, `share`, `assign` and the workflow commands.
+   `query-scope.test.ts` and `query-scope.int.test.ts` exist precisely so these two halves can be
+   asserted to agree — add the route cases to both in this step, not later.
+3. **Multi-recipient forwards.** `routeDocumentSchema` gains
+   `forInformationDivisionIds: z.array(z.uuid()).max(…).optional()` — division-level only
+   (decision 160), so no section ids and no nesting. Validate server-side that the list is distinct,
+   excludes the lead, and that each division resolves and is active, reusing `resolvePlacement`.
+   `route()` then writes one lead row (`for_information: false`, as now) plus one row per
+   information recipient inside the same transaction, with `from_division_id` set to the **current
+   custody division** — not `current.divisionId`, which is about to stop meaning that. One
+   `document.routed` audit event carrying the recipient list, not one per row: the forward is the
+   act. Notification rows for the information recipients belong here too, in the same transaction,
+   per the global convention.
+4. **Then stop writing the column.** `relocate` loses its `divisionId` / `sectionId` `set` and
+   becomes what it actually is — a conditional version bump — so rename it
+   `bumpVersion(id, expectedVersion, tx)`. Keep the bump: unlike `ACCEPT` (which stamps a route row
+   and deliberately does not bump), a forward must not race another forward, and `expectedVersion`
+   is the client's only guard. The `ROUTE_NO_OP` check must at the same moment compare the
+   destination against the **current custody hop** rather than `current.divisionId`, or forwarding a
+   document back to the division that registered it starts failing as a no-op.
+5. **Migration `0007`.** Add `document_routes_recipient_idx` on
+   `(to_division_id, to_section_id, document_id)` to back the new `EXISTS` — the existing index is
+   partial on unaccepted rows and will not serve a predicate that ignores `accepted_at`. Leave
+   `documents_scope_status_idx` in place; origin + status is still what the registry filters on. No
+   backfill: pre-slice-4 documents already have route rows for every hop, which is exactly why this
+   is doable without one.
+6. **Decide what the registry's division filter means** (`documents.repository.ts:314`) and say so in
+   the UI. It currently filters `documents.division_id`, which after step 4 reads "registered by",
+   while a user picking a division in the registry almost certainly means "currently with". These
+   are now two different questions and the filter can only answer one. Recommended: keep the filter
+   on origin (it is the cheap indexed one, and it matches the reference number the row displays) and
+   relabel the control; a custody filter is a separate, route-joined query best added with the
+   slice 6 list work rather than smuggled in here.
+7. **`pendingByDivision` groups by the wrong column** (`documents.repository.ts:712-728`). It joins
+   `divisions` on `documents.division_id`, so after step 4 the dashboard tile reads "pending by
+   registering division" — which for incoming correspondence is the ORD, every time, making the tile
+   useless at exactly the thing it is for. Regroup it on the unaccepted route's `to_division_id`,
+   which is the division actually sitting on the work. `dashboard.int.test.ts` will need its
+   expectation rewritten and should gain a forwarded-document case.
+
+**Tests that will fail and are supposed to**
+
+- `query-scope.test.ts` / `query-scope.int.test.ts` — the point of the slice. Needs: a section actor
+  reading a document forwarded to its section but registered elsewhere; the same actor **not**
+  reading one forwarded to a sibling section; a division-level actor reading a division-level
+  for-information row; and the confidentiality gate still refusing all of them.
+- `documents.int.test.ts` — any assertion that `division_id` changed after a forward now asserts the
+  opposite. These are the loudest and most useful failures in the slice; rewrite them to assert the
+  route row instead.
+- `dashboard.int.test.ts` — see step 7.
+- `in-memory-documents.repository.ts` — the test double has to grow the same route-reachability
+  logic, or unit tests will disagree with Postgres about who can read what.
+- `workflow.test.ts` should be unaffected: slice 2 already branches on `forInformation`, and this
+  slice only starts *writing* rows that set it. If it does break, the engine was reading custody from
+  the document rather than from the routes, which is worth knowing.
+
+**Deliberately out of scope**
+
+- **A standalone remark action for for-information recipients.** Decision 160 says read *and*
+  remark; there is no `REMARK` in `workflowActions` and no vocabulary for a remark that is not a
+  transition. Writing the rows is what ADR-0005 requires of this slice; the remark surface is
+  UI-shaped and belongs with slice 6 — but it is an owed obligation, not a dropped one.
+- **Decision 158's combined accept-and-route action.** One user action, two audit events, so the
+  slip can show received *and* released. The endpoints are separate today; merging them is a
+  UI-driven change and depends on step 3 existing first.
+
+**Done when:** a document registered in the ORD and forwarded to a division's section is readable by
+that section's staff and by the division head, before and after acceptance, while
+`documents.division_id` still names the ORD; a forward naming two information recipients writes three
+route rows and progresses on the lead alone; the sender's own read after forwarding matches whatever
+was decided above and a test pins it; `pendingByDivision` attributes a forwarded document to the
+division holding it; and the in-memory policy and the SQL predicate agree on every fixture in
+`query-scope.int.test.ts`.
+
+**Outcome (2026-10-03).** All seven steps landed; migration `0007_non_destructive_routing.sql` adds
+`document_routes_recipient_idx`. Both open questions were answered as recommended — scope resolves
+through *any* hop addressed to the actor's unit, and a unit that forwards a document onward keeps it
+(recorded as decision 176). Four things differ from the plan above:
+
+- **Step 6 was decided the other way.** The plan recommended leaving the registry's division filter
+  on origin. That breaks the dashboard: `dashboard.int.test.ts` calls it "the acceptance condition
+  for this change" that every division tile equals what the registry returns for the same division
+  as the same user, and a tile grouped by custody beside a list filtered by origin disagrees with
+  itself the first time anything is forwarded. So both now compose one shared expression,
+  `custodyDivisionId` in `query-scope.ts`, and the filter's label became **Currently with**.
+- **Custody is the lead hop, not every unaccepted one.** Step 7 first grouped by each unaccepted
+  recipient, which counts a document once per division holding a copy. A forward names exactly one
+  lead recipient (decision 159) and copies for information are never work in hand (decision 160), so
+  custody is single-valued — which is also what lets the chart and the list reconcile exactly.
+- **`ReportDocument` stopped extending `AuthorizationResource`.** Making `routes` required exposed
+  it as the last trace of the deleted second authorization pass that `monthly-report.ts` already
+  warns about: nothing re-checks readability on a report row, and the interface was contributing two
+  stub arrays the client never expected. It now declares its own fields, and the served payload
+  matches the web's `ReportDocument` exactly.
+- **`asResource` no longer stubs assignment and share membership.** It passed empty arrays on the
+  reasoning that a row already proven readable in SQL needed only its own columns. That was a false
+  403 waiting to happen even before this slice; with placement resolving through hops it would have
+  been one on every forwarded document. `DocumentsRepository.authorizationFacts` loads hops,
+  assignees and sharees in three queries, batched over ids so `deletedQueue` cannot become N round
+  trips.
+
+Two notes for the next session:
+
+- **The integration suite caught a bug no unit test could.** Drizzle qualifies an interpolated
+  column only inside a *nested* `sql` chunk, so the `EXISTS` written directly into
+  `custodySectionId` rendered `${documents.id}` as a bare `"id"`, which inside the subquery resolved
+  to `lead_hop.id` — a condition that is always false, making every document report its registering
+  section as its custody section. It is now the named `anyLeadHop` fragment, and the comment there
+  says why.
+- **`notifications.int.test.ts` has one failing test and it is not this slice's.** "publishes
+  committed outbox events onto the queue exactly once" fails identically on a clean checkout of
+  `feat/director-role`; verified by stashing. Worth its own look.
+
 
 ---
 

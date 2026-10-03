@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { hashSync } from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { DATABASE } from '../src/database/database.constants.js';
 import type { Database } from '../src/database/client.js';
-import { divisions, sections } from '../src/database/schema.js';
+import { divisions, notifications, sections } from '../src/database/schema.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -27,6 +27,10 @@ const HEAD_PASSWORD = 'HeadPass123456!';
 
 const DIV_A = '00000000-0000-4000-9000-0000000000a0';
 const DIV_B = '00000000-0000-4000-9000-0000000000b0';
+// A third division, consulted for information. It has a head so the notification a copy writes
+// has a recipient, but nobody signs in as it — the forwarding assertions read its rows directly,
+// which keeps this suite inside the 5-per-minute login window.
+const DIV_C = '00000000-0000-4000-9000-0000000000c0';
 const SEC_A = '00000000-0000-4000-9000-0000000000a1';
 const SEC_B = '00000000-0000-4000-9000-0000000000b1';
 
@@ -61,6 +65,7 @@ describe('document registry REST against a real database', () => {
   let app: INestApplication;
   let staffId: string;
   let headId: string;
+  let divCHeadId: string;
   // The auth window is a tight 5/minute, so each principal signs in once in `beforeAll` and
   // the session is reused across tests rather than logging in per case.
   let records: Session;
@@ -106,6 +111,7 @@ describe('document registry REST against a real database', () => {
     await database.insert(divisions).values([
       { id: DIV_A, code: 'DIVA', name: 'Division A' },
       { id: DIV_B, code: 'DIVB', name: 'Division B' },
+      { id: DIV_C, code: 'DIVC', name: 'Division C' },
     ]);
     await database.insert(sections).values([
       { id: SEC_A, divisionId: DIV_A, code: 'A1', name: 'Section A1' },
@@ -142,6 +148,16 @@ describe('document registry REST against a real database', () => {
       canAccessConfidential: false,
     });
     headId = headUser.id;
+    const divCHeadUser = await users.insert({
+      email: 'div-c-head@dts.local',
+      displayName: 'Division C Head',
+      passwordHash: hashSync(HEAD_PASSWORD, 4),
+      role: 'DIVISION_HEAD',
+      divisionId: DIV_C,
+      sectionId: null,
+      canAccessConfidential: false,
+    });
+    divCHeadId = divCHeadUser.id;
     await users.insert({
       email: 'admin@dts.local',
       displayName: 'System Administrator',
@@ -435,7 +451,7 @@ describe('document registry REST against a real database', () => {
     expect(after.totals.total).toBe(before.totals.total + 1);
   }, 30_000);
 
-  it('routes a document to another division, moving its scope and recording the hop', async () => {
+  it('routes a document to another division without moving its registering placement', async () => {
     // Registered in Division A / Section A, where the staff member can see it.
     const created = dataOf<DocumentPayload>(
       await registerDocument(records, {
@@ -453,7 +469,13 @@ describe('document registry REST against a real database', () => {
       .set('Cookie', staff.cookies)
       .expect(200);
 
-    const routed = dataOf<DocumentPayload & { divisionId: string; routes: unknown[] }>(
+    const routed = dataOf<
+      DocumentPayload & {
+        divisionId: string;
+        sectionId: string | null;
+        routes: { toDivisionId: string; toSectionId: string | null; forInformation: boolean }[];
+      }
+    >(
       await request(server())
         .post(`/api/v1/documents/${created.id}/routes`)
         .set('Cookie', records.cookies)
@@ -462,25 +484,123 @@ describe('document registry REST against a real database', () => {
           expectedVersion: 1,
           toDivisionId: DIV_B,
           toSectionId: SEC_B,
+          forInformationDivisionIds: [DIV_C],
           remarks: 'Please handle',
         })
         .expect(201),
     );
-    expect(routed.divisionId).toBe(DIV_B);
     /*
-     * Two hops, not one: registration writes the first — handing the document to the division it
-     * was registered for, unaccepted, because registering confers no custody (decision 154) — and
-     * routing writes the second. The route table is now the document's custody history rather
-     * than a log of forwards only.
+     * The assertion this test exists for, and the reverse of what it asserted before slice 4:
+     * forwarding is non-destructive (ADR-0005), so the columns still name Division A / Section A,
+     * where the document was *registered*. Where it has gone is a route row.
      */
-    expect(routed.routes).toHaveLength(2);
+    expect(routed.divisionId).toBe(DIV_A);
+    expect(routed.sectionId).toBe(SEC_A);
+    /*
+     * Three hops: registration writes the first — handing the document to the division it was
+     * registered for, unaccepted, because registering confers no custody (decision 154) — then the
+     * forward writes one lead row and one row per division copied in for information.
+     */
+    expect(routed.routes).toHaveLength(3);
+    expect(
+      routed.routes.map((hop) => [hop.toDivisionId, hop.toSectionId, hop.forInformation]),
+    ).toEqual([
+      [DIV_A, SEC_A, false],
+      [DIV_B, SEC_B, false],
+      [DIV_C, null, true],
+    ]);
+    // Nothing on the row changed, so the bump is purely the concurrency guard against a second
+    // forward racing this one.
     expect(routed.version).toBe(2);
 
-    // The forward moved the document out of the Division A staff member's scope.
+    /*
+     * Decision 176: the unit that handled a document keeps it. The forward used to revoke the
+     * sender's read — this assertion was a 404 — and now the hop by which Section A received the
+     * document is still on record, so Division A's staff can still answer for it.
+     */
     await request(server())
       .get(`/api/v1/documents/${created.id}`)
       .set('Cookie', staff.cookies)
-      .expect(404);
+      .expect(200);
+
+    // The copy for information notified Division C's head, who is exactly who it made a reader.
+    const notified = await app
+      .get<Database>(DATABASE)
+      .select({ recipientUserId: notifications.recipientUserId, type: notifications.type })
+      .from(notifications)
+      .where(eq(notifications.documentId, created.id));
+    expect(notified).toEqual([{ recipientUserId: divCHeadId, type: 'DOCUMENT_ROUTED' }]);
+
+    // The registry's division filter answers "which documents are at this division", so the
+    // forwarded document is listed under B and no longer under A.
+    const listedIn = async (divisionId: string): Promise<string[]> =>
+      dataOf<{ items: { id: string }[] }>(
+        await request(server())
+          .get(`/api/v1/documents?divisionId=${divisionId}&pageSize=100`)
+          .set('Cookie', records.cookies)
+          .expect(200),
+      ).items.map((item) => item.id);
+    expect(await listedIn(DIV_B)).toContain(created.id);
+    expect(await listedIn(DIV_A)).not.toContain(created.id);
+  }, 30_000);
+
+  /*
+   * The lead recipient is the one the workflow waits on (decision 159), so a forward that named it
+   * twice would write one row saying progress is blocked on Division B and one saying it is not.
+   * Rejected in the contract rather than in the service, so the client cannot compose it either.
+   */
+  it('refuses a forward that copies the lead recipient in for information', async () => {
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Lead copied in',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/routes`)
+      .set('Cookie', records.cookies)
+      .set('x-csrf-token', records.csrf)
+      .send({
+        expectedVersion: 1,
+        toDivisionId: DIV_B,
+        forInformationDivisionIds: [DIV_C, DIV_B],
+      })
+      .expect(400);
+  }, 30_000);
+
+  /*
+   * The no-op check reads current custody, not the column. Forwarding a document back to the
+   * division that registered it is a real hop — the ORD sending work back — and would be refused
+   * as a no-op by any check that still believed `documents.division_id` was where the document is.
+   */
+  it('allows a forward back to the registering division', async () => {
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'There and back',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+    const forward = (expectedVersion: number, toDivisionId: string, toSectionId?: string) =>
+      request(server())
+        .post(`/api/v1/documents/${created.id}/routes`)
+        .set('Cookie', records.cookies)
+        .set('x-csrf-token', records.csrf)
+        .send({ expectedVersion, toDivisionId, ...(toSectionId ? { toSectionId } : {}) });
+
+    await forward(1, DIV_B, SEC_B).expect(201);
+    // Still a no-op where it genuinely is one: the hop it is sitting at.
+    await forward(2, DIV_B, SEC_B).expect(400);
+    await forward(2, DIV_A, SEC_A).expect(201);
   }, 30_000);
 
   it('shares a document with a specific user without moving it', async () => {

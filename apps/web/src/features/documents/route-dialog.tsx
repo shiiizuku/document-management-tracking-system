@@ -34,21 +34,24 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useDivisions, useSections } from '@/features/org/queries';
 import { ApiError } from '@/lib/api';
 import { applyServerErrors } from '@/lib/forms';
-import { useRouteDocument, type DocumentDetail } from './queries';
+import { currentCustody, useRouteDocument, type DocumentDetail } from './queries';
 
 /** Radix cannot hold `''` as a select value, and "the whole division" is a real choice. */
 const NO_SECTION = '__none__';
 
 /**
- * Forwards a document to another division or section.
+ * Forwards a document to another division or section, optionally copying other divisions in for
+ * information.
  *
- * This moves the document's access scope, not just its label: whoever could see it because of
- * where it sat may lose it, and the receiving division gains it. The destination list therefore
- * excludes the division it already sits in — forwarding a document to itself is the one request
- * here with no meaning.
+ * Forwarding *adds* a reader rather than moving access: the receiving unit gains the document and
+ * the unit that handled it keeps it, so a hand-off never leaves a gap in who can answer for a
+ * record (ADR-0005). The destination list excludes the division the document is currently *at* —
+ * which is not `document.divisionId` any more, that being where it was registered — because
+ * forwarding a document to the unit already holding it is the one request here with no meaning.
  */
 export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>) {
   const [open, setOpen] = useState(false);
@@ -58,15 +61,23 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
 
   const form = useForm<RouteDocumentInput>({
     resolver: zodResolver(routeDocumentSchema),
-    defaultValues: { expectedVersion: document.version, toDivisionId: '', remarks: '' },
+    defaultValues: {
+      expectedVersion: document.version,
+      toDivisionId: '',
+      forInformationDivisionIds: [],
+      remarks: '',
+    },
   });
 
   const toDivisionId = form.watch('toDivisionId');
   const sections = useSections(toDivisionId || null);
 
-  const destinations = (divisions.data ?? []).filter(
-    (division) => division.id !== document.divisionId && division.active,
-  );
+  const custody = currentCustody(document);
+  const active = (divisions.data ?? []).filter((division) => division.active);
+  const destinations = active.filter((division) => division.id !== custody.divisionId);
+  // The lead may not also be copied in — one division cannot both block progress and not block it
+  // — so it leaves the list as soon as it is chosen, and any stale tick is dropped with it.
+  const consultable = active.filter((division) => division.id !== toDivisionId);
 
   const onSubmit = (values: RouteDocumentInput) => {
     setFormError(null);
@@ -104,7 +115,8 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
           <p className="eyebrow">{document.trackingNumber}</p>
           <DialogTitle>Forward to another division</DialogTitle>
           <DialogDescription>
-            This changes who can see the document. The handoff is recorded with your name.
+            The receiving unit takes custody and gains access; whoever can see it now keeps it. The
+            handoff is recorded with your name.
           </DialogDescription>
         </DialogHeader>
 
@@ -128,8 +140,15 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
                     value={field.value}
                     onValueChange={(value) => {
                       field.onChange(value);
-                      // The previously chosen section belongs to another division.
+                      // The previously chosen section belongs to another division, and the new
+                      // lead cannot stay ticked as a copy — the contract refuses that pairing.
                       form.setValue('toSectionId', undefined);
+                      form.setValue(
+                        'forInformationDivisionIds',
+                        (form.getValues('forInformationDivisionIds') ?? []).filter(
+                          (id) => id !== value,
+                        ),
+                      );
                     }}
                   >
                     <FormControl>
@@ -183,6 +202,48 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
                   </Select>
                   <FormDescription>
                     Leave at division level to let the receiving division assign it.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="forInformationDivisionIds"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Copy in for information (optional)</FormLabel>
+                  <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border px-2 py-1.5">
+                    {consultable.length === 0 ? (
+                      <p className="text-muted-foreground text-sm">No other divisions.</p>
+                    ) : (
+                      consultable.map((division) => {
+                        const selected = (field.value ?? []).includes(division.id);
+                        return (
+                          <label
+                            key={division.id}
+                            className="flex items-center gap-2 text-sm leading-6"
+                          >
+                            <Checkbox
+                              checked={selected}
+                              onCheckedChange={(checked) =>
+                                field.onChange(
+                                  checked === true
+                                    ? [...(field.value ?? []), division.id]
+                                    : (field.value ?? []).filter((id) => id !== division.id),
+                                )
+                              }
+                            />
+                            {division.name}
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                  <FormDescription>
+                    Copied divisions may read and remark. They do not hold the document and never
+                    block it.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

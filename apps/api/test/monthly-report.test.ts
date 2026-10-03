@@ -17,8 +17,6 @@ const row = (overrides: Partial<ReportDocument>): ReportDocument => ({
   direction: 'INCOMING',
   divisionId: 'division-a',
   sectionId: 'section-a1',
-  assigneeUserIds: [],
-  sharedUserIds: [],
   confidential: false,
   createdAt: new Date('2026-09-15T03:00:00Z'),
   ...overrides,
