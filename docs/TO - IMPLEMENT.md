@@ -9,7 +9,8 @@ Companion to `dts-developer-assignment.md`. This version is written the way a de
 ## Core workflow revision (2026-10-02)
 
 The revision recorded in `CONTEXT.md` (decisions 152–175) and ADR-0005/0006/0007 is being delivered
-as six dependency-ordered slices. **Slices 1–5 are done**; slice 6, the UI, is not started.
+as six dependency-ordered slices. **All six are done.** Decision 175 is carried forward, deliberately:
+it reads like UI but it is a policy change, and it is recorded below.
 
 | Slice | Work | Status |
 | ----- | ---- | ------ |
@@ -18,7 +19,7 @@ as six dependency-ordered slices. **Slices 1–5 are done**; slice 6, the UI, is
 | 3 | `DIRECTOR` role; remove `DOCUMENT_SIGN` from `RECORDS_STAFF` and `DIVISION_HEAD` | ✅ done |
 | 4 | Non-destructive routing: `relocate` must stop overwriting `documents.division_id`; scope resolves through accepted routes; multi-recipient forwards write `for_information` rows | ✅ done |
 | 5 | Reference Document join table (decisions 165–167) | ✅ done |
-| 6 | UI: detail-view right rail, reference-document modal, inline routing slip, list-view control, Inter | ⬜ not started |
+| 6 | UI: detail-view right rail, reference-document modal, inline routing slip, list-view control, Inter | ✅ done |
 
 **What slices 1–5 changed that later slices inherit**
 
@@ -466,6 +467,28 @@ inline preview pane is extracted once in part 4 and reused in part 5.
 browser: the slip's layout, its seal, its custody table and the distinction between viewing and
 exporting it are all server-side. Part 5 is an API slice wearing a UI slice's clothes, and it is the
 largest piece — budget for it accordingly rather than discovering that last.
+
+**What building it settled.** Three things the plan below left open, answered against the sources
+rather than guessed:
+
+- **The bureau form has five routing columns, not four.** The plan read the `.doc` template and
+  noted that it infers TO from the next row's FROM, with decision 171 governing over it. The
+  scanned sample — `apps/web/public/document routing slip sample.pdf`, whose two pages were read as
+  images, since it has no text layer — carries FROM / DATE/TIME RECEIVED / TO / DATE/TIME RELEASED /
+  ACTION REQUIRED/TAKEN/REMARKS/STATUS. The form in use and decision 171 already agree; there was
+  nothing to reconcile.
+- **The metadata table's rows.** The sample carries five — **Doc. No.**, Sender, Subject, Addressee,
+  Date/Time Received — one more than the `.doc` showed. `Doc. No.` is filled with the tracking
+  number, and the three rows decision 171's count still needs are reference number, type and target
+  date: fields this system holds that the paper form has nowhere to put. **Still for the office to
+  confirm against the printed form**, which is the step the plan asked for and the one thing here a
+  repository cannot settle.
+- **Addressee has no field of its own.** The system has never had one — the paper row is filled in
+  by hand — so the slip prints the registering placement, which is the nearest truthful answer: the
+  unit the registrar put the document in front of. Also for the office to confirm.
+
+The pilot configuration checklist the plan wanted the seal recorded in does not exist yet; the note
+lives in `apps/api/assets/README.md` until it does.
 
 #### Part 1 — Inter, self-hosted, and the end of the display serif (decision 172)
 
