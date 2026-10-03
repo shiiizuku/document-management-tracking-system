@@ -250,8 +250,10 @@ storage and fills the document-management UI gaps.
       `document_metadata_revisions`, under optimistic concurrency. _Done-when:_ edits are captured as history.
 - [x] (2h) Persist assignments (`document_assignments`), routing/forwarding (`document_routes`,
       `POST /documents/:id/routes`) and sharing (`document_shares`, `POST /documents/:id/shares`),
-      plus the work queue (`GET /documents/assigned`). _(Phase 3; parallel-route completion
-      semantics deferred as an open policy.)_
+      plus the work queue (`GET /documents/assigned`). _(Phase 3. Multi-recipient forwards and their
+      completion semantics are **settled**, not deferred: decision 24 as amended on 2026-10-02 and
+      ADR-0005 make exactly one recipient the lead that takes custody, with the rest for-information,
+      and progress gates on the lead alone — `leadRouteOutstanding` in `workflow.service.ts`.)_
 - [x] (2h) Logical deletion (soft-delete) endpoint + list exclusion, capability-gated. ✓ —
       `DELETE /documents/:id` and `POST /documents/:id/restore` under optimistic concurrency, gated by
       the new `DOCUMENT_DELETE` / existing `DOCUMENT_RESTORE` capabilities (admin-only); both audited

@@ -828,7 +828,7 @@ and P-11 reads the same in the register and in the code.
 | 0 — Foundations                    | ✅ done            | n/a           | Cold-boot + IT sign-off are external gates (see `policy-register.md`) |
 | 1 — Identity & Organization        | ✅ done            | ✅ done        | Backend merged in PR #39. UI: `/request-account`, `/admin/requests`, `/admin/users`, `/admin/organization`, all built in M7's F2 |
 | 2 — Document registry              | ✅ done            | ✅ done        | Aggregate Postgres-backed, `DtsApplicationService` deleted (PR #40 — confirmed absent from the tree). UI: registry list/filters/sort/pagination/search, create+org picker, detail+timeline, metadata edit, forward/route, and delete/restore (`deleted-documents-dialog.tsx` over `GET /documents/deleted`) |
-| 3 — Workflow & routing             | ◑ mostly done      | ✅ done        | Transitions, assignment, routing/forwarding, sharing, work queue persisted (PR #41). **Parallel-route completion semantics remain deferred as an open policy** — the only gap in this row. UI: allowed-actions bar, forward/route, `/my-work` work queue |
+| 3 — Workflow & routing             | ✅ done            | ✅ done        | Transitions, assignment, routing/forwarding, sharing, work queue persisted (PR #41); multi-recipient forwards and their completion semantics settled by decision 24 as amended and ADR-0005, and implemented (`leadRouteOutstanding`). UI: allowed-actions bar, forward/route, `/my-work` work queue |
 | 4 — Files & scanning               | ✅ done            | ✅ done        | `file_records`/`file_versions` + `signature_events` persisted; MinIO adapter + ClamAV auto-scan worker wired. UI: upload, scan badges, gated download, inline PDF/image preview (`preview-dialog.tsx`) |
 | 5 — Outbox, notifications, dashboard | ✅ done          | ◑ partial     | Notifications persisted in the domain tx; outbox **relay + BullMQ worker** on real Redis; realtime WS gateway live. UI: inbox, live updates, and the scope-aware dashboard over `GET /dashboard/summary`. Remaining: `use-realtime-sync.ts` invalidates nothing in its `connect` handler, so a reconnect does not catch up on what was missed |
 | 6 — Reports, routing slip, audit UI | ✅ done            | ✅ done        | Monthly report (JSON/PDF/XLSX), routing-slip PDF with the bureau letterhead and the approved seal, audit query — all Postgres-backed. UI: reports view + export, `routing-slip-dialog.tsx`, and the `/audit` viewer with URL-held filters |
@@ -1010,10 +1010,11 @@ PATCH /documents/{id}/metadata      (If-Match / version)
 > for coherence). This branch adds **routing/forwarding** (`POST /documents/:id/routes` — moves the
 > document's owning division/section and records the hop in `document_routes`, under optimistic
 > concurrency), **sharing** (`POST /documents/:id/shares` — grants one user read access via
-> `document_shares`), and the **work queue** (`GET /documents/assigned`). Deferred: **parallel routes +
-> completion semantics** (an open policy question — "per agreement" below), and **`signature_events`**
-> rows, which FK to `file_versions` and therefore wait for Phase 4 (SIGN already records the signed
-> version on the document row via `signedFileVersionId`). Frontend deferred.
+> `document_shares`), and the **work queue** (`GET /documents/assigned`). Deferred at the time:
+> **multi-recipient forwards + completion semantics** (then an open policy question, **since settled by
+> decision 24 as amended on 2026-10-02 and ADR-0005, and delivered in revision slice 4**), and
+> **`signature_events`** rows, which FK to `file_versions` and therefore waited for Phase 4 (SIGN
+> already records the signed version on the document row via `signedFileVersionId`). Frontend deferred.
 
 **Schema**
 - `document_assignment`, `document_route`, `document_share`, `signature_event`, `release_event (method)`, remarks (on `workflow_event`).
@@ -1031,7 +1032,7 @@ POST /documents/{id}/routes               # + assignment/share endpoints
 2. [~] Guards live inside `WorkflowService.execute` (remark-required, clean+signed-attachment, release-method); extracting them into individually named pure functions is a tidy-up, not yet done.
 3. [x] `allowed-actions` = filter the table by actor capability + state (VIEWER excluded).
 4. [x] Assignment + section routing (`POST /documents/:id/routes`, downward move) + work-queue query (`GET /documents/assigned`).
-5. [~] Routing records `document_routes` and blocks the no-op self-route; **parallel routes + completion semantics deferred** (open policy — see "per agreement").
+5. [x] Routing records `document_routes` and blocks the no-op self-route. **Multi-recipient forwards and completion semantics are settled** — decision 24 as amended and ADR-0005: one lead recipient takes custody, the rest are for-information (read and remark, division-level only), and progress gates on the lead alone via `leadRouteOutstanding`. Since slice 4, `document_routes` is custody history rather than a log of forwards.
 6. [x] Release records method in `release_events`; archive/restore work; **`signature_events` now persisted** (Phase 4 landed `file_versions`), and SIGN records `signedFileVersionId` on the row.
 7. [x] Return-for-revision requires a remark (validated in `WorkflowService`).
 
