@@ -9,6 +9,7 @@ import request from 'supertest';
 import type { Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { roleSchema } from '@dts/contracts';
 import { AppModule } from '../src/app.module.js';
 import { DATABASE } from '../src/database/database.constants.js';
 import type { Database } from '../src/database/client.js';
@@ -144,6 +145,18 @@ describe('identity & organization REST against a real database', () => {
       .set('Cookie', applicant.cookies)
       .expect(403);
     await request(server()).get('/api/v1/users').set('Cookie', applicant.cookies).expect(403);
+
+    // The role table is served to whoever assigns roles, and to nobody else (decision 175).
+    await request(server()).get('/api/v1/roles').set('Cookie', applicant.cookies).expect(403);
+    const roles = await request(server())
+      .get('/api/v1/roles')
+      .set('Cookie', admin.cookies)
+      .expect(200);
+    expect(roles.headers['cache-control']).toBe('private, max-age=300');
+    const grants = dataOf<{ role: string; readsOfficeWide: boolean }[]>(roles);
+    expect(grants.map((grant) => grant.role)).toEqual(roleSchema.options);
+    expect(grants.find((grant) => grant.role === 'RECORDS_STAFF')?.readsOfficeWide).toBe(true);
+    expect(grants.find((grant) => grant.role === 'DIVISION_HEAD')?.readsOfficeWide).toBe(false);
 
     // Deactivation takes effect on the next authentication attempt.
     await authed('post', `/api/v1/users/${created.id}/deactivate`).expect(201);

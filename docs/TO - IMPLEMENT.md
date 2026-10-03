@@ -20,7 +20,7 @@ it reads like UI but it is a policy change, so it is slice 7, planned below.
 | 4 | Non-destructive routing: `relocate` must stop overwriting `documents.division_id`; scope resolves through accepted routes; multi-recipient forwards write `for_information` rows | ✅ done |
 | 5 | Reference Document join table (decisions 165–167) | ✅ done |
 | 6 | UI: detail-view right rail, reference-document modal, inline routing slip, list-view control, Inter | ✅ done |
-| 7 | Decision 175: `GET /roles` for role assigners, capability panel under every role picker | ⬜ planned |
+| 7 | Decision 175: `GET /roles` for role assigners, capability panel under every role picker | ✅ done |
 
 **What slices 1–5 changed that later slices inherit**
 

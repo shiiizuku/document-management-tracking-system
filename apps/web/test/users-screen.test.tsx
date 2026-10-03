@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { UsersScreen } from '../src/features/admin/users-screen';
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
+import type { RoleGrant } from '@dts/contracts';
 import { DIVISION_ID, SECTION_ID, adminUser, division, section, sessionUser } from './fixtures';
 import { calledPaths, calledWith, requestBody } from './mock-api';
 import { renderWithQuery } from './query-harness';
@@ -20,8 +21,13 @@ vi.mock('next/navigation', () => ({
 }));
 
 const serve = (
-  options: { users?: ReturnType<typeof adminUser>[] | Error; signedInId?: string } = {},
+  options: {
+    users?: ReturnType<typeof adminUser>[] | Error;
+    signedInId?: string;
+    roles?: RoleGrant[] | Error;
+  } = {},
 ) => {
+  const roles = options.roles ?? ROLE_GRANTS;
   const users = options.users ?? [adminUser()];
   apiMock.mockImplementation((path: string, init?: RequestInit) => {
     if (path === '/auth/me')
@@ -31,6 +37,8 @@ const serve = (
           capabilities: ['USER_MANAGE'],
         }),
       );
+    if (path === '/roles')
+      return roles instanceof Error ? Promise.reject(roles) : Promise.resolve(roles);
     if (path === '/divisions') return Promise.resolve([division()]);
     if (path.startsWith('/sections')) return Promise.resolve([section()]);
     if (path.endsWith('/deactivate')) return Promise.resolve(adminUser({ active: false }));
@@ -42,6 +50,16 @@ const serve = (
     return Promise.reject(new Error(`unexpected path ${path}`));
   });
 };
+
+/** Two rows of the role table, as `GET /roles` serves them. */
+const ROLE_GRANTS: RoleGrant[] = [
+  {
+    role: 'STAFF_MEMBER',
+    capabilities: ['DOCUMENT_CREATE', 'DOCUMENT_ACCEPT', 'DOCUMENT_COMPLY'],
+    readsOfficeWide: false,
+  },
+  { role: 'VIEWER', capabilities: [], readsOfficeWide: false },
+];
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -184,5 +202,39 @@ describe('UsersScreen', () => {
 
     expect(await screen.findByText('Password must be at least 12 characters')).toBeInTheDocument();
     expect(calledWith(apiMock, 'POST', '/users')).toBe(false);
+  });
+
+  it('lists what the selected role grants, and follows the role as it changes', async () => {
+    serve();
+    renderWithQuery(<UsersScreen />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Edit/ })).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: /Edit/ }));
+    const dialog = await screen.findByRole('dialog');
+    const staffGrants = await within(dialog).findByRole('group', {
+      name: 'What Staff member grants',
+    });
+    expect(staffGrants).toHaveTextContent('Record as complied');
+    expect(staffGrants).toHaveTextContent('Its own division or section');
+
+    await userEvent.click(within(dialog).getByLabelText('Role'));
+    await userEvent.click(screen.getByRole('option', { name: 'Viewer' }));
+    const viewerGrants = within(dialog).getByRole('group', { name: 'What Viewer grants' });
+    expect(viewerGrants).toHaveTextContent('Read only — takes no action on documents');
+    expect(viewerGrants).not.toHaveTextContent('Record as complied');
+  });
+
+  it('still saves when the role table cannot be fetched', async () => {
+    serve({ roles: new ApiError({ status: 403, code: 'HTTP_403', message: 'Forbidden' }) });
+    renderWithQuery(<UsersScreen />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Edit/ })).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: /Edit/ }));
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(calledPaths(apiMock)).toContain('/roles'));
+    expect(within(dialog).queryByRole('group', { name: /grants$/ })).not.toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(calledPaths(apiMock)).toContain('/users/user-2'));
   });
 });

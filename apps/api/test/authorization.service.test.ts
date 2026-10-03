@@ -48,6 +48,7 @@ const CAPABILITY_MATRIX: { action: string; resource: unknown; allowed: Role[] }[
   { action: 'organization:create', resource: null, allowed: ['ADMINISTRATOR'] },
   { action: 'organization:update', resource: null, allowed: ['ADMINISTRATOR'] },
   { action: 'audit-event:list', resource: null, allowed: ['ADMINISTRATOR'] },
+  { action: 'role:list', resource: null, allowed: ['ADMINISTRATOR'] },
   { action: 'user:list', resource: null, allowed: ['ADMINISTRATOR'] },
   { action: 'user:create', resource: null, allowed: ['ADMINISTRATOR'] },
   { action: 'user:update', resource: targetUser, allowed: ['ADMINISTRATOR'] },

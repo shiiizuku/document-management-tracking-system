@@ -28,6 +28,10 @@ const serve = (
 ) => {
   const requests = options.requests ?? [accountRequest()];
   apiMock.mockImplementation((path: string) => {
+    if (path === '/roles')
+      return Promise.resolve([
+        { role: 'STAFF_MEMBER', capabilities: ['DOCUMENT_COMPLY'], readsOfficeWide: false },
+      ]);
     if (path === '/divisions') return Promise.resolve([division()]);
     if (path.startsWith('/sections')) return Promise.resolve([section()]);
     if (path.endsWith('/approve'))
@@ -200,5 +204,19 @@ describe('AccountRequestsScreen', () => {
     expect(requestBody(apiMock, '/account-requests/request-1/reject')).toEqual({
       reason: 'Not a member of this office.',
     });
+  });
+
+  it('shows what the chosen role grants before the reviewer approves', async () => {
+    serve();
+    renderWithQuery(<AccountRequestsScreen />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      await within(dialog).findByRole('group', { name: 'What Staff member grants' }),
+    ).toHaveTextContent('Record as complied');
   });
 });
