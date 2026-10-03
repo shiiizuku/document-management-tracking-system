@@ -11,8 +11,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { InlineFilePane } from './inline-file-pane';
-import { formatBytes, type AttachmentVersion } from './queries';
+import { InlineFilePane } from '@/components/dts/inline-file-pane';
+import { attachmentContentPath, formatBytes, type AttachmentVersion } from './queries';
 
 /**
  * Reads an attachment on the page instead of downloading it.
@@ -51,8 +51,8 @@ export function AttachmentPreviewDialog({
 
         {open ? (
           <InlineFilePane
-            documentId={documentId}
-            version={version}
+            path={attachmentContentPath(documentId, version.id)}
+            name={version.originalName}
             className="h-[70vh] max-h-[70vh]"
           />
         ) : null}

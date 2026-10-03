@@ -22,8 +22,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/dts/status-badge';
-import { InlineFilePane } from '@/features/attachments/inline-file-pane';
+import { InlineFilePane } from '@/components/dts/inline-file-pane';
 import {
+  attachmentContentPath,
   formatBytes,
   isPreviewable,
   useAttachments,
@@ -351,8 +352,8 @@ function ReferenceAttachments({ documentId }: Readonly<{ documentId: string }>) 
         </p>
       ) : (
         <InlineFilePane
-          documentId={documentId}
-          version={showing}
+          path={attachmentContentPath(documentId, showing.id)}
+          name={showing.originalName}
           className="h-[60vh] max-h-[60vh]"
         />
       )}

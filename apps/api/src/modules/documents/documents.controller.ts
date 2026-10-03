@@ -28,6 +28,7 @@ import {
   type UpdateDocumentMetadataInput,
 } from '@dts/contracts';
 import { AuthGuard } from '../../common/auth.guard.js';
+import { INLINE_CONTENT_CSP } from '../../common/inline-content.js';
 import { CurrentUser } from '../../common/current-user.decorator.js';
 import type { RequestUser } from '../../common/request-user.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
@@ -86,17 +87,59 @@ export class DocumentsController {
     return this.documents.deletedQueue(actor).then((data) => ({ data }));
   }
 
+  /*
+   * The routing slip, twice.
+   *
+   * Viewing it and exporting it are two audited actions (decision 170), so they are two routes
+   * rather than one handler branching on a query parameter. One route per audited action keeps
+   * each `audit.write` next to the response it describes, and nothing a caller flips can make a
+   * download record itself as a read — which is the whole point of distinguishing them: the
+   * question an auditor asks is who took a copy away, not who looked.
+   *
+   * Neither carries a capability of its own. The slip shows nothing the detail page does not, and
+   * `routingSlip` resolves through the same read check, so anyone who can open the document can
+   * print its slip — including on a released one, which is exactly the record whose printable
+   * dossier people still need.
+   */
+  @Get(':id/routing-slip/preview.pdf')
+  async routingSlipPreview(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    const slip = await this.documents.routingSlip(actor, id);
+    const content = await this.exports.routingSlip(slip);
+    await this.audit.write({
+      actorId: actor.id,
+      action: 'document.routing-slip-viewed',
+      targetType: 'document',
+      targetId: id,
+      outcome: 'SUCCESS',
+      summary: { format: 'pdf' },
+    });
+    response.setHeader('Content-Type', 'application/pdf');
+    // Served with the same headers as the attachment preview. Our own PDF is trusted content, so
+    // the sandbox buys nothing here — but the rule has one home, and the cost is nothing.
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Content-Security-Policy', INLINE_CONTENT_CSP);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename="routing-slip-${slip.document.trackingNumber}.pdf"`,
+    );
+    response.send(content);
+  }
+
   @Get(':id/routing-slip.pdf')
   async routingSlip(
     @CurrentUser() actor: RequestUser,
     @Param('id') id: string,
     @Res() response: Response,
   ): Promise<void> {
-    const document = await this.documents.getDocument(actor, id);
-    const content = await this.exports.routingSlip(document, document.timeline);
-    // The routing slip is a printable dossier (title, status, full timeline with remarks) that
-    // leaves the system as a file, so its export is audited even though the on-screen detail read
-    // is not. IDs and format only — never the remark text or party names.
+    const slip = await this.documents.routingSlip(actor, id);
+    const content = await this.exports.routingSlip(slip);
+    // A copy leaving the system is a different event from reading it on screen. IDs and format
+    // only — never the remark text or party names.
     await this.audit.write({
       actorId: actor.id,
       action: 'document.routing-slip-exported',
@@ -108,7 +151,7 @@ export class DocumentsController {
     response.setHeader('Content-Type', 'application/pdf');
     response.setHeader(
       'Content-Disposition',
-      `attachment; filename="routing-slip-${document.trackingNumber}.pdf"`,
+      `attachment; filename="routing-slip-${slip.document.trackingNumber}.pdf"`,
     );
     response.send(content);
   }

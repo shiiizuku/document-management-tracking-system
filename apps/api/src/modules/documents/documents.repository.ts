@@ -15,6 +15,9 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
+// `alias` is what lets one query join `divisions` and `users` twice — the hop's sender and its
+// recipient, the officer who routed it and the one who accepted it.
+import { alias } from 'drizzle-orm/pg-core';
 import type { AuthorizationActor, RouteRecipient } from '../authorization/authorization.policy.js';
 import {
   custodyDivisionId,
@@ -48,6 +51,20 @@ import type { WorkflowStatus } from '@dts/contracts';
 import { ORD_DIVISION_CODE } from '../organization/organization.constants.js';
 
 export type DocumentRow = typeof documents.$inferSelect;
+
+/** One route row with its ids resolved, as the routing slip prints them. */
+export interface RoutingSlipRoute {
+  id: string;
+  fromDivisionName: string | null;
+  toDivisionName: string;
+  toSectionName: string | null;
+  routedByName: string;
+  forInformation: boolean;
+  remarks: string | null;
+  acceptedAt: Date | null;
+  acceptedByName: string | null;
+  createdAt: Date;
+}
 export type WorkflowEventRow = typeof workflowEvents.$inferSelect;
 export type DocumentRouteRow = typeof documentRoutes.$inferSelect;
 export type SignatureEventRow = typeof signatureEvents.$inferSelect;
@@ -522,6 +539,58 @@ export class DocumentsRepository {
     const [row] = await executor.insert(workflowEvents).values(event).returning();
     if (!row) throw new Error('Insert of a workflow event returned no row');
     return row;
+  }
+
+  /**
+   * The routing slip's rows, with every id already resolved to the name the form prints.
+   *
+   * One query with the joins in it, not a loop of lookups and not a client-side join: the PDF is
+   * rendered in the API, so the names have to be here, and a slip for a document with a dozen hops
+   * would otherwise be a dozen round trips to the organization tables.
+   *
+   * Ordered by `created_at`, which is the order the hops happened and therefore the order the
+   * paper form is filled in down the page. For-information rows come back too — the caller needs
+   * them to print the copied-to line against the hop that consulted them (decision 160) — and are
+   * marked rather than filtered here, because a repository that silently dropped rows would make
+   * "one row per hop" a fact nothing tests.
+   */
+  async routingSlipRoutes(documentId: string): Promise<RoutingSlipRoute[]> {
+    const fromDivisions = alias(divisions, 'from_divisions');
+    const acceptedBy = alias(users, 'accepted_by');
+
+    const rows = await this.database
+      .select({
+        id: documentRoutes.id,
+        fromDivisionName: fromDivisions.name,
+        toDivisionName: divisions.name,
+        toSectionName: sections.name,
+        routedByName: users.displayName,
+        forInformation: documentRoutes.forInformation,
+        remarks: documentRoutes.remarks,
+        acceptedAt: documentRoutes.acceptedAt,
+        acceptedByName: acceptedBy.displayName,
+        createdAt: documentRoutes.createdAt,
+      })
+      .from(documentRoutes)
+      .innerJoin(divisions, eq(divisions.id, documentRoutes.toDivisionId))
+      .leftJoin(fromDivisions, eq(fromDivisions.id, documentRoutes.fromDivisionId))
+      .leftJoin(sections, eq(sections.id, documentRoutes.toSectionId))
+      .innerJoin(users, eq(users.id, documentRoutes.routedById))
+      .leftJoin(acceptedBy, eq(acceptedBy.id, documentRoutes.acceptedById))
+      .where(eq(documentRoutes.documentId, documentId))
+      .orderBy(asc(documentRoutes.createdAt));
+
+    return rows;
+  }
+
+  /** The name of one division, for the slip's header rows. */
+  async divisionName(divisionId: string): Promise<string | null> {
+    const [row] = await this.database
+      .select({ name: divisions.name })
+      .from(divisions)
+      .where(eq(divisions.id, divisionId))
+      .limit(1);
+    return row?.name ?? null;
   }
 
   async listTimeline(documentId: string): Promise<WorkflowEventRow[]> {

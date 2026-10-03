@@ -462,6 +462,17 @@ export function useRestoreDocument() {
 }
 
 /**
+ * The two routing-slip routes (decision 170).
+ *
+ * Two paths, not one with a flag, because the server audits them as different actions: opening the
+ * slip writes `document.routing-slip-viewed` and taking a copy away writes
+ * `document.routing-slip-exported`. The distinction is the whole point — the question an auditor
+ * asks is who took a copy, not who looked — so the client must not be able to blur it either.
+ */
+export const routingSlipPreviewPath = (id: string): string =>
+  `/documents/${id}/routing-slip/preview.pdf`;
+
+/**
  * Downloads the printable routing slip — the dossier that travels with the physical document.
  *
  * Through `download()` rather than a link for the same reason as every other export: the request

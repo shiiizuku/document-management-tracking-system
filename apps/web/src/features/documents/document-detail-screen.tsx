@@ -1,8 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertCircle, ArrowLeft, FileX, Loader2, Lock, Printer } from 'lucide-react';
-import { toast } from 'sonner';
+import { AlertCircle, ArrowLeft, FileX, Lock } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,7 +21,8 @@ import { DocumentActions } from './document-actions';
 import { MetadataDialog } from './metadata-dialog';
 import { ReferencesSection } from './references-section';
 import { RouteDialog } from './route-dialog';
-import { currentCustody, useDocument, useRoutingSlip, type DocumentDetail } from './queries';
+import { RoutingSlipDialog } from './routing-slip-dialog';
+import { currentCustody, useDocument, type DocumentDetail } from './queries';
 
 /** A released or archived document is a closed record: its files no longer change. */
 const isClosed = (document: DocumentDetail) =>
@@ -96,7 +96,7 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
               */}
               {can('DOCUMENT_EDIT') && !closed ? <RouteDialog document={detail} /> : null}
               {can('DOCUMENT_EDIT') && !closed ? <MetadataDialog document={detail} /> : null}
-              <RoutingSlipButton document={detail} />
+              <RoutingSlipDialog document={detail} />
               {can('DOCUMENT_DELETE') ? <DeleteDocumentDialog document={detail} /> : null}
             </div>
           </div>
@@ -201,36 +201,6 @@ function LocationBlock({ document }: Readonly<{ document: DocumentDetail }>) {
         <p className="mt-0.5 text-sm text-foreground">{name ?? '—'}</p>
       </div>
     </section>
-  );
-}
-
-/**
- * Downloads the printable routing slip.
- *
- * Offered to anyone who can read the document, with no capability of its own: the slip contains
- * nothing the page above it does not already show, and it is the artefact that travels stapled to
- * the physical document. The export is still audited server-side, because a copy leaving the system
- * is a different event from reading it on screen.
- */
-function RoutingSlipButton({ document }: Readonly<{ document: DocumentDetail }>) {
-  const slip = useRoutingSlip();
-
-  const onClick = () =>
-    slip.mutate(
-      { id: document.id, trackingNumber: document.trackingNumber },
-      {
-        onError: (error) =>
-          toast.error('Could not produce the routing slip', {
-            description: error instanceof Error ? error.message : 'Please try again.',
-          }),
-      },
-    );
-
-  return (
-    <Button type="button" variant="outline" size="sm" onClick={onClick} disabled={slip.isPending}>
-      {slip.isPending ? <Loader2 className="animate-spin" /> : <Printer />}
-      Routing slip
-    </Button>
   );
 }
 

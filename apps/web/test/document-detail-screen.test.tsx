@@ -198,7 +198,25 @@ describe('DocumentDetailScreen', () => {
    * to anyone who can read the record — including on a closed one, which is exactly the document
    * whose printable copy people still need. The export is audited server-side.
    */
-  it('downloads the routing slip, named after the tracking number', async () => {
+  /*
+   * The slip opens on screen and is exported only if someone presses Download inside it
+   * (decision 170). The two go to different routes because the server audits them as different
+   * actions, so the assertion is that the ordinary path requests the preview and nothing else.
+   */
+  it('opens the routing slip on screen before anything is exported', async () => {
+    serve(documentDetail());
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Routing slip/ })).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /Routing slip/ }));
+
+    await screen.findByRole('dialog');
+    expect(downloadMock).not.toHaveBeenCalled();
+  });
+
+  it('downloads the routing slip from inside the preview, named after the tracking number', async () => {
     downloadMock.mockResolvedValue('routing-slip-DTS-2026-000001.pdf');
     serve(documentDetail());
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
@@ -207,6 +225,7 @@ describe('DocumentDetailScreen', () => {
     );
 
     await userEvent.click(screen.getByRole('button', { name: /Routing slip/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Download' }));
 
     await waitFor(() =>
       expect(downloadMock).toHaveBeenCalledWith(

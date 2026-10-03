@@ -228,4 +228,59 @@ describe('REST /api/v1 public seam', () => {
       expect(JSON.stringify(entry.summary)).not.toContain('Citizen');
     }
   });
+
+  /*
+   * Viewing a routing slip and exporting one are two actions (decision 170). The whole point of
+   * separating them is that an auditor asking who took a copy out of the building gets an answer
+   * that is not diluted by everyone who merely looked, so the two must never collapse into one
+   * event — which is also why they are two routes rather than one handler reading a query flag.
+   */
+  it('records opening a routing slip and exporting it as different events', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'records@dts.local', password: 'Records@1234!' })
+      .expect(201);
+    const cookie = sessionCookie(login);
+
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/documents')
+      .set('Cookie', cookie)
+      .send({
+        title: 'Slip subject',
+        type: 'MEMORANDUM',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'Citizen',
+        divisionId: 'division-records',
+        sectionId: 'section-intake',
+      })
+      .expect(201);
+    const documentId = created.body.data.id as string;
+
+    const audit = app.get(AuditWriter);
+    if (!(audit instanceof InMemoryAuditWriter))
+      throw new Error('expected the in-memory audit writer to be wired in');
+    audit.entries.length = 0;
+
+    const preview = await request(app.getHttpServer())
+      .get(`/api/v1/documents/${documentId}/routing-slip/preview.pdf`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(preview.headers['content-type']).toBe('application/pdf');
+    expect(preview.headers['content-disposition']).toMatch(/^inline;/);
+    // Served with the same hardening as the attachment preview, from one shared constant.
+    expect(preview.headers['x-content-type-options']).toBe('nosniff');
+    expect(preview.headers['content-security-policy']).toContain("default-src 'none'");
+
+    const exported = await request(app.getHttpServer())
+      .get(`/api/v1/documents/${documentId}/routing-slip.pdf`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(exported.headers['content-disposition']).toMatch(/^attachment;/);
+
+    expect(audit.entries.map((entry) => entry.action)).toEqual([
+      'document.routing-slip-viewed',
+      'document.routing-slip-exported',
+    ]);
+  });
 });
