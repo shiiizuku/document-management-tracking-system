@@ -1,0 +1,9 @@
+# Files that are read inside Linux containers must keep LF endings regardless of the
+# checkout platform. core.autocrlf=true on Windows otherwise hands clamd a port of
+# "3310\r", which it rejects, and gives the shell scripts a "#!/bin/bash\r" interpreter.
+* text=auto
+
+*.conf text eol=lf
+*.sh   text eol=lf
+Dockerfile*  text eol=lf
+*.Dockerfile text eol=lf

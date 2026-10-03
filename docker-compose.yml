@@ -87,7 +87,11 @@ services:
       # to scan in full is reported as a detection rather than as clean (policy register P-07).
       - './infra/clamav/clamd.conf:/etc/clamav/clamd.conf:ro'
     healthcheck:
-      test: ['CMD', '/usr/local/bin/clamdcheck.sh']
+      # Not the image's own clamdcheck.sh: that pings `localhost`, which resolves to ::1 first,
+      # while clamd.conf binds `TCPAddr 0.0.0.0` — IPv4 only. clamd answers, the check never
+      # hears it, and the whole stack sits in Created waiting on a service that is running.
+      # Ping the address clamd actually listens on.
+      test: ['CMD-SHELL', 'echo PING | nc 127.0.0.1 3310 | grep -q PONG']
       interval: 30s
       timeout: 10s
       retries: 20
