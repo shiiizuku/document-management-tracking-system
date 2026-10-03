@@ -186,6 +186,26 @@ describe('DocumentDetailScreen', () => {
     expect(screen.queryByRole('button', { name: /Edit metadata/ })).not.toBeInTheDocument();
   });
 
+  /*
+   * The server resolves the configured method to its label, so this screen prints what it is
+   * given rather than translating a code (policy register P-15) — and the courier's consignment
+   * number is shown beside it, because a release that cannot be traced is not the same record.
+   */
+  it('prints the release method by its configured label, with any tracking reference', async () => {
+    serve(
+      documentDetail({
+        status: 'RELEASED',
+        releaseMethod: { code: 'LBC', label: 'LBC', trackingReference: 'LBC-00042' },
+      }),
+    );
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() => expect(screen.getByText('Released by')).toBeInTheDocument());
+    expect(screen.getByText('LBC')).toBeInTheDocument();
+    expect(screen.getByText('Tracking reference')).toBeInTheDocument();
+    expect(screen.getByText('LBC-00042')).toBeInTheDocument();
+  });
+
   it('marks a confidential document as such', async () => {
     serve(documentDetail({ confidential: true }));
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);

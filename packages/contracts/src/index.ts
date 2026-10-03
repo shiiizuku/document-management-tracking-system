@@ -122,7 +122,31 @@ export const roleGrantSchema = z.object({
 
 export const documentDirectionSchema = z.enum(['INCOMING', 'OUTGOING']);
 export const documentPrioritySchema = z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']);
-export const releaseMethodSchema = z.enum(['MAILED', 'EMAILED', 'PICKED_UP', 'DELIVERED']);
+/*
+ * Release methods are configurable rows, so the wire value is a **code**, not a closed enum
+ * (policy register P-15; decision 27 as amended). The office uses LBC and JRS, which a four-value
+ * enum could not express, and the list has to be changeable without a migration.
+ *
+ * The shape is still constrained — upper snake case, so a code reads the same in the database, in
+ * a command and in an audit summary — but which codes exist is a question only the database can
+ * answer. `DocumentsService` rejects a code with no active row, which is a 400 rather than a
+ * schema error; that is the price of configurability and it is paid in exactly one place.
+ */
+export const releaseMethodCodeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(40)
+  .regex(/^[A-Z][A-Z0-9_]*$/, 'Release method code must be upper snake case');
+
+/** One configurable release method, as `GET /release-methods` serves it to the release dialog. */
+export const releaseMethodSchema = z.object({
+  id: z.string(),
+  code: releaseMethodCodeSchema,
+  label: z.string(),
+  /** When true, `trackingReference` is mandatory on a `RELEASE` command using this method. */
+  requiresTrackingReference: z.boolean(),
+});
 
 export const loginSchema = z.object({
   email: z.email(),
@@ -303,7 +327,13 @@ export const createDocumentSchema = z
 export const workflowCommandSchema = z.object({
   expectedVersion: z.number().int().positive(),
   remarks: z.string().trim().max(4000).optional(),
-  releaseMethod: releaseMethodSchema.optional(),
+  releaseMethod: releaseMethodCodeSchema.optional(),
+  /*
+   * Required when the chosen method is flagged `requiresTrackingReference`, refused when it is
+   * not: a tracking number against "Picked up" is noise in the record. Both halves of that rule
+   * are in `WorkflowService`, because whether it applies depends on a row this schema cannot see.
+   */
+  trackingReference: z.string().trim().min(1).max(120).optional(),
 });
 
 // Metadata edit (`PATCH /documents/:id/metadata`). Only the descriptive fields are editable:
@@ -447,6 +477,7 @@ export type Capability = z.infer<typeof capabilitySchema>;
 export type RoleGrant = z.infer<typeof roleGrantSchema>;
 export type DocumentDirection = z.infer<typeof documentDirectionSchema>;
 export type DocumentPriority = z.infer<typeof documentPrioritySchema>;
+export type ReleaseMethodCode = z.infer<typeof releaseMethodCodeSchema>;
 export type ReleaseMethod = z.infer<typeof releaseMethodSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentMetadataInput = z.infer<typeof updateDocumentMetadataSchema>;

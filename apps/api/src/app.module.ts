@@ -16,6 +16,7 @@ import { AuthorizationService } from './modules/authorization/authorization.serv
 import { DocumentsController } from './modules/documents/documents.controller.js';
 import { DocumentsRepository } from './modules/documents/documents.repository.js';
 import { DocumentsService } from './modules/documents/documents.service.js';
+import { ReleaseMethodsController } from './modules/documents/release-methods.controller.js';
 import { AttachmentsService } from './modules/files/attachments.service.js';
 import { FileVersionsRepository } from './modules/files/file-versions.repository.js';
 import { FilesController } from './modules/files/files.controller.js';
@@ -77,6 +78,7 @@ import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
     MeController,
     OrganizationController,
     DocumentsController,
+    ReleaseMethodsController,
     FilesController,
     NotificationsController,
     DashboardController,

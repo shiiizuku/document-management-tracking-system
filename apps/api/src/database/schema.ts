@@ -51,12 +51,33 @@ export const scanStatusEnum = pgEnum('scan_status', [
   'INFECTED',
   'SCAN_FAILED',
 ]);
-export const releaseMethodEnum = pgEnum('release_method', [
-  'MAILED',
-  'EMAILED',
-  'PICKED_UP',
-  'DELIVERED',
-]);
+/*
+ * Release methods are configurable **rows**, not a pgEnum. Decision 27 always said "or another
+ * configured allowed method" and the schema never honoured it, so for a long while LBC and JRS —
+ * two of the couriers the office actually uses — could not be recorded at all, and adding one
+ * meant an `ALTER TYPE` and a deploy (policy register P-15).
+ *
+ * `code` is the stable identifier a command carries on the wire; `label` is what the picker and
+ * the routing slip show, so renaming "Postal" costs an UPDATE and breaks no stored event. Rows are
+ * deactivated rather than deleted, because `release_events` cites them as evidence of how a
+ * document left the office.
+ */
+export const releaseMethods = pgTable('release_methods', {
+  ...identityColumns(),
+  code: varchar('code', { length: 40 }).notNull().unique(),
+  label: varchar('label', { length: 80 }).notNull().unique(),
+  /*
+   * Decision 27 as amended: "a method may be flagged as requiring a tracking reference, which is
+   * then mandatory at release." A courier consignment that is recorded without its tracking number
+   * cannot be traced, which is the only reason to record the courier at all — so the requirement
+   * is a property of the method rather than a rule written into the release code.
+   */
+  requiresTrackingReference: boolean('requires_tracking_reference').notNull().default(false),
+  active: boolean('active').notNull().default(true),
+  // The order the office reads the list in, which is neither alphabetical nor insertion order.
+  sortOrder: integer('sort_order').notNull().default(0),
+  ...timestampColumns(),
+});
 export const auditOutcomeEnum = pgEnum('audit_outcome', ['SUCCESS', 'FAILURE']);
 export const accountRequestStatusEnum = pgEnum('account_request_status', [
   'PENDING',
@@ -486,7 +507,16 @@ export const releaseEvents = pgTable('release_events', {
   releasedById: uuid('released_by_id')
     .notNull()
     .references(() => users.id),
-  method: releaseMethodEnum('method').notNull(),
+  methodId: uuid('method_id')
+    .notNull()
+    .references(() => releaseMethods.id),
+  /*
+   * The courier's consignment number, where the method requires one. Nullable because most
+   * methods do not: a document picked up at the counter has nothing to track. The "required when
+   * the method says so" rule is enforced in `WorkflowService`, which is where every other release
+   * precondition lives.
+   */
+  trackingReference: varchar('tracking_reference', { length: 120 }),
   releasedAt: timestamp('released_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

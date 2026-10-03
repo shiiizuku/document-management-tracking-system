@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { releaseMethodSchema, type ReleaseMethod, type WorkflowAction } from '@dts/contracts';
+import type { ReleaseMethodCode, WorkflowAction } from '@dts/contracts';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -24,7 +25,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError } from '@/lib/api';
 import { ACTION_LABELS } from './action-labels';
-import { useRunAction, type DocumentDetail } from './queries';
+import { useReleaseMethods, useRunAction, type DocumentDetail } from './queries';
 
 /**
  * Running one of the server-offered workflow actions, wherever that is offered from.
@@ -48,13 +49,6 @@ import { useRunAction, type DocumentDetail } from './queries';
 const ACTION_REQUIRES: Partial<Record<WorkflowAction, 'remarks' | 'releaseMethod'>> = {
   REQUEST_REVISION: 'remarks',
   RELEASE: 'releaseMethod',
-};
-
-const RELEASE_METHOD_LABELS: Record<ReleaseMethod, string> = {
-  MAILED: 'Mailed',
-  EMAILED: 'Emailed',
-  PICKED_UP: 'Picked up',
-  DELIVERED: 'Delivered',
 };
 
 /** Sending a document back for revision is the one action that undoes someone else's work. */
@@ -85,16 +79,34 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
   const runAction = useRunAction(document?.id ?? '');
   const [pendingAction, setPendingAction] = useState<WorkflowAction | null>(null);
   const [remarks, setRemarks] = useState('');
-  const [releaseMethod, setReleaseMethod] = useState<ReleaseMethod>('EMAILED');
+  const [releaseMethodCode, setReleaseMethodCode] = useState<ReleaseMethodCode | null>(null);
+  const [trackingReference, setTrackingReference] = useState('');
+
+  const needs = pendingAction === null ? undefined : ACTION_REQUIRES[pendingAction];
+  /*
+   * The methods are configured rows, not a compiled list (policy register P-15), so the dialog
+   * cannot know them until they are fetched — and it only fetches them once a release dialog is
+   * actually open, because the command palette mounts this hook on every route.
+   */
+  const releaseMethods = useReleaseMethods(needs === 'releaseMethod');
+  const options = releaseMethods.data ?? [];
+  /*
+   * The selection falls back to the first configured method rather than being initialized to a
+   * hard-coded code: with the list configurable, any constant here is one the office can delete.
+   */
+  const selectedMethod =
+    options.find((option) => option.code === releaseMethodCode) ?? options[0] ?? null;
+  const needsTracking = selectedMethod?.requiresTrackingReference ?? false;
 
   const closeDialog = () => {
     setPendingAction(null);
     setRemarks('');
+    setTrackingReference('');
   };
 
   const run = (
     action: WorkflowAction,
-    extra: { remarks?: string; releaseMethod?: ReleaseMethod },
+    extra: { remarks?: string; releaseMethod?: ReleaseMethodCode; trackingReference?: string },
   ) => {
     if (document === undefined) return;
     runAction.mutate(
@@ -135,8 +147,6 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
     setPendingAction(action);
   };
 
-  const needs = pendingAction === null ? undefined : ACTION_REQUIRES[pendingAction];
-
   const dialog = (
     <Dialog open={pendingAction !== null} onOpenChange={(open) => (open ? null : closeDialog())}>
       <DialogContent>
@@ -144,12 +154,16 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              run(
-                pendingAction,
-                needs === 'remarks'
-                  ? { remarks }
-                  : { releaseMethod, ...(remarks ? { remarks } : {}) },
-              );
+              if (needs === 'remarks') {
+                run(pendingAction, { remarks });
+                return;
+              }
+              if (selectedMethod === null) return;
+              run(pendingAction, {
+                releaseMethod: selectedMethod.code,
+                ...(needsTracking ? { trackingReference: trackingReference.trim() } : {}),
+                ...(remarks ? { remarks } : {}),
+              });
             }}
           >
             <DialogHeader>
@@ -163,24 +177,51 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
 
             <div className="space-y-4 py-4">
               {needs === 'releaseMethod' ? (
-                <div className="space-y-1.5">
-                  <Label htmlFor="release-method">Delivery method</Label>
-                  <Select
-                    value={releaseMethod}
-                    onValueChange={(value) => setReleaseMethod(value as ReleaseMethod)}
-                  >
-                    <SelectTrigger id="release-method">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {releaseMethodSchema.options.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {RELEASE_METHOD_LABELS[option]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="release-method">Delivery method</Label>
+                    <Select
+                      value={selectedMethod?.code ?? ''}
+                      disabled={options.length === 0}
+                      onValueChange={(value) => {
+                        setReleaseMethodCode(value);
+                        setTrackingReference('');
+                      }}
+                    >
+                      <SelectTrigger id="release-method">
+                        <SelectValue
+                          placeholder={
+                            releaseMethods.isPending ? 'Loading methods…' : 'No methods configured'
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {options.map((option) => (
+                          <SelectItem key={option.code} value={option.code}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Required by the method, not by the action: a courier consignment that is
+                      recorded without its tracking number cannot be traced (decision 27). */}
+                  {needsTracking ? (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="tracking-reference">
+                        {selectedMethod?.label} tracking reference
+                      </Label>
+                      <Input
+                        id="tracking-reference"
+                        required
+                        maxLength={120}
+                        value={trackingReference}
+                        onChange={(event) => setTrackingReference(event.target.value)}
+                      />
+                    </div>
+                  ) : null}
+                </>
               ) : null}
 
               <div className="space-y-1.5">
@@ -206,7 +247,11 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
                 type="submit"
                 variant={isDestructiveAction(pendingAction) ? 'destructive' : 'default'}
                 disabled={
-                  runAction.isPending || (needs === 'remarks' && remarks.trim().length === 0)
+                  runAction.isPending ||
+                  (needs === 'remarks' && remarks.trim().length === 0) ||
+                  (needs === 'releaseMethod' &&
+                    (selectedMethod === null ||
+                      (needsTracking && trackingReference.trim().length === 0)))
                 }
               >
                 {runAction.isPending ? <Loader2 className="animate-spin" /> : null}
