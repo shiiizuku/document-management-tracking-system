@@ -450,6 +450,235 @@ indistinguishable in both the link and the unlink path, with a test comparing th
 linking a reply does not move either document's status; and the reference set is immutable once the
 outgoing document is released.
 
+### Slice 6 plan — the interface
+
+Planned 2026-10-03 for the next session. Implements decisions 167, 170–174, and picks up 168 and
+169, which are document-form UI and have no other home. This is the slice where the interface
+catches up with slices 1–5: custody, acceptance times, for-information copies and the Reference
+Document relation all exist in the payload already and **nothing on screen reads them**.
+
+It is five pieces plus two one-field fixes, listed in the order to do them in. The order is not
+about risk — none of this can make the API unsafe — it is about rework: the type retirement touches
+every screen, so doing it after the new surfaces are built means reviewing them twice, and the
+inline preview pane is extracted once in part 4 and reused in part 5.
+
+**The one thing in here that is not UI work.** Decisions 170 and 171 cannot be satisfied in the
+browser: the slip's layout, its seal, its custody table and the distinction between viewing and
+exporting it are all server-side. Part 5 is an API slice wearing a UI slice's clothes, and it is the
+largest piece — budget for it accordingly rather than discovering that last.
+
+#### Part 1 — Inter, self-hosted, and the end of the display serif (decision 172)
+
+`app/theme.css:16` pulls DM Sans and DM Serif Display from `fonts.googleapis.com`. On an
+organization-hosted deployment that is a live third-party dependency in the critical render path of
+a records system that is otherwise entirely self-contained — which is the actual reason 172 says
+*self-hosted*, rather than a preference about typefaces.
+
+1. Vendor Inter's variable woff2 (latin + latin-ext) and load it with `next/font/local` in
+   `app/layout.tsx`, exposing it as a CSS variable, then point `--font-sans` (`theme.css:46`) and
+   `tailwind.config.js:241` at that variable. `next/font` beats a hand-written `@font-face` here
+   because it emits the preload and the `font-display` for us and hashes the file into the build
+   output — no `public/fonts` URL to keep in step with a deploy.
+2. Delete `--font-serif` (`theme.css:47`), the `serif` family in Tailwind (`:242`) and the heading
+   rule at `theme.css:95–101`. Then fix the **nine** places that still ask for it by name:
+   `login/page.tsx:24,32`, `request-account/page.tsx:20,28`, `app-shell.tsx:144,201`,
+   `request-account-form.tsx:91`, `dashboard-screen.tsx:141–142`, `reports-screen.tsx:258`. Dropping
+   the family without these leaves them on the browser's Times fallback, which reads as a bug rather
+   than a decision. The dashboard and report figures keep `tabular-nums`; what they lose is the
+   serif, not the alignment.
+3. While the font stack is open, put `tabular-nums` on tracking numbers and the slip's timestamps.
+   Inter's proportional digits make a column of `DTS-2026-000014` jitter, and a tracking number is
+   read by comparing it against another one.
+
+No new test beyond the existing suites continuing to pass; the risk is a missed `font-serif`, which
+`grep -r "font-serif" apps/web` answers exactly.
+
+#### Part 2 — the List view control (decision 173)
+
+A **separate** axis from appearance density, and the decision says so: density is global and sets
+control heights, this scopes to document lists only and chooses between card, table and single line.
+Do not add a fourth preset to `appearance-config.ts` — that module's whole claim is that its three
+axes are independent and compose into attributes on `<html>`, and a preference that applies to two
+screens is not that kind of axis.
+
+1. `src/features/documents/list-view.ts` (not under `md3/`): the vocabulary (`card | table | line`),
+   a `dts.listView` storage key, a validate-on-read loader in the same shape as `appearance.tsx`'s
+   `read()` — a stored value is attacker-adjacent and an unknown one falls back to `table` — and a
+   hook. **Per device, not per account**, like appearance, and deliberately **not in the URL**: the
+   registry puts its filters in the URL so a filtered view can be sent to a colleague, and a
+   card-versus-table preference travelling with that link would overwrite the recipient's own
+   choice.
+2. No boot script. The lists are client-fetched and paint a skeleton before any row exists, so
+   reading `localStorage` on mount lands the choice before there is anything laid out to flash. That
+   is the difference from the theme, which the server paints and which must therefore be corrected
+   before first paint.
+3. **One field definition, three renderers.** The column arrays at `registry-screen.tsx:67` and
+   `my-work-screen.tsx:33` are the source of truth for what a document row says; a card view that
+   grows its own copy will drift from the table within a month. Extract the surrounding chrome —
+   pagination, error state, empty state, loading skeleton — out of `DataTable` into a `ListShell`,
+   have `DataTable` compose it, and add `DocumentCards` and `DocumentLines` that compose the same
+   shell and read the same field set. The segmented control sits in the list header beside the filter
+   bar, as a `radiogroup`.
+4. Scope it to the registry and My work. The audit, users, organization and deleted-documents tables
+   are not document lists and keep `DataTable` unchanged.
+
+#### Part 3 — the detail view's sticky right rail (decision 174)
+
+`document-detail-screen.tsx` is one `max-w-5xl` column of stacked sections: metadata, actions,
+attachments, timeline. 174 moves actions and the timeline into a sticky right rail with the timeline
+scrolling inside it.
+
+1. Layout: the page becomes `lg:grid-cols-[minmax(0,1fr)_19rem]` with the rail second in the DOM, so
+   the narrow layout gets the document before its history. **The shell scrolls the window** —
+   `app-shell.tsx:165` has no inner overflow container and its header is `sticky top-0 h-14` — so
+   the rail is `sticky top-14` plus the page's own padding, and the timeline's scroll box is sized
+   off `calc(100vh - 3.5rem - …)`. Getting this wrong produces a rail that scrolls the page behind a
+   header it slides under, which is the usual failure of this pattern.
+2. The rail carries, top to bottom: status and where the document is now, `DocumentActions`, then the
+   timeline under its own heading with the scroll on the list and not on the heading. The main column
+   keeps the metadata grid, the description, references (part 4) and attachments.
+3. **Make the timeline say what slice 4 recorded.** It currently flattens every route row to the
+   string "Forwarded to another division" and throws away `acceptedAt`, `forInformation` and both
+   division ids. Resolve names through `useDivisions` (readable by any authenticated user) and render
+   a hop as *forwarded to X* / *accepted by X at T*, with for-information rows marked as copies and
+   never as custody. Decision 177's "a document's location is its most recent lead hop" is the
+   expression behind the rail's location line — read it off the routes, not off `divisionId`, which
+   records where the document was registered and never moves.
+4. Density, per the standing preference: one hairline rule between rail sections rather than cards
+   inside a card, `label-medium` field labels, and no helper text that repeats a badge.
+
+#### Part 4 — the Reference Document modal (decisions 165, 167, 178)
+
+Slice 5 shipped `referencedDocuments`, `replyDocuments` and both write endpoints, and the web client
+does not know they exist: `DocumentDetail` at `queries.ts:145` has no field for either.
+
+1. Extend the web `DocumentDetail` with both lists, and `test/fixtures.ts` / `test/mock-api.ts` with
+   them, or every detail test renders a document with no references and proves nothing.
+2. A **References** section in the main column: on an outgoing document, what it answers; on an
+   incoming one, headed *Replies*, the outgoing documents that name it. **Render exactly what the
+   payload holds.** The lists are short by omission (decision 166) — no count from another source, no
+   "1 reference hidden", no placeholder row. A reader seeing two where a colleague sees three is the
+   designed behaviour.
+3. Linking: an "Add reference" combobox over the existing document search, incoming documents only as
+   targets, issuing one `POST` per id because the contract takes one id per call. Map **both** misses
+   to one message — a target that does not exist and a target outside the reader's scope arrive as
+   identical 404s and must leave as identical copy, or the UI reintroduces the existence oracle the
+   API was written to avoid. Unlink is a per-row control under the same rule.
+4. Gate Add and Remove on `DOCUMENT_EDIT` **and** a non-released, non-archived status. Decision 178
+   freezes the set at release and the server already refuses, so this is about not offering a control
+   that cannot work — and about the consequence the decision names: linking must be reachable before
+   Prepare Release, so the section cannot sit behind a release-time step.
+5. **The modal (167).** It shows the referenced record *and its attachments, with preview inline in
+   that same modal* — so it must not open the existing `AttachmentPreviewDialog`, which is itself a
+   `Dialog`. Extract the preview body from `preview-dialog.tsx` into an `InlineFilePane` owning the
+   `inlineContent` blob URL, the release-on-close effect and the `sandbox=""` iframe, and have both
+   the existing dialog and this modal render it. The modal is the record's key fields above,
+   attachments to one side, the selected one previewing beside them, and a link to the full detail
+   page. No new endpoint: `/documents/:id` and `/documents/:id/attachments` are both scoped through
+   `requireReadableDocument`, so a reference the reader may open resolves through what already
+   exists — confirmed in slice 5's plan rather than assumed.
+
+#### Part 5 — the routing slip, inline and in the bureau's layout (decisions 170, 171)
+
+The current slip (`report-export.service.ts:136`) is a DTS-branded page with a timeline list. The
+bureau's form — `apps/web/public/Document Routing Slip.doc`, whose text extracts cleanly — is a
+different document: a four-line letterhead (Republic of the Philippines / Department of Environment
+and Natural Resources / **MINES AND GEOSCIENCES BUREAU** / Region III, City of San Fernando,
+Pampanga), the title DOCUMENT ROUTING SLIP, a metadata table, then *Routing and Action Information*
+as a grid, with the form control number `MGBR3-FM-ORD-02`, revision `00`, dated `08-25-26` in the
+footer. That footer is a QMS-controlled identifier and belongs on the output.
+
+1. **Resolve the slip's data server-side.** Route rows carry ids, and the slip prints names. This is
+   a repository read that joins divisions, sections and actors onto one document's routes and
+   workflow events — not a loop of lookups, and not a client-side join, because the PDF is rendered
+   in the API.
+2. **The routing table** is five columns per decision 171 — FROM / DATE-TIME RECEIVED / TO /
+   DATE-TIME RELEASED / ACTION TAKEN — one row per custody hop, read straight off `document_routes`:
+   the sender's `createdAt` is DATE-TIME RELEASED, the recipient's `acceptedAt` is DATE-TIME
+   RECEIVED, and remarks plus the matching workflow event are ACTION TAKEN. This output is what
+   ADR-0005 moved custody onto the route row *for*. A hop awaiting acceptance prints an empty
+   RECEIVED cell, which is exactly what the paper form does. Note that the bureau's own form has four
+   columns and infers TO from the next row's FROM; 171 makes TO explicit and governs.
+   **For-information recipients are not custody rows** (decision 160): print them as a copied-to line
+   attached to the hop that consulted them, never as rows of their own, or the slip reads as though
+   three divisions held the document.
+3. **The metadata table** is specified as eight rows. The `.doc` shows Sender, Subject, Addressee and
+   Date/Time Received; the other four are not recoverable from it, because `document routing slip
+   sample.pdf` is a scan with no text layer. Propose tracking number, reference number, type and
+   target date, and **confirm against the scanned sample before building the table** — this is a form
+   the office will compare against the paper one row by row.
+4. **The seal.** `apps/web/public/mgb-logo.png` is 1.3 MB, far too large to embed per request. Commit
+   a downsized copy under the API, load it once into a module-level buffer, and embed it with
+   PDFKit's `image()`. The asset is organization-approved (decision 64), so record in the pilot
+   configuration checklist that replacing it is a deployment step and not a code change.
+5. **Viewing and exporting are two audited actions (decision 170).** Add a second route —
+   `GET :id/routing-slip/preview.pdf`, `Content-Disposition: inline`, auditing
+   `document.routing-slip-viewed` — beside the existing export, rather than branching the existing
+   handler on a query parameter: one route per audited action keeps each `audit.write` next to the
+   response it describes, and nothing a caller flips can make a download record itself as a read.
+   Serve it with the same `X-Content-Type-Options` and inline CSP as the attachment preview
+   (`files.controller.ts:31`), which means lifting `INLINE_CONTENT_CSP` into a shared module — our
+   own PDF is trusted content, but the sandbox costs nothing and that rule should have one home.
+6. **The client.** `RoutingSlipButton` becomes a preview dialog: open, fetch the inline bytes with
+   `inlineContent`, render through part 4's `InlineFilePane`, and keep Download *inside* the dialog,
+   so the ordinary path writes a view event and only a real export writes an export event. Add
+   `document.routing-slip-viewed` to `AUDIT_ACTION_GROUPS` (`audit/queries.ts:124`) and to
+   `auditActionLabel`, whose labels `audit-url-state.test.ts:111` pins.
+
+#### Part 6 — the two reference-number fields (decisions 168, 169)
+
+Small, and in the same two forms as everything above.
+
+- **168:** `createDocumentSchema` already accepts `referenceNumber` and
+  `create-document-dialog.tsx` has no field for it, so the sender's reference can currently only be
+  added after registration. Add it, shown for incoming documents only.
+- **169:** `metadata-dialog.tsx:273` offers "External reference" as free text on every document. On
+  an **outgoing** document that column holds the server-generated `ORD-2026-00014`, allocated from
+  `reference_counters` inside the create transaction — editing it by hand is a records-integrity bug
+  that also happens to fight a partial unique index. Make the field read-only for outgoing documents
+  and label it "Sender's reference" for incoming ones. **Check whether `editMetadata` refuses the
+  change server-side**; if it does not, the refusal belongs there too, with the dialog merely
+  declining to ask.
+
+**Deliberately out of scope**
+
+- **Decision 175 — the capabilities a role grants, read-only in the user form.** It reads like UI but
+  it is a policy change: `capabilitiesByRole` is server-only on purpose (policy register P-11, and
+  the comment at `role-capabilities.ts:6` says the browser never sees it), so showing the map means
+  publishing it through a new endpoint. That deserves its own slice and its own decision about who
+  may read it, not a corner of this one.
+- **The ORD/Records org restructure** (the second half of decision 152) and configurable release
+  methods (decision 27 as amended). Both are gaps carried forward and neither is UI.
+- **Changing what any list or report counts.** A new surface that needs "pending" composes
+  `documentIsPending`; this slice adds no predicate of its own.
+
+**Tests that will matter**
+
+- The three list views render from one field set: a tracking number and a status appear in all three,
+  and switching the control re-renders without touching the URL or the filters.
+- The list-view preference survives a remount and falls back to `table` on a junk stored value — the
+  same two tests appearance already has.
+- The detail screen shows an accepted hop with its division name, an unaccepted one as pending, and a
+  for-information copy marked as a copy: three assertions against the route shapes slice 4 writes.
+- References: a reader whose payload holds one reference sees one and no trace of a second; the Add
+  control is absent on a `RELEASED` outgoing document; a failed link renders the same message for a
+  nonexistent target and an unreadable one.
+- The reference modal previews an attachment **without** a nested dialog and releases its object URL
+  on close — the leak `preview-dialog.tsx` already guards, now in a second caller.
+- Routing slip: an integration test asserting one routing row per lead hop and none for a
+  for-information recipient, and that opening the preview writes `document.routing-slip-viewed` while
+  the download writes `document.routing-slip-exported` — `api.test.ts:150` already owns the shape of
+  that assertion for the export.
+- `grep -r "font-serif" apps/web` returns nothing.
+
+**Done when:** the app renders in Inter with no request to a font CDN; a records officer can switch
+the registry between card, table and single-line and finds the choice still there tomorrow; the
+detail view's actions and timeline sit in a rail that stays put while the document scrolls, and the
+timeline names the division that accepted each hop; an outgoing document lists what it answers and
+opens any of them, attachments previewing in the same modal; the routing slip opens on screen in the
+bureau's layout with the seal and one row per custody hop; and the audit log distinguishes the
+officer who looked at it from the one who exported it.
+
 ---
 
 ## Phase status (updated 2026-10-01)
