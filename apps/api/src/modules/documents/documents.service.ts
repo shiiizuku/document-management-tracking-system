@@ -23,7 +23,7 @@ import {
 } from '../authorization/authorization.policy.js';
 import { NotificationsRepository } from '../notifications/notifications.repository.js';
 import type { MonthlyReport } from '../reports/monthly-report.js';
-import { UsersRepository } from '../users/users.repository.js';
+import { UsersRepository, type UserRow } from '../users/users.repository.js';
 import { FileVersionsRepository } from '../files/file-versions.repository.js';
 import {
   IllegalTransitionError,
@@ -1003,7 +1003,13 @@ export class DocumentsService {
       const copy = await this.repository.resolvePlacement(divisionId, null);
       if (!copy.ok) throw new BadRequestException(copy.reason);
     }
-    const informationRecipients = await this.divisionHeadsOf(forInformationDivisionIds);
+    const routedNotifications = await this.routedNotificationsFor(
+      actor,
+      current,
+      input.toDivisionId,
+      toSectionId,
+      forInformationDivisionIds,
+    );
     const remarks = input.remarks?.trim() ? input.remarks.trim() : null;
 
     await this.database.transaction(async (tx) => {
@@ -1041,23 +1047,15 @@ export class DocumentsService {
           tx,
         );
       }
-      /*
-       * The heads of the copied divisions are notified because they are precisely the people the
-       * copy just made readers: a division-level hop is reachable by the division head, not by
-       * every section inside it (`routesReachUnit`). The lead recipient gets no notification here
-       * and never has — forwarding for action surfaces through the work queue — so this is
-       * deliberately asymmetrical, and that is the thing to revisit if a lead notification is
-       * ever added rather than quietly notifying both from here.
-       */
-      for (const recipient of informationRecipients) {
+      for (const { recipientUserId, title } of routedNotifications) {
         await this.notifications.insert(
           {
-            recipientUserId: recipient.id,
+            recipientUserId,
             type: 'DOCUMENT_ROUTED',
-            title: 'Copied in for information',
+            title,
             body: `${current.trackingNumber}: ${current.title}`,
             documentId: id,
-            idempotencyKey: `notify:document.routed:${id}:${moved.version}:${recipient.id}`,
+            idempotencyKey: `notify:document.routed:${id}:${moved.version}:${recipientUserId}`,
           },
           tx,
         );
@@ -1090,6 +1088,8 @@ export class DocumentsService {
             toDivisionId: input.toDivisionId,
             toSectionId,
             forInformationDivisionIds,
+            // Who the inbox rows above went to, so the worker can ping exactly those sockets.
+            recipientUserIds: routedNotifications.map((entry) => entry.recipientUserId),
           },
           idempotencyKey: `document.routed:${id}:${moved.version}`,
         },
@@ -1539,14 +1539,56 @@ export class DocumentsService {
    * The active heads of the named divisions, deduplicated — the readers a copy for information
    * creates, and so the people it notifies.
    */
-  private async divisionHeadsOf(divisionIds: readonly string[]): Promise<{ id: string }[]> {
+  /**
+   * Who a forward notifies, and with what title.
+   *
+   * The lead hop notifies the receiving division as a whole — every active member, not only the
+   * people who can accept it — because a forward was otherwise silent on the receiving end until
+   * someone happened to open the queue, and the office reads "sent to the division" as "the
+   * division was told". Members of the section the hop names are told it came to their section;
+   * everyone else that it came to their division. A copy for information is division-level only
+   * (decision 160) and reaches the copied divisions' heads, the only people it made readers.
+   *
+   * A person reached both ways is told once, as the lead, since that is the hop asking for action.
+   * The sender is never notified of their own forward, and a confidential document notifies only
+   * those cleared for it: the title in the inbox would otherwise say what the 404 would not.
+   */
+  private async routedNotificationsFor(
+    actor: RequestUser,
+    document: DocumentRow,
+    toDivisionId: string,
+    toSectionId: string | null,
+    forInformationDivisionIds: readonly string[],
+  ): Promise<{ recipientUserId: string; title: string }[]> {
+    const [division, informationHeads] = await Promise.all([
+      this.users.list({ divisionId: toDivisionId, active: true }),
+      this.divisionHeadsOf(forInformationDivisionIds),
+    ]);
+    const recipients = new Map<string, string>();
+    const add = (user: UserRow, title: string): void => {
+      if (user.id === actor.id || recipients.has(user.id)) return;
+      if (document.confidential && !user.canAccessConfidential) return;
+      recipients.set(user.id, title);
+    };
+    for (const member of division)
+      add(
+        member,
+        toSectionId !== null && member.sectionId === toSectionId
+          ? 'Forwarded to your section'
+          : 'Forwarded to your division',
+      );
+    for (const head of informationHeads) add(head, 'Copied in for information');
+    return [...recipients].map(([recipientUserId, title]) => ({ recipientUserId, title }));
+  }
+
+  private async divisionHeadsOf(divisionIds: readonly string[]): Promise<UserRow[]> {
     if (divisionIds.length === 0) return [];
     const heads = await Promise.all(
       divisionIds.map((divisionId) =>
         this.users.list({ role: 'DIVISION_HEAD', divisionId, active: true }),
       ),
     );
-    return [...new Map(heads.flat().map((head) => [head.id, { id: head.id }])).values()];
+    return [...new Map(heads.flat().map((head) => [head.id, head])).values()];
   }
 
   /** The empty facts: no hops, no assignment, no share. Reachable only for a row with no rows. */
