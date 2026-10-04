@@ -53,3 +53,15 @@ describe('statement timeout against a real database', () => {
     }
   });
 });
+
+describe('JIT setting against a real database', () => {
+  it('applies the configured JIT setting to every pooled connection', async () => {
+    const { pool, db } = createDatabase(databaseUrl, { jit: false });
+    try {
+      const result = await db.execute<{ jit: string }>(sql`show jit`);
+      expect(result.rows[0]?.jit).toBe('off');
+    } finally {
+      await pool.end();
+    }
+  });
+});

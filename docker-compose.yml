@@ -130,6 +130,8 @@ services:
       # Pool size per process; match the database host's cores (docs/d2-performance-fixes.md F4).
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
       DATABASE_STATEMENT_TIMEOUT_MS: ${DATABASE_STATEMENT_TIMEOUT_MS:-10000}
+      # Postgres JIT for the API's connections; off, because it costs more than it saves here.
+      DATABASE_JIT: ${DATABASE_JIT:-false}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-dts-local}

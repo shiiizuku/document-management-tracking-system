@@ -23,6 +23,7 @@ class DatabaseShutdown implements OnApplicationShutdown {
         createDatabase(config.getOrThrow<string>('DATABASE_URL'), {
           poolMax: config.get<number>('DATABASE_POOL_MAX'),
           statementTimeoutMs: config.get<number>('DATABASE_STATEMENT_TIMEOUT_MS'),
+          jit: config.get<boolean>('DATABASE_JIT'),
         }),
     },
     {
