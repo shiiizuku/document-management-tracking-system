@@ -324,6 +324,12 @@ adds an index and `0012` adds the audit triggers.
   changes product behaviour or decision 118, and each wants its own rerun. All numbers come from
   one shared 6-core desktop with Postgres in Docker Desktop. A real host moves the numbers but not
   the shape. Generated detail: `d2-load-run.md`.
+
+  **Follow-up, same day: the target is met.** Applied F4 (fail fast: statement timeout, 503 with
+  `Retry-After`), F1 (one scan for the dashboard) and F7, found on the way: Postgres JIT off for
+  the API's connections, since compiling took most of each scoped count's run time. Measured one
+  change per run. With all three, read p95 is 126 ms at 15/s and 166 ms at 30/s, with no failures.
+  F2, F3 and F5 are no longer needed for the target. Detail: `d2-load-test.md` § Follow-up.
 - [ ] **D3** (2h) Backup/restore rehearsal. The scripts and `runbooks/backup-restore.md` are already
       thorough; what is missing is a **performed** restore, timed against P-13's 2–4 hour window, with
       the evidence written down. _Done-when:_ a restore is verified against a checklist.
@@ -396,5 +402,6 @@ cannot be signed off without it.
 ## Shape
 
 ~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent, with C2–C4 waiting only on the
-CI run. In **Wave D**, D1, D2 and D4 are done (D2 recorded a missed target; see its box), and
+CI run. In **Wave D**, D1, D2 and D4 are done (D2 now meets its target after F4, F1 and JIT off; see
+its box), and
 D3 needs a second machine to restore onto.

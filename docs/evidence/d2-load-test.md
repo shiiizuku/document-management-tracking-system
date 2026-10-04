@@ -2,6 +2,12 @@
 
 _2026-10-04. Phase 7 sequencing, Wave D, box D2._
 
+> **Update, same day: the target is now met, with headroom.** Three changes were applied and each
+> was measured in its own run (see [Follow-up](#follow-up-f4-f1-and-jit-off) below): F4 (fail fast
+> at saturation), F1 (one scan for the dashboard) and turning off Postgres JIT for the API's
+> connections. With all three, read p95 is **126 ms at 15/s** and **166 ms at 30/s**, with no failed
+> requests at any rate. The rest of this page records the original run that the fixes started from.
+
 **Verdict: the target is not met.** The system holds the estimated pilot peak, about 5 actions a
 second, with almost no margin. It misses the read target from 10 actions a second, and it
 **collapses between 20 and 30**: requests queue for tens of seconds and a fifth of them fail with
@@ -10,7 +16,9 @@ full-table `count(*)` scans of `documents` behind the registry, search and dashb
 
 | File | What it holds |
 | --- | --- |
-| [`d2-load-run.md`](d2-load-run.md) | Every phase, every request type: n, rate, p50/p95/p99/max, failures. Generated. |
+| [`d2-load-run.md`](d2-load-run.md) | Every phase, every request type: n, rate, p50/p95/p99/max, failures. Generated. The baseline. |
+| [`d2-load-run-f4-f1.md`](d2-load-run-f4-f1.md) | The same, after F4 and F1, with JIT left on (`DATABASE_JIT=true`). Generated. |
+| [`d2-load-run-jit-off.md`](d2-load-run-jit-off.md) | The same, after F4, F1 and JIT off (the shipped default). Generated. |
 | `apps/api/perf/load.ts` | The harness (`npm run perf:load -w @dts/api`). Its header explains the target and the method. |
 | `apps/api/perf/load-journeys.ts` | The two acceptance-scenario journeys, cut into interleavable steps. |
 | `apps/api/perf/load-client.ts` | One signed-in session, and why each sends its own `X-Forwarded-For`. |
@@ -92,7 +100,57 @@ per scan and it grows with the table.
   counter row, and the obvious worry was contention on it. `POST /documents` stayed at p50 19 ms and
   p95 343 ms at 15/s.
 
+## Follow-up: F4, F1 and JIT off
+
+Applied on branch `wave-d-perf-f4-f1`. Both runs used the same build (`fcee93a`), each after a
+fresh reseed. The only difference between them is `DATABASE_JIT`, so the second column is F4 and F1
+alone and the third adds JIT off. The two generated reports both name `fcee93a` in their header,
+so only this page records that the F4 + F1 run had JIT on.
+
+**Read p95**, with failures where there were any:
+
+| Phase | Baseline | F4 + F1 (JIT on) | + JIT off |
+| --- | ---: | ---: | ---: |
+| step 5 | 491 ms | 324 ms | 118 ms |
+| step 10 | 589 ms | 366 ms | 123 ms |
+| **steady 15/s** | **653 ms** ❌ | **441 ms** ✅ | **126 ms** ✅ |
+| step 20 | 1,196 ms ❌ | 534 ms ❌ | 135 ms ✅ |
+| step 30 | 15,249 ms, 22 % failed (500) ❌ | 13,134 ms, 5.7 % failed (503) ❌ | 166 ms, 0 failed ✅ |
+
+The slowest reads at 15/s, as p50 / p95:
+
+| Request | Baseline | F4 + F1 | + JIT off |
+| --- | ---: | ---: | ---: |
+| `GET /dashboard/summary` | 583 / 1,207 ms | 351 / 659 ms | 93 / 140 ms |
+| `GET /documents?divisionId` | 389 / 907 ms | 374 / 690 ms | 126 / 151 ms |
+| `GET /documents?search` | 313 / 694 ms | 302 / 559 ms | 110 / 190 ms |
+| `GET /documents` | 216 / 515 ms | 210 / 354 ms | 33 / 45 ms |
+
+What each change did:
+
+- **F1** cut the dashboard's p50 by about 40 % and was the only change to the read path in the
+  F4 + F1 run. That run's other read types improved a little too, so freeing the database from the
+  dashboard's extra scans helped the requests competing with them.
+- **F4** did not raise capacity, as expected. At 30/s the F4 + F1 run still saturated, but every
+  failure was a `503 SERVICE_BUSY` with `Retry-After` instead of a 500.
+- **JIT off** was the largest single gain, and it was not on the original list. The scope
+  predicate's subplans give the scoped counts cost estimates above Postgres's `jit_above_cost`, so
+  each one was compiled before running. For a division head's dashboard query on this seed,
+  compiling took 235 ms of 268 ms, and the scan itself about 30 ms. With JIT off, the registry
+  went from 210 to 33 ms p50.
+
+**One open blip.** In the JIT-off run, step 20 missed on writes (p95 1,035 ms) and uploads
+(p95 4,240 ms) while reads in the same step stayed at 135 ms, and step 30 then passed everything.
+An earlier run that combined all three changes, set aside because its report named the wrong
+commit, hit the same shape at step 30 instead (upload p95 5,263 ms). A stall that hits writes but
+spares reads suggests something on the write path, such as a checkpoint or autovacuum flush on
+Docker Desktop's disk, or the scan pipeline. That is not verified. It is worth watching on the
+pilot's database host before treating it as a finding.
+
 ## What would close the gap, in order of cost
+
+_This was the list before the follow-up. Items 1 and 4 are now done (F1, F4), and with JIT off the
+target is met without items 2 and 3._
 
 Not done in this box. Each changes product code or a recorded decision, and each wants its own
 rerun of this harness. Expanded, with code locations, decisions needed and a suggested order, in

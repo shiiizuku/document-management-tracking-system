@@ -1,7 +1,13 @@
 # D2 follow-up: potential performance fixes
 
 _Written 2026-10-04 from the D2 load test ([`evidence/d2-load-test.md`](evidence/d2-load-test.md)).
-Nothing here is applied. Each item is a candidate box, with what it costs and what it needs decided._
+Each item is a candidate box, with what it costs and what it needs decided._
+
+> **Status, later the same day:** F4 and F1 are applied, and so is a fix that was not on this list,
+> F7 (Postgres JIT off). With all three the D2 target is met with headroom: read p95 126 ms at
+> 15/s, 166 ms at 30/s, no failures. Measured one change per run; the numbers are in
+> [`evidence/d2-load-test.md`](evidence/d2-load-test.md#follow-up-f4-f1-and-jit-off). F2, F3 and F5
+> are no longer needed for the target. They stay listed for growth, and F6 still waits on policy.
 
 ## The problem these fixes address
 
@@ -29,6 +35,11 @@ steady phase holding at 15/s, with no 5xx up to the highest step.
 ---
 
 ## F1 — One scan for the dashboard counts
+
+**Applied.** Dashboard p50 583 → 351 ms at 15/s with JIT on. The `EXISTS` warning below was right:
+inside a `FILTER` it made the Records Section's summary five times slower (188 ms against 37 ms).
+Pending is counted with an `IN` form of the same predicate (`documentIsPendingInRollup`), which
+Postgres reads once into a hash. The other dashboard queries already ran in parallel.
 
 **Cost:** ~1 h. **Decision needed:** none. **Expected effect:** small, about 10–15 % off Postgres CPU;
 the dashboard's p95 roughly halves.
@@ -98,6 +109,11 @@ Search is `ILIKE '%term%'` across five columns (`title`, `tracking_number`, `ref
 
 ## F4 — Fail fast at saturation
 
+**Applied.** `DATABASE_POOL_MAX` (default 10, API and worker) and `DATABASE_STATEMENT_TIMEOUT_MS`
+(default 10 s, API only), both in compose. A pool-acquire timeout or a cancelled statement is
+answered `503 SERVICE_BUSY` with `Retry-After: 2`. The web client already retries 5xx. Separate
+pools for the outbox relay were not done.
+
 **Cost:** ~2 h. **Decision needed:** small, an ops one (timeouts). **Expected effect:** does not
 raise capacity. It changes *how* the system fails past it.
 
@@ -142,9 +158,23 @@ seed. Every pending count and filter therefore does more work every day, and
 excluding copies from the predicate, also shrinks that index. This is listed here only so whoever
 picks up F1/F2 knows the Pending numbers they are optimising are currently wrong.
 
+## F7 — Postgres JIT off for the API's connections
+
+**Applied. Found while checking F1's plans, and the largest single gain.** The scope predicate's
+subplans give every scoped count a cost estimate above Postgres's `jit_above_cost`, so each was
+JIT-compiled before running. On the perf seed, compiling took 235 ms of a 268 ms dashboard query
+whose scan took about 30 ms. JIT pays off for long analytic queries. For this API's short ones it
+was pure overhead, paid on every request.
+
+`DATABASE_JIT` (default `false`) sets `jit` on the API's pool. It is in compose and
+`.env.example`, and `true` restores the server default. With F4 and F1 already in, it took steady
+read p95 from 441 to 126 ms and turned the 30/s step from a collapse into a pass.
+
 ---
 
 ## Suggested order
+
+_Superseded: F4, F1 and F7 are done and the target is met. What remains is for growth or policy._
 
 | Order | Fix | Why then |
 | ---: | --- | --- |
