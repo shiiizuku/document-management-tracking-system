@@ -10,7 +10,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  notInArray,
   or,
   sql,
   type SQL,
@@ -23,6 +22,7 @@ import {
   custodyDivisionId,
   custodySectionId,
   documentIsPending,
+  documentIsPendingInRollup,
   documentScopeFor,
 } from '../authorization/query-scope.js';
 import type { Database } from '../../database/client.js';
@@ -1070,11 +1070,6 @@ export class DocumentsRepository {
   }
 
   /**
-   * Scope-aware dashboard rollup: totals per workflow status and the overdue count, computed
-   * from the same `documentScopeFor` predicate the list uses so the dashboard can never show a
-   * number the list can't back up (decision register 90 — one source of truth for scope).
-   */
-  /**
    * One division's share of the work waiting to be accepted.
    *
    * Grouped by **current custody**, not by `documents.division_id`. That column is the registering
@@ -1151,45 +1146,49 @@ export class DocumentsRepository {
     }));
   }
 
+  /**
+   * Scope-aware dashboard rollup: totals per workflow status, overdue and pending, computed
+   * from the same `documentScopeFor` predicate the list uses so the dashboard can never show a
+   * number the list can't back up (decision register 90 — one source of truth for scope).
+   *
+   * One scan for every tile: the scope predicate is the expensive part of each count, so the
+   * tiles are `FILTER`s over a single pass rather than three sequential queries (D2 follow-up F1).
+   */
   async summary(actor: AuthorizationActor): Promise<DashboardCounts> {
-    const scoped = and(isNull(documents.deletedAt), documentScopeFor(actor));
+    const overdue = sql`${documents.status} not in ('RELEASED', 'ARCHIVED')
+      and ${documents.dueAt} is not null and ${documents.dueAt} < now()`;
     const statusRows = await this.database
-      .select({ status: documents.status, total: count() })
-      .from(documents)
-      .where(scoped)
-      .groupBy(documents.status);
-    const [overdueRow] = await this.database
-      .select({ total: count() })
-      .from(documents)
-      .where(
-        and(
-          scoped,
-          notInArray(documents.status, ['RELEASED', 'ARCHIVED']),
-          sql`${documents.dueAt} is not null and ${documents.dueAt} < now()`,
+      .select({
+        status: documents.status,
+        total: count(),
+        overdue: sql<number>`count(*) filter (where ${overdue})`.mapWith(Number),
+        pending: sql<number>`count(*) filter (where ${documentIsPendingInRollup()})`.mapWith(
+          Number,
         ),
-      );
+      })
+      .from(documents)
+      .where(and(isNull(documents.deletedAt), documentScopeFor(actor)))
+      .groupBy(documents.status);
+
     /*
      * `PENDING` is a tile on this dashboard and a filter in the registry, but it is not a value the
-     * status column holds — so it is counted separately, by the same `documentIsPending` predicate
-     * the registry filter uses (ADR-0005). Deliberately *not* folded into `total`: the pending
-     * documents are already counted under whatever lifecycle status they carry, and adding them
-     * again would make the tiles sum to more than the number of documents.
+     * status column holds — so it is counted by the same pending predicate the registry filter
+     * uses (ADR-0005). Deliberately *not* folded into `total`: the pending documents are already
+     * counted under whatever lifecycle status they carry, and adding them again would make the
+     * tiles sum to more than the number of documents.
      */
-    const [pendingRow] = await this.database
-      .select({ total: count() })
-      .from(documents)
-      .where(and(scoped, documentIsPending()));
-
     const byStatus = Object.fromEntries(
       [...workflowStatuses, 'PENDING' as const].map((status) => [status, 0]),
     ) as Record<WorkflowStatus, number>;
     let total = 0;
+    let overdueTotal = 0;
     for (const row of statusRows) {
       byStatus[row.status] = row.total;
       total += row.total;
+      overdueTotal += row.overdue;
+      byStatus.PENDING += row.pending;
     }
-    byStatus.PENDING = pendingRow?.total ?? 0;
-    return { total, byStatus, overdue: overdueRow?.total ?? 0 };
+    return { total, byStatus, overdue: overdueTotal };
   }
 
   /** Scoped list of live documents registered within a calendar month, for the monthly report. */

@@ -20,7 +20,10 @@ class DatabaseShutdown implements OnApplicationShutdown {
       provide: DATABASE_CONNECTION,
       inject: [ConfigService],
       useFactory: (config: ConfigService): DatabaseConnection =>
-        createDatabase(config.getOrThrow<string>('DATABASE_URL')),
+        createDatabase(config.getOrThrow<string>('DATABASE_URL'), {
+          poolMax: config.get<number>('DATABASE_POOL_MAX'),
+          statementTimeoutMs: config.get<number>('DATABASE_STATEMENT_TIMEOUT_MS'),
+        }),
     },
     {
       provide: DATABASE,

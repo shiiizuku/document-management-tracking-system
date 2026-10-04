@@ -127,6 +127,9 @@ services:
       # The API refuses to boot with NODE_ENV=production unless this is true (HTTPS only).
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
+      # Pool size per process; match the database host's cores (docs/d2-performance-fixes.md F4).
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      DATABASE_STATEMENT_TIMEOUT_MS: ${DATABASE_STATEMENT_TIMEOUT_MS:-10000}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-dts-local}
@@ -165,6 +168,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}
+      # Pool size per process; match the database host's cores (docs/d2-performance-fixes.md F4).
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-dts-local}

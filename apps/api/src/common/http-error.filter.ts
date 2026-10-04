@@ -7,7 +7,11 @@ import {
   type ExceptionFilter,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { isDatabaseBusyError } from '../database/database-errors.js';
 import { CORRELATION_ID_HEADER, normalizeCorrelationId } from './correlation-id.middleware.js';
+
+/** Seconds a client is asked to wait when the database is saturated. */
+export const BUSY_RETRY_AFTER_SECONDS = 2;
 
 @Catch()
 export class HttpErrorFilter implements ExceptionFilter {
@@ -21,6 +25,24 @@ export class HttpErrorFilter implements ExceptionFilter {
     // for errors thrown before it ran, so the envelope always carries a traceable value.
     const correlationId =
       request.correlationId ?? normalizeCorrelationId(request.headers[CORRELATION_ID_HEADER]);
+    // A saturated database is "busy, retry", not "unexpected error": it is the expected shape of
+    // overload (docs/d2-performance-fixes.md F4), and a client can do something useful with it.
+    if (isDatabaseBusyError(exception)) {
+      this.logger.warn(
+        `Database busy ${request.method} ${request.originalUrl} correlationId=${correlationId}`,
+      );
+      response.setHeader(CORRELATION_ID_HEADER, correlationId);
+      response.setHeader('Retry-After', String(BUSY_RETRY_AFTER_SECONDS));
+      response.status(HttpStatus.SERVICE_UNAVAILABLE).json({
+        error: {
+          code: 'SERVICE_BUSY',
+          message: 'The service is busy. Please try again in a moment.',
+          details: undefined,
+          correlationId,
+        },
+      });
+      return;
+    }
     const status =
       exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const payload = exception instanceof HttpException ? exception.getResponse() : null;
