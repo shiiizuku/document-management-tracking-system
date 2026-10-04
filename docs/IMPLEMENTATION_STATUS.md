@@ -79,8 +79,9 @@ command palette is in too, mounted in the app shell: jump to a document by track
 server's scoped search, run the open document's `allowedActions`, or go to any destination the user
 holds the capability for.
 
-**What is left on the frontend is quality, not surface area:** the axe sweep, responsive/browser
-matrix and Playwright E2E that the rebuild plan's decision 8 deferred to Phase 7.
+**What is left on the frontend is quality, not surface area:** the responsive/browser matrix. The
+axe sweep and Playwright E2E that the rebuild plan's decision 8 deferred to Phase 7 landed in
+Wave C and run in CI's `e2e` job.
 
 **The core workflow revision landed after that audit.** Decisions 152–175 and ADR-0005/0006/0007 were
 delivered as seven slices, all merged (PRs #83–#88): migration `0005`–`0008`, one status vocabulary in
@@ -167,7 +168,7 @@ has UI). Everything after this reuses the module + repository shape you establis
 
 ---
 
-## Slice 0.1 · Source-alignment documents _(not started — writing task)_
+## Slice 0.1 · Source-alignment documents _(1 of 3 — writing task)_
 
 Deliverables from Phase 0 of the _DTS Developer Assignment — Vertical Slices by Phase_ brief (held
 outside the repo). These are **documents, not code** — deliberately left unwritten so they can be
@@ -177,9 +178,10 @@ they draw on already exist in `docs/CONTEXT.md` and `docs/policy-register.md`.
 - [ ] (2h) **Traceability matrix** — map all 75 user stories → decisions D-1–D-151 → MVP or deferred
       scope → implementation area → test. _Done-when:_ every story has a decision, a scope verdict,
       and either a test or an explicit deferral.
-- [ ] (2h) **Initial acceptance scenarios** — one representative incoming→archive journey plus the
+- [x] (2h) **Initial acceptance scenarios** — one representative incoming→archive journey plus the
       outgoing release path, written as given/when/then. _Done-when:_ both journeys are executable as
-      written by someone who has not read the code.
+      written by someone who has not read the code. _Done in Phase 7 Wave C (C1):_
+      `docs/acceptance-scenarios.md`, transcribed by the E2E specs in `apps/e2e/tests/`.
 - [ ] (2h) **Risk register** — delivery, policy, and infrastructure risks with likelihood, impact,
       owner, and mitigation. Seed it from the unresolved items in `docs/CONTEXT.md`. _Done-when:_
       every unresolved policy question appears as a risk with a named owner.
@@ -572,9 +574,12 @@ Pull from this list whenever a slice above reaches "verify."
       bind-mounted and service containers start before checkout, and MinIO has no pullable image.
       The source-built MinIO image is cached as a tarball keyed on `minio/go.sum`; ClamAV's
       definitions are deliberately not cached, and the 420s wait covers freshclam's startup.
-- [ ] (2h) Playwright E2E: login → register document → upload → workflow → release. _Done-when:_
-      the E2E flow is green in CI.
-- [ ] (2h) Accessibility automation (axe) on the key screens. _Done-when:_ no critical violations.
+- [x] (2h) Playwright E2E: login → register document → upload → workflow → release. _Done-when:_
+      the E2E flow is green in CI. _Done in Phase 7 Wave C (C2/C3):_ `apps/e2e`, run by CI's `e2e`
+      job — `incoming-archive.spec.ts` and `outgoing-release.spec.ts` transcribe the acceptance
+      scenarios.
+- [x] (2h) Accessibility automation (axe) on the key screens. _Done-when:_ no critical violations.
+      _Done in Phase 7 Wave C (C4):_ `accessibility.spec.ts` (`@axe-core/playwright`), same job.
 - [~] (2h) Security tests: authorization matrix, IDOR, upload abuse, rate limits. _Partial:_ the
       authorization matrix (`authorization.test.ts`, 30 cases incl. the confidentiality gate and the
       Director's office-wide read), IDOR (`file-api.test.ts`, `files.int.test.ts`), media-type
@@ -582,10 +587,15 @@ Pull from this list whenever a slice above reaches "verify."
       (`rate-limit.test.ts`) and the oversize upload (`upload-limit.test.ts`) are all covered.
       _Remaining:_ a dependency and container scan, a secure-headers/CORS-allowlist assertion, and
       a log-redaction check.
-- [ ] (2h) Representative-load test (search + upload + workflow). _Done-when:_ latency/throughput
-      are recorded against a target.
-- [ ] (2h) Backup/restore rehearsal for coordinated Postgres + MinIO using `scripts/backup.sh` and
-      `scripts/restore.sh`. _Done-when:_ a restore is verified against a checklist.
+- [x] (2h) Representative-load test (search + upload + workflow). _Done-when:_ latency/throughput
+      are recorded against a target. _Done in Phase 7 Wave D (D2):_ target 15 actions/s for ten
+      minutes, met after F4, F1 and JIT off (read p95 126 ms at 15/s, 166 ms at 30/s, no failures).
+      `docs/evidence/d2-load-test.md`.
+- [~] (2h) Backup/restore rehearsal for coordinated Postgres + MinIO using `scripts/backup.sh` and
+      `scripts/restore.sh`. _Done-when:_ a restore is verified against a checklist. _Partial:_ a
+      local host-loss dry run is recorded in `docs/evidence/d3-restore-rehearsal.md` (serving again
+      in 6 min 55 s). _Remaining:_ the restore from a second machine or NAS, and a decision on
+      attachments, which recover only to the last nightly mirror.
 
 **Audit / policy**
 
@@ -610,7 +620,9 @@ Pull from this list whenever a slice above reaches "verify."
       - ~~**Director account**~~ — `DIRECTOR_EMAIL` / `DIRECTOR_PASSWORD` are deployment
         configuration, and with `NODE_ENV=production` both the API and the seed refuse to run
         without them (ADR-0006). `director@dts.local` is now a local convenience that production
-        cannot reach by forgetting to configure anything.
+        cannot reach by forgetting to configure anything. `SEED_ADMIN_PASSWORD` follows the same
+        rule at seed time (`validateSeedAdminPassword`): unset in production, the seed refuses to
+        plant the README's `Admin@12345!`.
 
       - ~~**Audit retention (P-08)**~~. Wave D (D4) built the relocation path,
         `npm run audit:relocate`. It verifies each copy in the archive before it deletes the

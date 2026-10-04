@@ -200,6 +200,42 @@ export const validateDirectorAccount = (
   return { email: email.toLowerCase(), password };
 };
 
+/**
+ * Resolves the first administrator's password for the seed, or `null` to use the development one.
+ *
+ * The same rule as {@link validateDirectorAccount}: unset in production is a hard failure, because
+ * the fallback is `Admin@12345!`, which is in the README — a production seed that forgot this
+ * variable would create the most privileged account with a published password.
+ *
+ * Unlike the Director, this is checked by the seed only, not by {@link validateEnvironment}. The
+ * API never reads it, and requiring it at API boot would mean keeping a bootstrap password in the
+ * long-running process's environment for no benefit.
+ */
+export const validateSeedAdminPassword = (environment: Record<string, unknown>): string | null => {
+  const password =
+    typeof environment.SEED_ADMIN_PASSWORD === 'string' ? environment.SEED_ADMIN_PASSWORD : '';
+
+  // Empty counts as unset: compose passes an unset variable through as an empty string.
+  if (password === '') {
+    if (environment.NODE_ENV === 'production')
+      throw new Error(
+        'SEED_ADMIN_PASSWORD is required in production: the development fallback is published ' +
+          'in the README',
+      );
+    return null;
+  }
+
+  const strength = strongPasswordSchema.safeParse(password);
+  if (!strength.success)
+    throw new Error(
+      `SEED_ADMIN_PASSWORD is not strong enough: ${strength.error.issues
+        .map((issue) => issue.message)
+        .join('; ')}`,
+    );
+
+  return password;
+};
+
 export const validateEnvironment = (
   environment: Record<string, unknown>,
 ): Record<string, unknown> & ValidatedEnvironment => {
