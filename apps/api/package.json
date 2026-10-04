@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p perf/tsconfig.json",
     "perf:seed": "tsx perf/pilot-seed.ts",
     "perf:explain": "tsx perf/explain.ts",
+    "perf:load": "tsx perf/load.ts",
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
