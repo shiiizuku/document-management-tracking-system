@@ -209,9 +209,10 @@ describe('WorkflowService public seam', () => {
             .map((entry) => entry.action);
 
           for (const action of workflow.legalActionList()) {
-            // ACCEPT is custody rather than a state edge, so it is legal exactly while the actor
-            // has an outstanding route — covered by its own cases below, not by this table.
-            if (action === 'ACCEPT' || legalActions.includes(action)) continue;
+            // ACCEPT and ACKNOWLEDGE stamp a route rather than move a state, so they are legal
+            // exactly while the actor has an outstanding hop — covered by their own cases below.
+            if (action === 'ACCEPT' || action === 'ACKNOWLEDGE' || legalActions.includes(action))
+              continue;
             expect(
               () =>
                 workflow.execute(
@@ -485,5 +486,109 @@ describe('WorkflowService custody acceptance', () => {
       actorId: 'user-2',
     });
     expect(result.acceptedRouteId).toBe('route-b');
+  });
+});
+
+/*
+ * A for-information copy is acknowledged, not accepted (ADR-0005, decision 160). Each action stamps
+ * only its own kind of hop: before the split, ACCEPT matched any outstanding hop to the actor's
+ * unit, so a copy offered "Accept custody" and a unit that was both lead and copied in could stamp
+ * the copy and leave its custody hop outstanding.
+ */
+describe('WorkflowService copy acknowledgement', () => {
+  const workflow = new WorkflowService();
+  const copy = (overrides: Partial<RouteCustody> = {}): RouteCustody =>
+    acceptedRoute({ id: 'route-copy', forInformation: true, acceptedAt: null, ...overrides });
+  const command = (action: 'ACCEPT' | 'ACKNOWLEDGE') => ({
+    action,
+    expectedVersion: VERSION,
+    actorId: 'user-1',
+  });
+
+  it('offers ACKNOWLEDGE and not ACCEPT on an outstanding copy', () => {
+    const document = baseDocument('IN_PROCESS', {
+      routes: [acceptedRoute({ toDivisionId: 'division-b' }), copy()],
+    });
+
+    const allowed = workflow.allowedActions(document, actor);
+    expect(allowed).toContain('ACKNOWLEDGE');
+    expect(allowed).not.toContain('ACCEPT');
+  });
+
+  it('offers ACCEPT and not ACKNOWLEDGE on an outstanding lead hop', () => {
+    const document = baseDocument('IN_PROCESS', {
+      routes: [acceptedRoute({ acceptedAt: null })],
+    });
+
+    expect(workflow.allowedActions(document, actor)).toEqual(['ACCEPT']);
+  });
+
+  it('stamps the copy, and moves no status', () => {
+    const document = baseDocument('IN_PROCESS', {
+      routes: [acceptedRoute({ toDivisionId: 'division-b' }), copy()],
+    });
+
+    const result = workflow.execute(document, actor, command('ACKNOWLEDGE'));
+    expect(result.acceptedRouteId).toBe('route-copy');
+    expect(result.document.version).toBe(VERSION);
+    expect(result.event).toMatchObject({
+      action: 'ACKNOWLEDGE',
+      fromStatus: 'IN_PROCESS',
+      toStatus: 'IN_PROCESS',
+    });
+  });
+
+  it('refuses ACCEPT on a copy', () => {
+    const document = baseDocument('IN_PROCESS', {
+      routes: [acceptedRoute({ toDivisionId: 'division-b' }), copy()],
+    });
+
+    expect(() => workflow.execute(document, actor, command('ACCEPT'))).toThrowError(
+      expect.objectContaining({ code: 'ROUTE_ALREADY_ACCEPTED' }),
+    );
+  });
+
+  it('keeps the lead hop and the copy apart for a unit that holds both', () => {
+    const document = baseDocument('IN_PROCESS', {
+      routes: [
+        copy({ id: 'route-copy-older' }),
+        acceptedRoute({ id: 'route-lead', acceptedAt: null }),
+      ],
+    });
+
+    expect(workflow.allowedActions(document, actor)).toEqual(['ACCEPT', 'ACKNOWLEDGE']);
+    expect(workflow.execute(document, actor, command('ACCEPT')).acceptedRouteId).toBe('route-lead');
+    expect(workflow.execute(document, actor, command('ACKNOWLEDGE')).acceptedRouteId).toBe(
+      'route-copy-older',
+    );
+  });
+
+  // A copy never waits on the lead: the informed division may acknowledge before custody is taken.
+  it('offers ACKNOWLEDGE while the lead hop is still outstanding elsewhere', () => {
+    const document = baseDocument('IN_PROCESS', {
+      routes: [acceptedRoute({ toDivisionId: 'division-b', acceptedAt: null }), copy()],
+    });
+
+    expect(workflow.allowedActions(document, actor)).toEqual(['ACKNOWLEDGE']);
+    expect(workflow.execute(document, actor, command('ACKNOWLEDGE')).acceptedRouteId).toBe(
+      'route-copy',
+    );
+  });
+
+  it('refuses a second acknowledgement, and one from a unit that was not copied', () => {
+    const acknowledged = baseDocument('IN_PROCESS', {
+      routes: [acceptedRoute(), copy({ acceptedAt: new Date('2026-10-03T08:00:00Z') })],
+    });
+    expect(() => workflow.execute(acknowledged, actor, command('ACKNOWLEDGE'))).toThrowError(
+      expect.objectContaining({ code: 'ROUTE_ALREADY_ACCEPTED' }),
+    );
+
+    const elsewhere = baseDocument('IN_PROCESS', {
+      routes: [acceptedRoute(), copy({ toDivisionId: 'division-b' })],
+    });
+    expect(workflow.allowedActions(elsewhere, actor)).not.toContain('ACKNOWLEDGE');
+    expect(() => workflow.execute(elsewhere, actor, command('ACKNOWLEDGE'))).toThrowError(
+      expect.objectContaining({ code: 'ROUTE_NOT_FOR_ACTOR' }),
+    );
   });
 });

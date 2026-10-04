@@ -149,6 +149,10 @@ sign-ins took about 1.8 s each, and every other request waited behind them.
 
 ## F6 — The for-information copies (Wave C's open question)
 
+> **Decided 2026-10-04: an acknowledge action** (`ACKNOWLEDGE`, stamping the copy's own
+> `accepted_at`). Copies now leave the predicate and the partial index once acknowledged. A copy
+> nobody acknowledges still counts, by design.
+
 **Cost:** depends on the answer. **Decision needed: yes, policy.** **Expected effect:** not a
 cause of the D2 miss. It compounds F1 and F2 over time.
 

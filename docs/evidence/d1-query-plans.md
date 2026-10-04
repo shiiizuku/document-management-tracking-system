@@ -112,7 +112,8 @@ are archived or complied-with documents that were once copied to a second divisi
 the dashboard tile and the registry's _Pending_ filter for good.
 
 This is a policy question, not a performance one. Either copies get an acknowledge action, or the
-predicate excludes them. It also means `document_routes_unaccepted_idx` will not stay small, which
+predicate excludes them. _(Decided 2026-10-04: an acknowledge action. The numbers above are the
+seed's, which acknowledges nothing.)_ It also means `document_routes_unaccepted_idx` will not stay small, which
 its comment assumes. For now that costs nothing measurable.
 
 **The custody section filter is the slowest read left, at 272 ms.** The `CASE` in

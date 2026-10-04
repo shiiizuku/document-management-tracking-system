@@ -345,9 +345,21 @@ export function timelineRows(
           transition: null,
         };
 
-    // A for-information recipient can remark but never takes custody, so its row carries no
-    // acceptance even if one were ever stamped on it.
-    if (route.forInformation || route.acceptedAt === null) return [forward];
+    if (route.acceptedAt === null) return [forward];
+    // A for-information recipient never takes custody, so a stamp on its row is an acknowledgement
+    // that it read the copy — drawn as a copy, not as custody (decision 160).
+    if (route.forInformation)
+      return [
+        forward,
+        {
+          key: `${route.id}:acknowledged`,
+          at: route.acceptedAt,
+          title: `Acknowledged by ${to}`,
+          detail: null,
+          transition: null,
+          copy: true,
+        },
+      ];
     return [
       forward,
       {

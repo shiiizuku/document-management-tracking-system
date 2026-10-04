@@ -11,6 +11,9 @@ const ACTION_LABELS: Record<WorkflowAction, string> = {
   // Accepting is taking custody of a hop handed to your unit, not starting work on a new document
   // — it happens at every hop and may happen several times on one document (ADR-0005).
   ACCEPT: 'Accept custody',
+  // A for-information copy's counterpart: the informed division has read it. Not custody, and
+  // nothing waits on it (decision 160).
+  ACKNOWLEDGE: 'Acknowledge copy',
   REQUEST_REVISION: 'Request revision',
   RESUBMIT: 'Resubmit',
   // A division head's endorsement of an outgoing draft, before the Director signs it (ADR-0006).

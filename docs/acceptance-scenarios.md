@@ -148,7 +148,16 @@ Division for information**, the second drawn as a hollow dot rather than a fille
 > saying that a copy is not custody.
 
 **And** signing in as `lands.head@dts.local` shows the document in that division's registry, with
-**Accept custody** absent — there is nothing for an informed division to accept.
+**Accept custody** absent — there is nothing for an informed division to accept — and
+**Acknowledge copy** offered instead
+
+**When** the Lands head presses **Acknowledge copy**
+**Then** the timeline shows **Acknowledged by Lands Management Division**, drawn as a copy
+**And** **Currently with** still reads **Pilot Division**: acknowledging is not custody
+
+> Acknowledging is how an informed division says it has read the copy. Until it does, the copy is
+> outstanding and the document counts as **Pending**; it never blocks the lead (decision 160). It
+> may be done before or after the lead accepts.
 
 ### 1.5 The lead acts on it, with remarks
 

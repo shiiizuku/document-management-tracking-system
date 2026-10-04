@@ -111,8 +111,8 @@ export interface WorkflowEvent {
 }
 
 /**
- * What a command did. `acceptedRouteId` is set only by `ACCEPT`, which stamps a route row and
- * leaves `documents.status` alone — custody and lifecycle are orthogonal axes (ADR-0005), so an
+ * What a command did. `acceptedRouteId` is set only by `ACCEPT` and `ACKNOWLEDGE`, which stamp a
+ * route row and leave `documents.status` alone — custody and lifecycle are orthogonal axes (ADR-0005), so an
  * acceptance is not a status transition and does not bump the document's version.
  */
 export interface WorkflowOutcome {
@@ -211,6 +211,9 @@ const edgeConditions: Readonly<Record<string, (document: WorkflowDocument) => bo
 
 const actionCapabilities: Readonly<Record<WorkflowAction, WorkflowCapability>> = {
   ACCEPT: 'DOCUMENT_ACCEPT',
+  // The same capability, deliberately: whoever may take custody for a division may also confirm
+  // it has read what it was copied on. A copy is division-level, so in practice that is the head.
+  ACKNOWLEDGE: 'DOCUMENT_ACCEPT',
   REQUEST_REVISION: 'DOCUMENT_REQUEST_REVISION',
   RESUBMIT: 'DOCUMENT_RESUBMIT',
   INITIAL: 'DOCUMENT_INITIAL',
@@ -257,6 +260,14 @@ const isRecipient = (route: RouteCustody, actor: WorkflowActor): boolean => {
   return route.toSectionId === null || route.toSectionId === actor.sectionId;
 };
 
+/** An unstamped hop of the given kind — lead or copy — addressed to this actor's unit. */
+const isOutstandingFor = (
+  route: RouteCustody,
+  actor: WorkflowActor,
+  forInformation: boolean,
+): boolean =>
+  route.acceptedAt === null && route.forInformation === forInformation && isRecipient(route, actor);
+
 export class WorkflowService {
   /** Every action the vocabulary contains, for exhaustiveness checks in tests and guards. */
   legalActionList(): WorkflowAction[] {
@@ -269,7 +280,12 @@ export class WorkflowService {
    * must survive `execute`, which re-checks every rule.
    */
   allowedActions(document: WorkflowDocument, actor: WorkflowActor): WorkflowAction[] {
-    const accept = this.canAcceptCustody(document, actor) ? (['ACCEPT'] as WorkflowAction[]) : [];
+    const accept: WorkflowAction[] = [
+      ...(this.canAcceptCustody(document, actor) ? (['ACCEPT'] as const) : []),
+      // Offered whether or not the lead has accepted: a copy never waits on the lead, and the lead
+      // never waits on a copy (decision 160).
+      ...(this.canAcknowledge(document, actor) ? (['ACKNOWLEDGE'] as const) : []),
+    ];
 
     // Nothing moves until the unit holding the document has taken it on (decision 155). Accepting
     // is the one thing still offered, because it is the way out of this state.
@@ -286,10 +302,20 @@ export class WorkflowService {
     return [...accept, ...reachable];
   }
 
-  /** Whether this actor has an outstanding route of their own to take on. */
+  /**
+   * Whether this actor has an outstanding custody hop of their own to take on. Lead hops only: a
+   * copy is not custody, and offering ACCEPT on one let a head who held both a lead hop and a copy
+   * stamp the copy and leave the lead outstanding.
+   */
   private canAcceptCustody(document: WorkflowDocument, actor: WorkflowActor): boolean {
     if (!actor.capabilities.includes('DOCUMENT_ACCEPT')) return false;
-    return document.routes.some((route) => route.acceptedAt === null && isRecipient(route, actor));
+    return document.routes.some((route) => isOutstandingFor(route, actor, false));
+  }
+
+  /** Whether this actor's division has an outstanding for-information copy to acknowledge. */
+  private canAcknowledge(document: WorkflowDocument, actor: WorkflowActor): boolean {
+    if (!actor.capabilities.includes('DOCUMENT_ACCEPT')) return false;
+    return document.routes.some((route) => isOutstandingFor(route, actor, true));
   }
 
   execute(
@@ -303,8 +329,8 @@ export class WorkflowService {
 
     const remarks = command.remarks?.trim() ?? '';
 
-    if (command.action === 'ACCEPT') {
-      return this.acceptCustody(document, actor, command, remarks);
+    if (command.action === 'ACCEPT' || command.action === 'ACKNOWLEDGE') {
+      return this.stampRoute(document, actor, command, remarks);
     }
 
     if (leadRouteOutstanding(document)) {
@@ -395,34 +421,48 @@ export class WorkflowService {
    * division accepting what the ORD routed to it, each section accepting what its division
    * assigned (decision 156) — rather than being a single edge out of a `PENDING` status.
    *
+   * `ACKNOWLEDGE` is the same stamp on a for-information copy: the informed division has read it.
+   * Each action stamps only its own kind of hop, so a unit that is both the lead and copied in
+   * cannot satisfy one with the other.
+   *
    * The status does not move and the document's version is not bumped: nothing on the document row
    * changes. Double-acceptance is caught here for a precise error and again by the conditional
    * `accepted_at IS NULL` update in the repository, which is what makes it race-safe.
    */
-  private acceptCustody(
+  private stampRoute(
     document: WorkflowDocument,
     actor: WorkflowActor,
     command: WorkflowCommand,
     remarks: string,
   ): WorkflowOutcome {
-    const outstanding = document.routes.filter((route) => route.acceptedAt === null);
+    const forInformation = command.action === 'ACKNOWLEDGE';
+    const outstanding = document.routes.filter(
+      (route) => route.acceptedAt === null && route.forInformation === forInformation,
+    );
     if (outstanding.length === 0) {
       throw new WorkflowRuleError(
-        'There is nothing outstanding to accept on this document',
+        forInformation
+          ? 'There is no outstanding copy to acknowledge on this document'
+          : 'There is nothing outstanding to accept on this document',
         'ROUTE_ALREADY_ACCEPTED',
       );
     }
 
     const own = outstanding.find((route) => isRecipient(route, actor));
     if (own === undefined) {
-      throw new WorkflowRuleError('This document is not awaiting your unit', 'ROUTE_NOT_FOR_ACTOR');
+      throw new WorkflowRuleError(
+        forInformation
+          ? 'No copy of this document is awaiting your unit'
+          : 'This document is not awaiting your unit',
+        'ROUTE_NOT_FOR_ACTOR',
+      );
     }
 
     return {
       document,
       event: {
         actorId: command.actorId,
-        action: 'ACCEPT',
+        action: command.action,
         fromStatus: document.status,
         toStatus: document.status,
         remarks: remarks.length > 0 ? remarks : null,

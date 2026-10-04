@@ -842,8 +842,14 @@ export class DocumentsService {
        * status and version are untouched, because nothing about the document changed: a hop that
        * was outstanding is now taken on (ADR-0005). It is also the one action with a second writer
        * racing it, so the conditional update is the real guard and this is where it happens.
+       *
+       * `ACKNOWLEDGE` takes the same path on a for-information copy. It is told apart in the audit
+       * and outbox names only, because "the division read its copy" is not "the division took
+       * custody", and an auditor filtering for one must not be shown the other.
        */
       if (result.acceptedRouteId !== null) {
+        const stampEvent =
+          action === 'ACKNOWLEDGE' ? 'document.copy-acknowledged' : 'document.custody-accepted';
         return await this.database.transaction(async (tx) => {
           const accepted = await this.repository.acceptRoute(result.acceptedRouteId!, actor.id, tx);
           if (accepted === null)
@@ -872,7 +878,7 @@ export class DocumentsService {
           await this.audit.write(
             {
               actorId: actor.id,
-              action: 'document.custody-accepted',
+              action: stampEvent,
               targetType: 'document',
               targetId: id,
               outcome: 'SUCCESS',
@@ -884,9 +890,9 @@ export class DocumentsService {
             {
               aggregateType: 'document',
               aggregateId: id,
-              eventType: 'document.custody-accepted',
+              eventType: stampEvent,
               payload: { documentId: id, routeId: accepted.id },
-              idempotencyKey: `document.custody-accepted:${accepted.id}`,
+              idempotencyKey: `${stampEvent}:${accepted.id}`,
             },
             tx,
           );

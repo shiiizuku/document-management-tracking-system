@@ -22,7 +22,10 @@ export const capabilityLabels: Readonly<
 > = {
   DOCUMENT_CREATE: { label: 'Register documents', group: 'Documents' },
   DOCUMENT_EDIT: { label: 'Edit document details', group: 'Documents' },
-  DOCUMENT_ACCEPT: { label: 'Accept forwarded documents', group: 'Documents' },
+  DOCUMENT_ACCEPT: {
+    label: 'Accept forwarded documents and acknowledge copies',
+    group: 'Documents',
+  },
   DOCUMENT_ASSIGN: { label: 'Forward, assign and share', group: 'Documents' },
   DOCUMENT_REQUEST_REVISION: { label: 'Return for revision', group: 'Documents' },
   DOCUMENT_RESUBMIT: { label: 'Resubmit after revision', group: 'Documents' },

@@ -36,6 +36,9 @@ export const storedWorkflowStatusSchema = workflowStatusSchema.exclude(['PENDING
 
 export const workflowActionSchema = z.enum([
   'ACCEPT',
+  // A for-information copy's counterpart to ACCEPT: the informed division has read it. It takes no
+  // custody and never gates progress (ADR-0005, decision 160).
+  'ACKNOWLEDGE',
   'REQUEST_REVISION',
   'RESUBMIT',
   'INITIAL',

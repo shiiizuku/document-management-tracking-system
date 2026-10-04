@@ -236,13 +236,22 @@ And three harness traps worth knowing before touching `apps/e2e`:
 - Stopping a run from outside Playwright (killing the npm process) orphans the three servers on
   Windows; the next run then fails on "port already used".
 
-**Open question for the policy owner** — _decided 2026-10-04: copies get an **Acknowledge**
-action, as ADR-0005's "outstanding acknowledgement" anticipates. Separate PR._ `documentIsPending` counts an unacknowledged
-for-information copy as outstanding, and `query-scope.int.test.ts` pins that deliberately. But a
-copy has no **Accept custody** — nothing in the UI ever acknowledges one — so any document forwarded
-with a copy stays in the registry's _Pending_ filter and the dashboard tile forever, including after
-it is complied with and archived. Either copies need an acknowledge action, or the predicate should
-exclude them.
+**Open question for the policy owner — closed 2026-10-04.** `documentIsPending` counts an
+unacknowledged for-information copy as outstanding, and `query-scope.int.test.ts` pins that
+deliberately — but nothing could ever acknowledge one, so any document forwarded with a copy stayed
+in the registry's _Pending_ filter and the dashboard tile forever. **Copies now get an
+`ACKNOWLEDGE` action**, as ADR-0005's "outstanding acknowledgement" anticipates. It stamps the
+copy's own `accepted_at`, so the predicate, its partial index and the pin are unchanged: a copy is
+outstanding until its division acknowledges it. It reuses `DOCUMENT_ACCEPT`, and since a copy is
+readable only by the division's head (decision 160), in practice the head acknowledges.
+
+Building it found a bug the docs had wrong: the copied head was **already offered Accept
+custody**, because the engine never checked `forInformation`. Pressing it would have stamped the
+copy as custody, and a unit that was both lead and copied in could stamp the copy and leave its
+custody hop outstanding. `ACCEPT` is now lead hops only and `ACKNOWLEDGE` copies only. The E2E
+journey still does not sign in as the Lands head, because the login throttle is per client IP and
+the five-account budget is spent, so the acknowledgement is proven by `workflow.test.ts`,
+`documents.int.test.ts` and the web tests instead.
 
 - [x] **C1** (2h) **Acceptance scenarios** (Slice 0.1). One incoming→archive journey and the outgoing
       release path, given/when/then. _Done-when:_ both journeys are executable as written by someone

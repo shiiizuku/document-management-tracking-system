@@ -127,6 +127,30 @@ describe('DocumentDetailScreen', () => {
     expect(screen.getByText('Legal Division')).toBeInTheDocument();
   });
 
+  it('shows an acknowledged copy as an acknowledgement, not an acceptance', async () => {
+    serve(
+      documentDetail({
+        routes: [
+          route(),
+          route({
+            id: 'route-2',
+            toDivisionId: 'division-3',
+            forInformation: true,
+            remarks: null,
+            acceptedAt: '2026-09-03T01:00:00.000Z',
+            acceptedById: 'user-3',
+          }),
+        ],
+      }),
+    );
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Acknowledged by Finance Division')).toBeInTheDocument(),
+    );
+    expect(screen.queryByText('Accepted by Finance Division')).not.toBeInTheDocument();
+  });
+
   it('says so when nothing has happened yet', async () => {
     serve(documentDetail({ timeline: [], routes: [] }));
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);

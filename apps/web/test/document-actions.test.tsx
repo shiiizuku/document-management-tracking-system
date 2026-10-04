@@ -139,6 +139,25 @@ describe('DocumentActions', () => {
     );
   });
 
+  // A copy's acknowledgement records that it was read; there is nothing to collect, so it is sent
+  // on the first press, like accepting custody.
+  it('acknowledges a copy without a dialog', async () => {
+    renderWithQuery(
+      <DocumentActions document={documentDetail({ allowedActions: ['ACKNOWLEDGE'] })} />,
+    );
+    apiMock.mockResolvedValue(documentDetail());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Acknowledge copy' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith('/documents/doc-1/actions/ACKNOWLEDGE', {
+        method: 'POST',
+        body: JSON.stringify({ expectedVersion: 3 }),
+      }),
+    );
+  });
+
   it('collects the delivery method before releasing', async () => {
     withReleaseMethods(documentDetail({ status: 'RELEASED' }));
     renderWithQuery(<DocumentActions document={documentDetail({ allowedActions: ['RELEASE'] })} />);
