@@ -468,7 +468,7 @@ module makes them durable, event-driven, and live.
 
 ## M7 · Frontend rebuild on shadcn/ui
 
-Design, decisions and module seams: `docs/frontend-rebuild-plan.md`. This module **superseded** the
+Design, decisions and module seams: `docs/audits/frontend-rebuild-plan.md`. This module **superseded** the
 _Frontend_ boxes in M1–M5 — those surfaces were built here, not in `DtsApp`, which is why the boxes
 up there are ticked with files under `apps/web/src/features/`. Order was fixed:
 **F0 → F1 → F2**.
