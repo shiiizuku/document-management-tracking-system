@@ -43,7 +43,7 @@ import { useReleaseMethods, useRunAction, type DocumentDetail } from './queries'
  * The input each action cannot run without. Absent means "run it straight away".
  *
  * A known, accepted duplication of a rule `WorkflowService` also enforces (see
- * docs/frontend-rebuild-plan.md). It is acceptable because the server still has the final say: if
+ * docs/audits/frontend-rebuild-plan.md). It is acceptable because the server still has the final say: if
  * this table is wrong, the result is a validation error rather than a bad transition.
  *
  * `COMPLY` was missing from it, which made the row above untrue in the one direction that matters:

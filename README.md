@@ -250,5 +250,5 @@ one looks the way it does. The decisions behind the load-bearing ones live in `d
 The backend is feature-complete through phase 6 and persisted to Postgres — the old in-process
 `Map`-backed adapter has been retired, and attachments, scanning, realtime and the outbox relay all
 run against real infrastructure. The frontend is partially built and mid-rebuild on shadcn/ui
-(`docs/frontend-rebuild-plan.md`). See `docs/IMPLEMENTATION_STATUS.md` for the exact boundary; the
+(`docs/audits/frontend-rebuild-plan.md`). See `docs/IMPLEMENTATION_STATUS.md` for the exact boundary; the
 repository does not claim pilot readiness.

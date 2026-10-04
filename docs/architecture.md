@@ -11,7 +11,7 @@ orientation document: read it first, then follow the pointers.
 | Why a load-bearing choice was made        | [adr/](adr/)                                         |
 | What is real today, what to build next    | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) |
 | Institution-owned questions still open    | [policy-register.md](policy-register.md)             |
-| The in-flight UI migration                | [frontend-rebuild-plan.md](frontend-rebuild-plan.md) |
+| The in-flight UI migration                | [frontend-rebuild-plan.md](audits/frontend-rebuild-plan.md) |
 
 ---
 
@@ -140,7 +140,7 @@ correlation-ID middleware, a PII-redacting structured logger, and the Zod pipe.
 | Forms        | react-hook-form + `zodResolver` over `@dts/contracts` |
 | Tests        | Vitest + Testing Library + jsdom                      |
 
-**The rebuild is done** (F0–F2 of [frontend-rebuild-plan.md](frontend-rebuild-plan.md)): `DtsApp` and
+**The rebuild is done** (F0–F2 of [frontend-rebuild-plan.md](audits/frontend-rebuild-plan.md)): `DtsApp` and
 the bespoke `globals.css` are gone, there is one design system, and every surface the MVP boundary
 names is routed. Two App Router groups divide the app by who may enter:
 
@@ -303,7 +303,7 @@ lint-staged over changed files.
 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) | Audited status **and** the backlog, as ~70 single-session boxes in dependency order                |
 | [adr/](adr/)                                         | One file per load-bearing decision; immutable once `Accepted`, changed only by a superseding ADR  |
 | [policy-register.md](policy-register.md)             | The 14 institution-owned questions, each with the provisional default the code currently carries  |
-| [frontend-rebuild-plan.md](frontend-rebuild-plan.md) | The shadcn migration: decisions, module design, routes, phases                                    |
+| [frontend-rebuild-plan.md](audits/frontend-rebuild-plan.md) | The shadcn migration: decisions, module design, routes, phases                                    |
 | [agents/issue-tracker.md](agents/issue-tracker.md)   | Working notes for agent-driven tasks                                                              |
 
 The policy register is the one worth internalizing: a question lands there the moment code needs an
