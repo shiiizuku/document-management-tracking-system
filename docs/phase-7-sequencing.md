@@ -266,7 +266,7 @@ exclude them.
 
 ## Wave D — evidence
 
-~5 sessions. **D1 and D4 done 2026-10-04**, on branch `wave-d-evidence`. Two migrations: `0011`
+~5 sessions. **D1, D2 and D4 done 2026-10-04**, on branch `wave-d-evidence`. Two migrations: `0011`
 adds an index and `0012` adds the audit triggers.
 
 - [x] **D1** (2h) Pilot-sized seed + the `EXPLAIN` pass. The indexes exist; this proves they are the
@@ -296,7 +296,7 @@ adds an index and `0012` adds the audit triggers.
   so `documentIsPending` holds for **10,609** documents while only **113** await custody. The Pending
   tile and filter would be wrong by two orders of magnitude on day one of a real year.
 
-- [ ] **D2** (2h) Load test (search + upload + workflow) over D1's data. _Done-when:_ latency and
+- [x] **D2** (2h) Load test (search + upload + workflow) over D1's data. _Done-when:_ latency and
       throughput are recorded against a stated target. The target needs setting — P-13's numbers are
       about recovery, not serving.
 
@@ -304,6 +304,26 @@ adds an index and `0012` adds the audit triggers.
   nothing sets Express `trust proxy`. Behind the pilot's TLS ingress, every user would share one
   bucket. A load test from one machine hits the same ceiling, so it would measure the throttle, not
   the server. Settle how the limiter identifies a client first.
+
+  Settled by PR #97 (`TRUST_PROXY`, per-user buckets). The harness starts the API with
+  `TRUST_PROXY=loopback` and gives each of the 157 sessions its own forwarded address, standing
+  where the ingress stands. The throttle therefore stays on and is not what gets measured.
+
+  **Recorded, and the target is not met.** The target is stated in `apps/api/perf/load.ts`: the
+  pilot's busiest hour is estimated at 5.3 actions a second, and the target is three times that,
+  15/s for ten minutes. The system holds 5/s with almost no margin (read p95 491 ms against
+  500). Reads miss from 10/s, and at 15/s read p95 is 653 ms. Writes and uploads pass at every rate
+  up to 20/s. The system **collapses between 20 and 30/s**: latencies reach tens of seconds and 22 %
+  of requests fail with 500, because the 10-connection pool's 5 s timeout fires on everything,
+  including 10 ms detail reads. The cause is **Postgres CPU spent on full-scope `count(*)` scans**
+  (registry totals, the dashboard's three sequential counts, search). The API process used 7 % of
+  a core. Sign-in is a second, smaller finding: `bcryptjs` hashes on the event loop, so a sign-in
+  rush stalls every other request.
+
+  The fixes are ranked in `docs/d2-performance-fixes.md` and are **not applied here**. Each one
+  changes product behaviour or decision 118, and each wants its own rerun. All numbers come from
+  one shared 6-core desktop with Postgres in Docker Desktop. A real host moves the numbers but not
+  the shape. Generated detail: `d2-load-run.md`.
 - [ ] **D3** (2h) Backup/restore rehearsal. The scripts and `runbooks/backup-restore.md` are already
       thorough; what is missing is a **performed** restore, timed against P-13's 2–4 hour window, with
       the evidence written down. _Done-when:_ a restore is verified against a checklist.
@@ -376,5 +396,5 @@ cannot be signed off without it.
 ## Shape
 
 ~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent, with C2–C4 waiting only on the
-CI run. In **Wave D**, D1 and D4 are done. D2 runs over D1's dataset (`npm run perf:seed`), and
+CI run. In **Wave D**, D1, D2 and D4 are done (D2 recorded a missed target; see its box), and
 D3 needs a second machine to restore onto.
