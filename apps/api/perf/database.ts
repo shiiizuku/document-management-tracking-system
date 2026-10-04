@@ -1,4 +1,6 @@
 import { config } from 'dotenv';
+import { isAbsolute } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
 config({ path: new URL('../../../.env', import.meta.url) });
@@ -12,6 +14,14 @@ config({ path: new URL('../../../.env', import.meta.url) });
  * pointed at the other's database by reusing its variable.
  */
 export const DEFAULT_PERF_DATABASE_URL = 'postgresql://dts:dts@localhost:5433/dts_perf';
+
+/**
+ * Where a perf script writes its report. A relative path is taken from `perf/`, as before; an
+ * absolute one is used as is. `new URL('C:/…', base)` reads the drive letter as a URL scheme, so
+ * an absolute Windows path used to fail only at the end of a run, when the report was written.
+ */
+export const reportUrl = (value: string, base: string | URL): URL =>
+  isAbsolute(value) ? pathToFileURL(value) : new URL(value, base);
 
 export const perfDatabaseUrl = (): string =>
   process.env.PERF_DATABASE_URL ?? DEFAULT_PERF_DATABASE_URL;

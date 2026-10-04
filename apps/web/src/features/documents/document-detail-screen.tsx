@@ -133,7 +133,7 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
             <>
               <Separator />
               <div>
-                <h3 className="text-label-medium tracking-wide text-muted-foreground uppercase">
+                <h3 className="text-xs tracking-wide text-muted-foreground uppercase">
                   Description
                 </h3>
                 <p className="mt-0.5 text-sm whitespace-pre-line text-foreground">
@@ -184,7 +184,7 @@ function DetailRail({ document }: Readonly<{ document: DocumentDetail }>) {
         <Separator />
 
         <section className="space-y-2">
-          <h2 className="text-label-medium tracking-wide text-muted-foreground uppercase">
+          <h2 className="text-xs tracking-wide text-muted-foreground uppercase">
             Available actions
           </h2>
           <DocumentActions document={document} />
@@ -201,11 +201,10 @@ function DetailRail({ document }: Readonly<{ document: DocumentDetail }>) {
 }
 
 /**
- * One group of the detail view, on the filled card surface. The card's own padding and gap read
- * the density tokens, so the global density control tightens these with everything else.
+ * One group of the detail view, on a card surface.
  */
 function Panel({ className, ...props }: ComponentProps<'div'>) {
-  return <Card className={cn('px-card', className)} {...props} />;
+  return <Card className={cn('px-6', className)} {...props} />;
 }
 
 /**
@@ -225,9 +224,7 @@ function LocationBlock({ document }: Readonly<{ document: DocumentDetail }>) {
     <section className="space-y-2">
       <StatusBadge status={presentedStatus(document)} />
       <div>
-        <h2 className="text-label-medium tracking-wide text-muted-foreground uppercase">
-          Currently with
-        </h2>
+        <h2 className="text-xs tracking-wide text-muted-foreground uppercase">Currently with</h2>
         <p className="mt-0.5 text-sm text-foreground">{name ?? '—'}</p>
       </div>
     </section>
@@ -267,9 +264,7 @@ function DueField({ document }: Readonly<{ document: DocumentDetail }>) {
 
   return (
     <div>
-      <dt className="text-label-medium tracking-wide text-muted-foreground uppercase">
-        Target date
-      </dt>
+      <dt className="text-xs tracking-wide text-muted-foreground uppercase">Target date</dt>
       <dd className="mt-0.5 text-sm text-foreground">
         {new Date(document.dueAt).toLocaleDateString()}
         {label === null ? null : (
@@ -290,7 +285,7 @@ function DueField({ document }: Readonly<{ document: DocumentDetail }>) {
 function Field({ label, value }: Readonly<{ label: string; value: string | null }>) {
   return (
     <div>
-      <dt className="text-label-medium tracking-wide text-muted-foreground uppercase">{label}</dt>
+      <dt className="text-xs tracking-wide text-muted-foreground uppercase">{label}</dt>
       <dd className="mt-0.5 text-sm text-foreground first-letter:uppercase">{value ?? '—'}</dd>
     </div>
   );
@@ -392,7 +387,7 @@ function Timeline({ document }: Readonly<{ document: DocumentDetail }>) {
 
   return (
     <section className="flex min-h-0 flex-col gap-2">
-      <h2 className="text-label-medium tracking-wide text-muted-foreground uppercase">Timeline</h2>
+      <h2 className="text-xs tracking-wide text-muted-foreground uppercase">Timeline</h2>
       {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           Nothing has happened to this document since it was registered.
@@ -405,7 +400,7 @@ function Timeline({ document }: Readonly<{ document: DocumentDetail }>) {
                 className={cn(
                   'absolute top-1.5 -left-[1.15rem] size-2 rounded-full',
                   // A copy is not custody, so it does not get the solid dot a hop does.
-                  entry.copy ? 'bg-card ring-1 ring-outline' : 'bg-primary',
+                  entry.copy ? 'bg-card ring-1 ring-border' : 'bg-primary',
                 )}
                 aria-hidden
               />

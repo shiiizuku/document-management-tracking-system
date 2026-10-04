@@ -118,7 +118,7 @@ export function DocumentCards<Row>({
                       'h-full rounded-lg border border-border bg-card p-3',
                       'data-[state=selected]:border-primary',
                       onRowClick &&
-                        'cursor-pointer hover:border-outline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                        'cursor-pointer hover:border-border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                     )}
                   >
                     {primary === undefined ? null : primary.cell(row)}
@@ -128,9 +128,7 @@ export function DocumentCards<Row>({
                       <dl className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border pt-2.5">
                         {rest.map((column) => (
                           <div key={column.id} className="min-w-0">
-                            <dt className="text-label-medium text-muted-foreground">
-                              {column.header}
-                            </dt>
+                            <dt className="text-xs text-muted-foreground">{column.header}</dt>
                             <dd className="mt-0.5">{column.cell(row)}</dd>
                           </div>
                         ))}

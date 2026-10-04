@@ -266,7 +266,7 @@ export function UiDraft() {
                 </Button>
               </div>
 
-              <Card variant="outlined">
+              <Card>
                 <CardContent className="space-y-3">
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <form onSubmit={submitSearch} className="flex min-w-0 flex-1 gap-2">
@@ -351,7 +351,7 @@ export function UiDraft() {
               </div>
 
               {rows.length === 0 ? (
-                <Card variant="outlined">
+                <Card>
                   <CardContent className="py-10 text-center">
                     <FileText className="mx-auto size-8 text-muted-foreground" aria-hidden />
                     <h3 className="mt-3 font-semibold">No records match</h3>
@@ -497,7 +497,7 @@ function RecordList({
 
   if (view === 'lines') {
     return (
-      <Card variant="outlined" className="gap-0 py-0">
+      <Card className="gap-0 py-0">
         <ul className="divide-y">
           {rows.map((record) => (
             <li key={record.id} className="flex flex-wrap items-center gap-2 px-4 py-3">
@@ -517,7 +517,7 @@ function RecordList({
   }
 
   return (
-    <Card variant="outlined" className="gap-0 overflow-hidden py-0">
+    <Card className="gap-0 overflow-hidden py-0">
       <Table>
         <caption className="sr-only">Fictional document records</caption>
         <TableHeader>
@@ -655,7 +655,7 @@ function RecordDetail({ record, section }: { record: DemoRecord; section: Sectio
           </CardContent>
         </Card>
 
-        <Card variant="outlined" className="lg:col-start-1 lg:row-start-1">
+        <Card className="lg:col-start-1 lg:row-start-1">
           <CardHeader>
             <CardTitle>Record information</CardTitle>
             <CardDescription>Supporting metadata stays below the decision summary.</CardDescription>

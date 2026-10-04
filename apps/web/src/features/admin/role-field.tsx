@@ -111,21 +111,21 @@ function RoleGrantList({ grant }: Readonly<{ grant: RoleGrant }>) {
     <div
       role="group"
       aria-label={`What ${enumLabel(grant.role)} grants`}
-      className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1.5 text-body-small"
+      className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1.5 text-xs"
     >
-      <span className="text-label-small text-muted-foreground">Reads</span>
+      <span className="text-xs text-muted-foreground">Reads</span>
       <span className="text-foreground">
         {grant.readsOfficeWide ? 'Every division' : 'Its own division or section'}
       </span>
       {groups.length === 0 ? (
         <>
-          <span className="text-label-small text-muted-foreground">Acts</span>
+          <span className="text-xs text-muted-foreground">Acts</span>
           <span className="text-muted-foreground">Read only — takes no action on documents</span>
         </>
       ) : (
         groups.map(({ group, capabilities }) => (
           <div key={group} className="contents">
-            <span className="text-label-small text-muted-foreground">{group}</span>
+            <span className="text-xs text-muted-foreground">{group}</span>
             <ul className="flex flex-wrap gap-1">
               {capabilities.map((capability) => (
                 <li key={capability}>

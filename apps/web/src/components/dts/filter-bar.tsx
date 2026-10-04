@@ -126,7 +126,7 @@ export function FilterBar({
             Advanced search
             {activeCount > 0 && (
               <span
-                className="inline-flex min-w-5 items-center justify-center rounded-full bg-secondary px-1.5 text-label-small font-bold text-secondary-foreground"
+                className="inline-flex min-w-5 items-center justify-center rounded-full bg-secondary px-1.5 text-xs font-bold text-secondary-foreground"
                 /* The count is already in the button's text for a screen reader, below. */
                 aria-hidden
               >
@@ -139,10 +139,7 @@ export function FilterBar({
                 : `, ${String(activeCount)} filter${activeCount === 1 ? '' : 's'} active`}
             </span>
             <ChevronDown
-              className={cn(
-                'transition-transform duration-(--md-duration-short-2) ease-standard',
-                open && 'rotate-180',
-              )}
+              className={cn('transition-transform duration-150 ease-in-out', open && 'rotate-180')}
               aria-hidden
             />
           </Button>

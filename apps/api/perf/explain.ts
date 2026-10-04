@@ -7,7 +7,7 @@ import { DrizzleAuditWriter } from '../src/modules/audit/audit.writer.js';
 import type { AuthorizationActor } from '../src/modules/authorization/authorization.policy.js';
 import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
 import { NotificationsRepository } from '../src/modules/notifications/notifications.repository.js';
-import { perfDatabaseUrl } from './database.js';
+import { perfDatabaseUrl, reportUrl } from './database.js';
 
 /**
  * D1's `EXPLAIN` pass: every critical read, planned against the pilot-sized database.
@@ -30,7 +30,7 @@ const RUNS = 5;
 // A query slower than this is not repeated: its verdict does not depend on cache warmth, and five
 // runs of a 90-second plan would make the pass take most of an hour.
 const REPEAT_BELOW_MS = 2_000;
-const OUTPUT = new URL(
+const OUTPUT = reportUrl(
   process.env.EXPLAIN_OUTPUT ?? '../../../docs/evidence/d1-explain-plans.md',
   import.meta.url,
 );
