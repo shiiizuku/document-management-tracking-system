@@ -1,7 +1,15 @@
+import { isIP } from 'node:net';
 import { strongPasswordSchema } from '@dts/contracts';
 import { MAX_ATTACHMENT_BYTES } from '../modules/files/media-types.js';
 
 export type CookieSameSite = 'lax' | 'strict' | 'none';
+
+/**
+ * Express's `trust proxy` setting, restricted to the two shapes that cannot be talked into
+ * trusting the client: a hop count, or the addresses of the proxies themselves. `false` (the
+ * default) ignores `X-Forwarded-For` entirely.
+ */
+export type TrustProxySetting = false | number | string[];
 
 /**
  * The Regional Director's account, as deployment configuration rather than seed data (ADR-0006).
@@ -37,6 +45,7 @@ export interface ValidatedEnvironment {
   UPLOAD_MAX_BYTES: number;
   PORT: number;
   WORKER_HEALTH_PORT: number;
+  TRUST_PROXY: TrustProxySetting;
   DIRECTOR_EMAIL?: string;
   DIRECTOR_PASSWORD?: string;
   NODE_ENV?: string;
@@ -79,6 +88,58 @@ const parseUrl = (
   if (!protocols.includes(parsed.protocol))
     throw new Error(`${name} must be a valid ${description} URL`);
   return value;
+};
+
+const TRUST_PROXY_PRESETS = new Set(['loopback', 'linklocal', 'uniquelocal']);
+
+const isAddressOrSubnet = (entry: string): boolean => {
+  const [address = '', prefix, ...rest] = entry.split('/');
+  const family = isIP(address);
+  if (family === 0 || rest.length > 0) return false;
+  if (prefix === undefined) return true;
+  if (!/^\d{1,3}$/.test(prefix)) return false;
+  return Number(prefix) <= (family === 4 ? 32 : 128);
+};
+
+/**
+ * Which hops in front of the API may speak for the client through `X-Forwarded-For`
+ * (decision 136: the pilot sits behind TLS ingress). Without it every request appears to come
+ * from the ingress, so the whole office shares one rate-limit bucket and one login window.
+ *
+ * Accepted: unset or `false` (ignore the header — local development), a positive hop count
+ * (`1` for a single ingress: `req.ip` becomes the address *the ingress* appended, so anything a
+ * client put further left is ignored), or a comma-separated list of proxy addresses, CIDR
+ * subnets and Express's `loopback` / `linklocal` / `uniquelocal` presets.
+ *
+ * `true` is refused: it trusts every hop, which makes the left-most `X-Forwarded-For` entry —
+ * whatever the client typed — the address the API rate-limits and audits.
+ */
+export const parseTrustProxy = (value: unknown): TrustProxySetting => {
+  if (value === undefined || value === '' || value === 'false' || value === false) return false;
+  if (typeof value !== 'string' && typeof value !== 'number')
+    throw new Error('TRUST_PROXY must be a hop count or a list of proxy addresses');
+  if (typeof value === 'number' || /^\d+$/.test(value.trim())) {
+    const hops = Number(value);
+    if (!Number.isSafeInteger(hops) || hops <= 0)
+      throw new Error('TRUST_PROXY hop count must be a positive integer; use false to disable');
+    return hops;
+  }
+  if (value.trim() === 'true')
+    throw new Error(
+      'TRUST_PROXY=true would trust a client-supplied X-Forwarded-For; set a hop count or the ' +
+        'proxy addresses instead',
+    );
+  const entries = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
+  for (const entry of entries)
+    if (!TRUST_PROXY_PRESETS.has(entry) && !isAddressOrSubnet(entry))
+      throw new Error(
+        `TRUST_PROXY entry "${entry}" is not an IP address, CIDR subnet, or one of ` +
+          'loopback, linklocal, uniquelocal',
+      );
+  return entries.length === 0 ? false : entries;
 };
 
 /**
@@ -238,6 +299,7 @@ export const validateEnvironment = (
     'WORKER_HEALTH_PORT',
     4001,
   );
+  const trustProxy = parseTrustProxy(environment.TRUST_PROXY);
   // Called for its refusal, not its value: the API itself never creates the account, but it is
   // the process a deployment starts first, so it is where a missing Director must be reported.
   validateDirectorAccount(environment);
@@ -267,5 +329,6 @@ export const validateEnvironment = (
     UPLOAD_MAX_BYTES: uploadMaxBytes,
     PORT: port,
     WORKER_HEALTH_PORT: workerHealthPort,
+    TRUST_PROXY: trustProxy,
   };
 };

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { validateDirectorAccount, validateEnvironment } from '../src/config/environment.js';
+import {
+  parseTrustProxy,
+  validateDirectorAccount,
+  validateEnvironment,
+} from '../src/config/environment.js';
 
 const validEnvironment = {
   NODE_ENV: 'test',
@@ -22,6 +26,28 @@ const validEnvironment = {
 };
 
 describe('environment validation', () => {
+  it('ignores X-Forwarded-For unless a proxy is configured', () => {
+    expect(validateEnvironment(validEnvironment)).toMatchObject({ TRUST_PROXY: false });
+    expect(parseTrustProxy('false')).toBe(false);
+  });
+
+  it('accepts a hop count or proxy addresses for TRUST_PROXY', () => {
+    expect(parseTrustProxy('1')).toBe(1);
+    expect(parseTrustProxy('loopback, 10.0.0.0/8, fd00::/8, 172.18.0.2')).toEqual([
+      'loopback',
+      '10.0.0.0/8',
+      'fd00::/8',
+      '172.18.0.2',
+    ]);
+  });
+
+  it('refuses a TRUST_PROXY that would trust the client', () => {
+    expect(() => parseTrustProxy('true')).toThrow('would trust a client-supplied X-Forwarded-For');
+    expect(() => parseTrustProxy('0')).toThrow('TRUST_PROXY hop count must be a positive integer');
+    expect(() => parseTrustProxy('ingress.local')).toThrow('TRUST_PROXY entry "ingress.local"');
+    expect(() => parseTrustProxy('10.0.0.0/33')).toThrow('TRUST_PROXY entry "10.0.0.0/33"');
+  });
+
   it('fails fast with a clear error when DATABASE_URL is missing', () => {
     expect(() => validateEnvironment({ ...validEnvironment, DATABASE_URL: undefined })).toThrow(
       'DATABASE_URL is required',

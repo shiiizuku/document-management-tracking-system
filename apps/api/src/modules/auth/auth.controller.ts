@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import { loginSchema, type LoginInput } from '@dts/contracts';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { AuthGuard } from '../../common/auth.guard.js';
+import { clientIpTracker } from '../../common/client-throttler.guard.js';
 import { CurrentUser } from '../../common/current-user.decorator.js';
 import type { RequestUser } from '../../common/request-user.js';
 import { AuthService } from './auth.service.js';
@@ -20,9 +21,11 @@ export class AuthController {
    * Rate limited harder than the rest of the API (decision register 68). The per-account
    * lockout in `AuthService` stops a sustained attack on one address; this stops one client
    * spraying a common password across many addresses, which no per-account counter sees.
+   * Keyed on the client address even when a session cookie is present, so a session cannot
+   * buy its holder a fresh window of guesses.
    */
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000, getTracker: clientIpTracker } })
   async login(
     @Body(new ZodValidationPipe(loginSchema)) body: LoginInput,
     @Ip() sourceIp: string,

@@ -1,10 +1,11 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { fileURLToPath } from 'node:url';
 import { AuthGuard } from './common/auth.guard.js';
+import { ClientThrottlerGuard } from './common/client-throttler.guard.js';
 import { CorrelationIdMiddleware } from './common/correlation-id.middleware.js';
 import { CsrfGuard } from './common/csrf.guard.js';
 import { HttpErrorFilter } from './common/http-error.filter.js';
@@ -59,6 +60,7 @@ import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
     // bucket per-route with `@Throttle({ default: { … } })`. A second *named* throttler would
     // apply to every route as well, not only the ones that reference it, so the stricter
     // window would leak onto the whole API; a per-route override of the one bucket does not.
+    // Buckets are keyed per signed-in user, else per client address (`ClientThrottlerGuard`).
     ThrottlerModule.forRoot([{ name: 'default', limit: 120, ttl: 60_000 }]),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -115,7 +117,7 @@ import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
     // running app and the integration suites get the Postgres-backed ones.
     { provide: AuditWriter, useClass: DrizzleAuditWriter },
     { provide: OutboxWriter, useClass: DrizzleOutboxWriter },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: ClientThrottlerGuard },
     { provide: APP_FILTER, useClass: HttpErrorFilter },
   ],
 })

@@ -136,6 +136,9 @@ services:
       CLAMAV_PORT: 3310
       SESSION_SECRET: ${SESSION_SECRET:-local-development-session-secret-change-before-pilot}
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-26214400}
+      # Off unless set: behind the pilot's TLS ingress this must name that hop, or every client
+      # shares one rate-limit bucket (.env.example, docs/architecture.md §8).
+      TRUST_PROXY: ${TRUST_PROXY:-}
       # Both processes validate the environment at boot, and with NODE_ENV=production both refuse
       # to start without a configured Regional Director (ADR-0006).
       DIRECTOR_EMAIL: ${DIRECTOR_EMAIL:-}
