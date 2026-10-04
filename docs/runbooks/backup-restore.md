@@ -72,8 +72,17 @@ just before the mistake.
 
 The restore window is a claim until it has been timed. Rehearse against a copy of production
 volume sizes, record the wall-clock time from decision to accepting traffic, and compare it with
-the 2–4 hours in P-13. An untimed restore procedure is an estimate, and this one is currently
-unrehearsed — M6 carries that as an open item.
+the 2–4 hours in P-13.
+
+**Rehearsed once, on one machine (2026-10-04, [`evidence/d3-restore-rehearsal.md`](../evidence/d3-restore-rehearsal.md)).**
+Pilot-sized data, a crash rather than a clean stop: serving again in 6 min 55 s, database back to
+37 s before the failure. Still owed: a rehearsal from storage on a different machine, which is the
+failure this scheme exists for.
+
+**Attachments recover only to the last `backup.sh`.** WAL covers the database to the minute; the
+object mirror is taken only when the backup script runs. Uploads made since then are lost with the
+host while their rows come back, and their downloads fail closed. Until the mirror runs far more
+often, P-13's 5-minute recovery point holds for records but not for their files.
 
 ## Developing on Windows
 

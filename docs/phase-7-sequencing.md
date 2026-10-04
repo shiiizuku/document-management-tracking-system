@@ -337,6 +337,15 @@ adds an index and `0012` adds the audit triggers.
   Rehearse the real failure — loss of the application host — which means restoring from an archive on
   different storage, not from `./backups` on the same machine.
 
+  **Local dry run done 2026-10-04; the box stays open.** A host loss was rehearsed on one machine
+  with pilot-sized data: two compose projects sharing one archive folder, the source killed rather
+  than stopped. Serving again **6 min 55 s** after the decision to restore, most of it image builds
+  and ClamAV's first start. The database came back to **37 s** before the failure. Two findings:
+  WAL archiving did nothing on a fresh deployment until the first `backup.sh` (fixed: the archive
+  command creates its directory), and **attachments recover only to the last nightly mirror**, so
+  P-13's 5-minute recovery point does not hold for files. That one needs a decision. Still owed:
+  the restore from a second machine or NAS. Detail: `evidence/d3-restore-rehearsal.md`.
+
 - [x] **D4** (2h) Audit retention (P-08). _Done-when:_ the relocation path exists and a test asserts
       no purge path does.
 
@@ -404,4 +413,4 @@ cannot be signed off without it.
 ~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent, with C2–C4 waiting only on the
 CI run. In **Wave D**, D1, D2 and D4 are done (D2 now meets its target after F4, F1 and JIT off; see
 its box), and
-D3 needs a second machine to restore onto.
+D3 has a local dry run recorded but needs a second machine to restore onto.

@@ -5,7 +5,7 @@ import { cpus, totalmem } from 'node:os';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { ACCOUNTS, DIVISIONS, SECTIONS } from '../../e2e/fixtures/accounts.js';
-import { perfDatabaseUrl } from './database.js';
+import { perfDatabaseUrl, reportUrl } from './database.js';
 import { HttpError, Session, type Sample } from './load-client.js';
 import { Journey, ScanPending, type JourneyContext, type Principals } from './load-journeys.js';
 import { generatedAccounts, LOAD_ACCOUNT_PASSWORD } from './organization.js';
@@ -70,7 +70,7 @@ const WORKER_HEALTH_PORT = number('LOAD_WORKER_HEALTH_PORT', 4102);
 const MAX_JOURNEYS = number('LOAD_MAX_JOURNEYS', 40);
 // Past this, the server is not keeping up and further arrivals are counted as dropped.
 const MAX_IN_FLIGHT = number('LOAD_MAX_IN_FLIGHT', 2_000);
-const OUTPUT = new URL(
+const OUTPUT = reportUrl(
   process.env.LOAD_OUTPUT ?? '../../../docs/evidence/d2-load-run.md',
   import.meta.url,
 );

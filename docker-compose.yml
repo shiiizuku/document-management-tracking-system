@@ -18,12 +18,14 @@ services:
     #
     # `archive_command` refuses to overwrite (`test ! -f`), so a misconfigured restore that
     # replays into a live archive fails loudly rather than corrupting the history it is reading.
+    # It creates `wal/` itself: on a fresh archive nothing else does until the first
+    # `scripts/backup.sh`, and until then every segment fails to archive (D3 rehearsal).
     command: >
       postgres
       -c wal_level=replica
       -c archive_mode=on
       -c archive_timeout=60
-      -c archive_command='test ! -f /archive/wal/%f && cp %p /archive/wal/%f'
+      -c archive_command='mkdir -p /archive/wal && test ! -f /archive/wal/%f && cp %p /archive/wal/%f'
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-dts}
       POSTGRES_USER: ${POSTGRES_USER:-dts}
