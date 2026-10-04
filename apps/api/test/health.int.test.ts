@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createDatabase } from '../src/database/client.js';
+import { isDatabaseBusyError } from '../src/database/database-errors.js';
 import { HealthController } from '../src/modules/health/health.controller.js';
 import { InMemoryStorageAdapter } from '../src/modules/files/storage.port.js';
 
@@ -34,6 +36,30 @@ describe('readiness probe against a real database', () => {
         status: 503,
         response: { code: 'NOT_READY', details: { checks: { database: 'down', storage: 'up' } } },
       });
+    } finally {
+      await pool.end();
+    }
+  });
+});
+
+describe('statement timeout against a real database', () => {
+  it('cancels a statement past the cap and reports it as busy', async () => {
+    const { pool, db } = createDatabase(databaseUrl, { statementTimeoutMs: 100 });
+    try {
+      const error = await db.execute(sql`select pg_sleep(2)`).catch((caught: unknown) => caught);
+      expect(isDatabaseBusyError(error)).toBe(true);
+    } finally {
+      await pool.end();
+    }
+  });
+});
+
+describe('JIT setting against a real database', () => {
+  it('applies the configured JIT setting to every pooled connection', async () => {
+    const { pool, db } = createDatabase(databaseUrl, { jit: false });
+    try {
+      const result = await db.execute<{ jit: string }>(sql`show jit`);
+      expect(result.rows[0]?.jit).toBe('off');
     } finally {
       await pool.end();
     }

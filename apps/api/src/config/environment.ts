@@ -28,6 +28,9 @@ export interface DirectorAccountConfig {
 
 export interface ValidatedEnvironment {
   DATABASE_URL: string;
+  DATABASE_POOL_MAX: number;
+  DATABASE_STATEMENT_TIMEOUT_MS: number;
+  DATABASE_JIT: boolean;
   REDIS_URL: string;
   MINIO_ENDPOINT: string;
   MINIO_ACCESS_KEY: string;
@@ -299,6 +302,21 @@ export const validateEnvironment = (
     'WORKER_HEALTH_PORT',
     4001,
   );
+  // Size the pool to the database host's cores, not up: Postgres is the CPU-bound side (D2), so
+  // extra connections only move the queue from the API into Postgres. The statement timeout
+  // keeps one runaway scan from holding a connection; past it the request is answered 503.
+  const databasePoolMax = parsePositiveInteger(
+    environment.DATABASE_POOL_MAX,
+    'DATABASE_POOL_MAX',
+    10,
+  );
+  const databaseStatementTimeoutMs = parsePositiveInteger(
+    environment.DATABASE_STATEMENT_TIMEOUT_MS,
+    'DATABASE_STATEMENT_TIMEOUT_MS',
+    10_000,
+  );
+  // Off by default: the API's queries are short, and for them compiling costs more than it saves.
+  const databaseJit = parseBoolean(environment.DATABASE_JIT, 'DATABASE_JIT', false);
   const trustProxy = parseTrustProxy(environment.TRUST_PROXY);
   // Called for its refusal, not its value: the API itself never creates the account, but it is
   // the process a deployment starts first, so it is where a missing Director must be reported.
@@ -312,6 +330,9 @@ export const validateEnvironment = (
   return {
     ...environment,
     DATABASE_URL: databaseUrl,
+    DATABASE_POOL_MAX: databasePoolMax,
+    DATABASE_STATEMENT_TIMEOUT_MS: databaseStatementTimeoutMs,
+    DATABASE_JIT: databaseJit,
     REDIS_URL: redisUrl,
     MINIO_ENDPOINT: minioEndpoint,
     MINIO_ACCESS_KEY: minioAccessKey,

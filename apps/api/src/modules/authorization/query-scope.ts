@@ -198,6 +198,20 @@ export const documentIsPending = (pending = true): SQL => {
 };
 
 /**
+ * {@link documentIsPending}, phrased for a rollup that evaluates it on every row of a scan — the
+ * dashboard's `count(*) filter (where …)`. Same question, same rows: a document is in the set
+ * exactly when it has an unaccepted route.
+ *
+ * The `EXISTS` form suits a `WHERE`, where Postgres can drive the probe from
+ * `document_routes_unaccepted_idx`. Inside a `FILTER` it becomes a correlated subplan run once per
+ * row, which on the D1 seed made the Records Section's summary five times slower. As `IN`, Postgres
+ * reads the unaccepted routes once into a hash and each row is a lookup (D2 follow-up F1).
+ */
+export const documentIsPendingInRollup = (): SQL =>
+  sql`${documents.id} in (select ${documentRoutes.documentId} from ${documentRoutes}
+       where ${documentRoutes.acceptedAt} is null)`;
+
+/**
  * Applies {@link documentScopeFor} to a query builder. The `scopeToActor(query, actor)` form
  * is what repositories call; it exists so that forgetting to scope a query reads as a missing
  * call at the call site rather than as a subtly absent `and(...)` inside a long predicate.

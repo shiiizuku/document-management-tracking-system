@@ -21,7 +21,10 @@ config({ path: new URL('../../../.env', import.meta.url) });
 const environment = validateEnvironment(process.env);
 const logger = new StructuredLogger({ service: 'dts-worker' });
 
-const { db, pool } = createDatabase(environment.DATABASE_URL);
+// Pool size only: the worker serves no interactive request, so it keeps no statement cap.
+const { db, pool } = createDatabase(environment.DATABASE_URL, {
+  poolMax: environment.DATABASE_POOL_MAX,
+});
 const queue = createOutboxQueue(environment.REDIS_URL);
 const relay = new OutboxRelay(db, queue);
 
