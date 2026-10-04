@@ -235,7 +235,7 @@ function PaletteTrigger({ onClick }: Readonly<{ onClick: () => void }>) {
       variant="outline"
       onClick={onClick}
       aria-label={`Open the command palette (${chord})`}
-      className="h-control w-full max-w-md justify-start gap-2 rounded-full px-4 font-normal text-muted-foreground"
+      className="h-9 w-full max-w-md justify-start gap-2 rounded-full px-4 font-normal text-muted-foreground"
     >
       <Search aria-hidden />
       <span className="flex-1 truncate text-left">Search documents and actions</span>

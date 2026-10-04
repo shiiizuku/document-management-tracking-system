@@ -11,12 +11,11 @@ import { cn } from '@/lib/utils';
  *
  * The colours are a four-way traffic signal — waiting / moving / done / closed — with no
  * equivalent in the shadcn palette; mapping them onto `primary`/`secondary` would collapse
- * distinctions the user reads at a glance, and they cannot be spoken in the accent because the
- * accent is whatever the user picked. They are fixed hues for the same reason `error` is.
+ * distinctions the user reads at a glance. These status hues stay fixed in both themes.
  *
  * They were literal light-mode hex values until the dark scheme shipped, which left a Pending pill
  * as a pale cream blob on a near-black page and put URGENT at 2.73:1. The scale now lives in
- * md3-theme.css as `--dts-signal-*`, carries a value per scheme, and is reached through the
+ * theme.css as `--signal-*`, carries a value per scheme, and is reached through the
  * `signal-*` / `priority-*` utilities below — so a tone is changed in one place and both schemes
  * follow.
  */

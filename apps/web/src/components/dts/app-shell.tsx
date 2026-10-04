@@ -18,7 +18,7 @@ import {
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { CommandPalette } from '@/features/command-palette/command-palette';
 import { NotificationsSheet } from '@/features/notifications/notifications-sheet';
-import { AppearanceBar } from '@/components/md3/appearance-bar';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
 import { useLogout, useSession, type SessionUser } from '@/features/session/queries';
@@ -83,18 +83,14 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
       <aside
         className={cn(
           'sticky top-0 hidden h-screen shrink-0 flex-col border-r border-border bg-card lg:flex',
-          'transition-[width] duration-(--md-duration-medium-2) ease-emphasized',
+          'transition-[width] duration-200 ease-in-out',
           collapsed ? 'w-16' : 'w-64',
         )}
       >
         <Brand collapsed={collapsed} />
         <SidebarNav collapsed={collapsed} />
-        {/*
-          Appearance sits at the foot of the navigation rather than in the topbar: the topbar is
-          for what you are doing to the record in front of you, and a theme is not that. Density
-          stays one click away inside the palette for the clerk who retunes it mid-queue.
-        */}
-        <AppearanceBar collapsed={collapsed} />
+        {/* Keep the theme control with other persistent sidebar preferences. */}
+        <ThemeToggle collapsed={collapsed} />
         <div className={cn('border-t border-border p-2', collapsed && 'flex justify-center')}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -131,7 +127,7 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
               {/* Closing on navigate is the whole reason this takes a callback: without it the
                   sheet stays open over the route the user just chose. */}
               <SidebarNav onNavigate={() => setMobileNavOpen(false)} />
-              <AppearanceBar />
+              <ThemeToggle />
             </SheetContent>
           </Sheet>
 
@@ -162,7 +158,7 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 space-y-section px-4 py-6 lg:px-8">{children}</main>
+        <main className="min-w-0 flex-1 space-y-6 px-4 py-6 lg:px-8">{children}</main>
       </div>
     </div>
   );
@@ -171,10 +167,7 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
 /**
  * The agency mark and the product name.
  *
- * The seal is a fixed-colour raster, so it is deliberately NOT tinted by the accent — an agency
- * mark recoloured to match a user's theme preference is no longer the mark. It sits on its own
- * neutral plate for the same reason: against `primary` at the Clay or Rose accent the seal's own
- * red and gold would read as a clash rather than as branding.
+ * The seal is a fixed-colour raster on a neutral plate so it reads in both themes.
  *
  * `priority` because this is above the fold on every signed-in screen and is the one image in the
  * shell; without it Next defers it behind the route's own content and the sidebar flashes empty.
@@ -187,7 +180,7 @@ function Brand({ collapsed = false }: Readonly<{ collapsed?: boolean }>) {
         collapsed ? 'justify-center px-2' : 'gap-3 px-4',
       )}
     >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-container-lowest ring-1 ring-outline-variant">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background ring-1 ring-border">
         <Image
           src="/branding/mgb-logo.png"
           alt="Mines and Geosciences Bureau"
@@ -242,7 +235,7 @@ function SidebarNav({
           {group.section === undefined ? null : collapsed ? (
             <hr className="mx-2 border-t border-border" aria-hidden />
           ) : (
-            <p className="px-3 pb-1 text-label-small font-bold tracking-[0.12em] text-muted-foreground uppercase">
+            <p className="px-3 pb-1 text-xs font-bold tracking-[0.12em] text-muted-foreground uppercase">
               {group.section}
             </p>
           )}
@@ -255,9 +248,9 @@ function SidebarNav({
                 onClick={onNavigate}
                 aria-current={isCurrent ? 'page' : undefined}
                 className={cn(
-                  'md3-state-layer flex items-center rounded-md3-sm text-label-large font-medium',
-                  'transition-colors duration-(--md-duration-short-2) ease-standard',
-                  'h-control',
+                  'hover:bg-accent flex items-center rounded-md text-sm font-medium',
+                  'transition-colors duration-150 ease-in-out',
+                  'h-9',
                   collapsed ? 'justify-center px-0' : 'gap-3 px-3',
                   isCurrent
                     ? 'bg-secondary text-secondary-foreground'

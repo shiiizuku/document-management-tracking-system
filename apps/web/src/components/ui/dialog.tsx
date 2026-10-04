@@ -31,24 +31,9 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        /*
-         * `bg-scrim-veil` rather than `bg-black/50`: the scrim is a role like any other, and MD3
-         * puts it at 32%. The dialog no longer leans on the scrim for separation now that it sits
-         * a tone above the page (see DialogContent), which is what makes the lighter value work.
-         *
-         * The blur is what the 32% veil alone cannot do: a dim page behind a dialog is still a
-         * page of legible rows competing for the eye, and a records screen behind a form is dense
-         * enough that it reads as the subject. Blurring puts it out of focus in the literal sense,
-         * so the dialog is the only thing with edges. `supports-[backdrop-filter]` because a
-         * browser without it must still get the veil rather than nothing.
-         */
-        'fixed inset-0 z-50 bg-scrim-veil supports-[backdrop-filter]:backdrop-blur-sm',
-        /*
-         * Enter and exit do not share a curve. Appearing is decelerated and unhurried; dismissing
-         * is accelerated and shorter, because the user has already decided and is waiting on it.
-         */
-        'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-(--md-duration-medium-2) data-[state=open]:ease-standard-decelerate',
-        'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-(--md-duration-short-4) data-[state=closed]:ease-standard-accelerate',
+        'fixed inset-0 z-50 bg-black/50 supports-[backdrop-filter]:backdrop-blur-sm',
+        'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-200 data-[state=open]:ease-out',
+        'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-150 data-[state=closed]:ease-in',
         className,
       )}
       {...props}
@@ -71,17 +56,9 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-3 rounded-lg border p-5 outline-none sm:max-w-lg',
-          /*
-           * `popover`, not `background`. A dialog is a raised container, and the bridge gives
-           * popover `surface-container-high` — the same tone the dropdowns and the command palette
-           * already sit on. On `background` (surface-container-LOW) the panel was the exact tone of
-           * the page behind it, which in dark mode left a 1px border doing all the separating now
-           * that MD3 has taken the shadow away.
-           */
           'bg-popover text-popover-foreground shadow-lg',
-          /* Emphasized, because the dialog is the thing the user is now looking at. */
-          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:duration-(--md-duration-medium-2) data-[state=open]:ease-emphasized-decelerate',
-          'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:duration-(--md-duration-short-4) data-[state=closed]:ease-emphasized-accelerate',
+          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:duration-200 data-[state=open]:ease-out',
+          'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:duration-150 data-[state=closed]:ease-in',
           className,
         )}
         {...props}
@@ -139,7 +116,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn('text-title-medium leading-none', className)}
+      className={cn('text-base leading-none', className)}
       {...props}
     />
   );
@@ -152,7 +129,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn('text-body-small text-muted-foreground', className)}
+      className={cn('text-xs text-muted-foreground', className)}
       {...props}
     />
   );

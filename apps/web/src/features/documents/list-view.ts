@@ -5,13 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
 /**
  * How a document list draws its rows: as cards, as a table, or as one line each (decision 173).
  *
- * A **separate axis from appearance density**, and deliberately not a fourth preset in
- * `appearance-config.ts`. That module's whole claim is that mode, accent and density are
- * independent and compose into three attributes on `<html>`; density is global and sets control
- * heights everywhere. This applies to two screens and changes what a row *is*, which is not that
- * kind of axis — folding it in would mean an attribute on the document that only two routes read.
+ * This applies to document lists on two screens and changes what a row is.
  *
- * Per device rather than per account, like appearance: it is a comfort setting, and round-tripping
+ * Per device rather than per account: it is a comfort setting, and round-tripping
  * it through the API would mean a flash of the wrong layout on every cold load while /auth/me is
  * in flight.
  *

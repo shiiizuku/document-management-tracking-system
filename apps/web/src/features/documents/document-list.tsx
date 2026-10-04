@@ -51,7 +51,7 @@ export function ListViewControl({
             title={option.note}
             onClick={() => onChange(option.id)}
             className={cn(
-              'md3-state-layer inline-flex items-center gap-1.5 rounded-md3-sm px-2.5 py-1 text-label-medium outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'hover:bg-accent inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring',
               selected
                 ? 'bg-secondary text-secondary-foreground'
                 : 'text-muted-foreground hover:text-foreground',

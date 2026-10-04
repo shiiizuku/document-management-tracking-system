@@ -648,13 +648,11 @@ function StagedFiles({
           {files.map((file, index) => (
             <li
               key={`${file.name}-${file.size}-${String(file.lastModified)}`}
-              className="flex items-center gap-2 rounded-md3-sm border border-border px-2 py-1.5"
+              className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5"
             >
-              <Paperclip className="size-4 shrink-0 text-on-surface-variant" aria-hidden />
-              <span className="min-w-0 flex-1 truncate text-body-small">{file.name}</span>
-              <span className="shrink-0 text-label-small text-on-surface-variant">
-                {fileSize(file.size)}
-              </span>
+              <Paperclip className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0 flex-1 truncate text-xs">{file.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{fileSize(file.size)}</span>
               <Button
                 type="button"
                 variant="ghost"
@@ -715,35 +713,25 @@ function OptionalSection({
       <CollapsiblePrimitive.Trigger asChild>
         <button
           type="button"
-          /*
-            Deliberately NOT `md3-state-layer`. That utility lights a trigger while its surface is
-            open, which is right for a menu — the button is "held down" for as long as the menu
-            hangs off it — and wrong for a disclosure, where open is the resting state of the
-            section below and the heading is just a heading. A plain hover is all this wants.
-          */
-          className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-md3-sm px-2 py-2 text-left outline-none transition-colors duration-(--md-duration-short-2) ease-standard hover:bg-on-surface/8 focus-visible:ring-2 focus-visible:ring-ring"
+          className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-md px-2 py-2 text-left outline-none transition-colors duration-150 ease-in-out hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             className={cn(
-              'size-4 shrink-0 text-on-surface-variant transition-transform duration-(--md-duration-short-2) ease-standard',
+              'size-4 shrink-0 text-muted-foreground transition-transform duration-150 ease-in-out',
               open && 'rotate-90',
             )}
             aria-hidden
           />
           <span className="min-w-0 flex-1">
-            <span className="block text-label-large">{title}</span>
+            <span className="block text-sm">{title}</span>
             {open ? null : (
-              <span className="block truncate text-label-small text-on-surface-variant">
-                {summary}
-              </span>
+              <span className="block truncate text-xs text-muted-foreground">{summary}</span>
             )}
           </span>
           {hasError ? (
-            <span className="shrink-0 text-label-small font-bold text-on-error-container">
-              Needs attention
-            </span>
+            <span className="shrink-0 text-xs font-bold text-destructive">Needs attention</span>
           ) : (
-            <span className="shrink-0 text-label-small text-on-surface-variant">Optional</span>
+            <span className="shrink-0 text-xs text-muted-foreground">Optional</span>
           )}
         </button>
       </CollapsiblePrimitive.Trigger>

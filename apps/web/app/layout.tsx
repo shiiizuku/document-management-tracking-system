@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import './theme.css';
 import { AppProviders } from '@/components/app-providers';
-import { appearanceBootScript } from '@/components/md3/appearance-config';
+const themeBootScript = `(function(){try{var t=localStorage.getItem('dts.theme');if(!t){var old=JSON.parse(localStorage.getItem('dts.appearance')||'null');t=old&&old.mode;}var dark=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',dark);}catch(e){}})();`;
 
 /*
  * Inter, from two files committed under `app/fonts` (see the README beside them).
@@ -57,8 +57,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     /*
      * `suppressHydrationWarning` is required, not cosmetic: the boot script below writes
-     * `data-theme` / `data-accent` / `data-density` onto this element before React hydrates, so the
-     * client's <html> attributes legitimately differ from the server's. The warning is scoped to
+     * a dark class onto this element before React hydrates, so the client's <html> attributes
+     * can differ from the server's. The warning is scoped to
      * this element only and does not reach anything inside it.
      */
     <html
@@ -73,7 +73,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           server cannot read, so anything that waits for React has already shown the wrong colours.
           It is a fixed string we author here — no user input reaches it.
         */}
-        <script dangerouslySetInnerHTML={{ __html: appearanceBootScript }} />
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
       <body>
         <AppProviders>{children}</AppProviders>

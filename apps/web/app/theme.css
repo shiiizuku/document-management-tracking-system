@@ -1,158 +1,118 @@
-/*
- * The app's theme.
- *
- * This file used to alias the brand's `--dts-*` values straight onto shadcn's semantic names. It no
- * longer does: md3-theme.css now owns the colour system, and it generates MD3 tonal palettes from a
- * hue and a chroma rather than from a list of nine hex values.
- *
- * The brand did not change in the move. The green the bespoke stylesheet used, #175c43, measures
- * L 42.5 / C 0.080 / H 164 in OKLCh — which is to say it already WAS tone 40 of a hue-164 palette,
- * so it survives as the `sage` accent preset, and sage is the default. The `--dts-*` values are
- * kept below because a handful of brand marks (the seal, the gold eyebrow rule, the priority flag)
- * want the literal ink, not a role; everything structural should use a role.
- *
- * Imported once, by the root layout.
- */
 @import 'tailwindcss';
-/* Supplies the enter/exit keyframes the Radix-driven components animate with (`animate-in`,
-   `slide-in-from-*`, `fade-in-0`). Tailwind v4 dropped the plugin these used to come from. */
 @import 'tw-animate-css';
-/* The MD3 token layer: tonal palettes, accent presets, density presets, the light and dark role
-   assignments, the shadcn bridge, and the state-layer utility. */
-@import './md3-theme.css';
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Brand marks. Literal ink, for the few places that want the mark rather than a role. */
-  --dts-ink: #17231e;
-  --dts-muted: #68756f;
-  --dts-paper: #f4f3ed;
-  --dts-card: #fff;
-  --dts-line: #dcded7;
-  --dts-green: #175c43;
-  --dts-green2: #237a5a;
-  --dts-pale: #e3eee8;
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --signal-wait: oklch(0.95 0.055 85);
+  --on-signal-wait: oklch(0.45 0.09 85);
+  --signal-move: oklch(0.92 0.028 240);
+  --on-signal-move: oklch(0.45 0.075 240);
+  --signal-done: oklch(0.93 0.032 160);
+  --on-signal-done: oklch(0.45 0.08 160);
+  --signal-closed: oklch(0.92 0.004 85);
+  --on-signal-closed: oklch(0.45 0.008 85);
+  --priority-urgent: oklch(0.45 0.16 27);
+  --priority-high: oklch(0.45 0.105 70);
   --dts-gold: #c49a45;
-  --dts-danger: #a63d3d;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --signal-wait: oklch(0.32 0.05 85);
+  --on-signal-wait: oklch(0.9 0.06 85);
+  --signal-move: oklch(0.32 0.045 240);
+  --on-signal-move: oklch(0.88 0.05 240);
+  --signal-done: oklch(0.32 0.045 160);
+  --on-signal-done: oklch(0.89 0.05 160);
+  --signal-closed: oklch(0.3 0.004 85);
+  --on-signal-closed: oklch(0.87 0.005 85);
+  --priority-urgent: oklch(0.78 0.13 27);
+  --priority-high: oklch(0.82 0.11 75);
 }
 
 @theme inline {
-  /* Brand marks as utilities, so they never need an inline style. Note that `gold` here is the
-   * literal brand gold; the MD3 `tertiary` role is the one that follows the accent preset. */
-  --color-gold: var(--dts-gold);
-  --color-ink: var(--dts-ink);
-  --color-paper: var(--dts-paper);
-
-  /*
-   * Inter, loaded by `app/layout.tsx` through `next/font/local`, which publishes each face under
-   * its own CSS variable. The Latin Extended family is second in the list rather than merged into
-   * the first: the fallback is per glyph, so it is reached only by text the Latin file cannot set,
-   * and it is not preloaded. See the comment on `localFont` in the layout.
-   *
-   * There is no `--font-serif`. Decision 172 retires the display serif, and headings now take the
-   * same family as everything else — the type scale alone carries the hierarchy.
-   */
   --font-sans: var(--font-inter), var(--font-inter-ext), system-ui, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-signal-wait: var(--signal-wait);
+  --color-on-signal-wait: var(--on-signal-wait);
+  --color-signal-move: var(--signal-move);
+  --color-on-signal-move: var(--on-signal-move);
+  --color-signal-done: var(--signal-done);
+  --color-on-signal-done: var(--on-signal-done);
+  --color-signal-closed: var(--signal-closed);
+  --color-on-signal-closed: var(--on-signal-closed);
+  --color-priority-urgent: var(--priority-urgent);
+  --color-priority-high: var(--priority-high);
+  --color-gold: var(--dts-gold);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 @layer base {
-  /*
-   * `color-scheme` is what makes the browser's own chrome — scrollbars, form controls, the
-   * autofill wash — follow the theme. Without it a dark app keeps light scrollbars.
-   */
-  :root {
-    color-scheme: light;
+  * {
+    @apply border-border outline-ring/50;
   }
-
-  .dark,
-  [data-theme='dark'] {
-    color-scheme: dark;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme='light']):not(.light) {
-      color-scheme: dark;
-    }
-  }
-
   body {
-    background-color: var(--background);
-    color: var(--foreground);
-    font-family: var(--font-sans);
-    /* MD3's body role, rather than Tailwind's 16px/1.5 default. */
-    font-size: var(--text-body-medium);
-    line-height: 1.25rem;
-    letter-spacing: 0.015625rem;
-    /*
-     * The theme can change under the user's feet when they pick an accent, a density or a mode, so
-     * the page cross-fades instead of cutting. Only colour transitions — never layout — and the
-     * standard curve, because this is ambient movement the user did not aim at a specific element.
-     */
-    transition:
-      background-color var(--md-duration-medium-1) var(--md-ease-standard),
-      color var(--md-duration-medium-1) var(--md-ease-standard);
+    @apply bg-background text-foreground font-sans;
   }
-
-  @media (prefers-reduced-motion: reduce) {
-    body {
-      transition-duration: 1ms;
-    }
-  }
-
-  /*
-   * Headings sit on the MD3 type scale, set once here instead of adding classes to every heading
-   * in every route. They no longer carry a family of their own: with the display serif retired
-   * (decision 172) a heading differs from body text in size and weight, not in typeface.
-   */
-  h1,
-  h2,
-  h3 {
-    font-weight: 600;
-  }
-
-  h1 {
-    font-size: var(--text-headline-large);
-    line-height: 2.5rem;
-  }
-
-  h2 {
-    font-size: var(--text-headline-small);
-    line-height: 2rem;
-  }
-
-  h3 {
-    font-size: var(--text-title-large);
-    line-height: 1.75rem;
-  }
-
-  /*
-   * The eyebrow — a small upper-case label above a heading — appears above every page title and
-   * panel heading in this design. It is a type treatment, not a component, so it stays a base class
-   * rather than becoming a one-element React wrapper. It now follows the accent: under `graphite`
-   * it reads as grey ink, which is the point of that preset.
-   *
-   * `tabular-nums` because the eyebrow is where a tracking number appears on the detail screen and
-   * in both of its dialogs. Inter's proportional digits make a column of `DTS-2026-000014` jitter,
-   * and a tracking number is read by comparing it against another one rather than by reading it
-   * through. It costs nothing on the eyebrows that carry a word.
-   */
   .eyebrow {
-    font-family: var(--font-sans);
-    font-size: var(--text-label-small);
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-variant-numeric: tabular-nums;
-    color: var(--md-primary);
-  }
-
-  /*
-   * One focus treatment for the whole app, and it is a ring rather than MD3's 3px outline-offset
-   * block because the ring survives `overflow: hidden` on the state-layer host. 3:1 against the
-   * adjacent surface is WCAG 2.2 SC 1.4.11; `--md-primary` at tone 40 (light) / 80 (dark) clears it
-   * against every container tone in the scale, for every accent preset.
-   */
-  :focus-visible {
-    outline: 2px solid var(--md-primary);
-    outline-offset: 2px;
+    @apply text-muted-foreground text-xs font-semibold tracking-widest uppercase tabular-nums;
   }
 }
