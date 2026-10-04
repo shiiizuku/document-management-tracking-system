@@ -16,12 +16,13 @@ that no placeholder heuristic silently becomes permanent behaviour.
 Provisional defaults are **dev/pilot-only**. `OPEN`, `PROVISIONAL` and `DECIDED` rows must all
 reach `AGREED` before the Phase 7 readiness sign-off.
 
-_Last reviewed: 2026-10-03, against the code rather than against the previous review; P-15 updated
-the same day when Wave A encoded it._ One row is not yet `AGREED`: **P-08** (audit retention —
-decided, unimplemented). Everything else is confirmed and matched by code. P-13 is `AGREED` on
-substance but its restore has still never been rehearsed, which is an M6 box rather than a register
-question; P-15 is `AGREED` and implemented, with one factual confirmation owed by the Records
-section about how the pre-existing `MAILED` rows should read.
+_Last reviewed: 2026-10-04. P-08 was encoded by Wave D (box D4) on the same day._ Every row is now
+`AGREED`. P-08 is implemented, but it still waits on one input from IT operations: where the
+archive database lives. That host is configuration (`AUDIT_ARCHIVE_DATABASE_URL`), not code, and
+nothing needs it until the first audit event turns five in 2031. P-13 is `AGREED` on substance, but
+its restore has still never been rehearsed; that is an M6 box, not a register question. P-15 is
+`AGREED` and implemented. The Records section still owes one factual confirmation about how the
+pre-existing `MAILED` rows should read.
 
 | #    | Policy question                                                                                   | Owner            | Status        | Current behaviour in code                                                                                                      | Blocks    |
 | ---- | ------------------------------------------------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------- |
@@ -32,7 +33,7 @@ section about how the pre-existing `MAILED` rows should read.
 | P-05 | **Signature meaning** — whether the internal signature record is legally sufficient, or a qualified e-signature is required | General counsel  | `AGREED` | The internal signature record is tracking metadata and carries no legal effect; documents are signed outside the system. `signature_events` already records only the internal act | Phase 3/4 |
 | P-06 | **File allow-list and size limit**                                                                 | IT security      | `AGREED` | `application/pdf`, `image/png`, `image/jpeg`, `image/webp`, plus `.docx` and `.xlsx`; macro-enabled `.docm`/`.xlsm` refused. Verified by magic bytes. 25 MB ceiling (`UPLOAD_MAX_BYTES`). Preview stays PDF/images, and release requires a PDF or image attachment | Phase 4   |
 | P-07 | **Scanner failure posture** — what happens when ClamAV is down or times out                         | IT security      | `AGREED` | **Fail closed** — a version that is not `CLEAN` is never downloadable; bounded retries then `SCAN_FAILED`. `AlertExceedsMax yes` with pinned scan limits, so an archive clamd declines to scan in full is quarantined rather than reported clean | Phase 4   |
-| P-08 | **Audit retention** — how long `audit_events` rows are kept and who may purge them                 | General counsel  | `DECIDED` | Audit events are retained **5 years** and may never be purged; after 5 years they are moved to a separate database. Code preserves everything in the primary database with no retention window and no relocation path, so none of this is implemented | Phase 6   |
+| P-08 | **Audit retention** — how long `audit_events` rows are kept and who may purge them                 | General counsel  | `AGREED` | Audit events are retained **5 years** and may never be purged; after 5 years they are moved to a separate database. Encoded by Wave D: migration `0012` puts triggers on `audit_events` that refuse every `UPDATE`, and refuse `DELETE`/`TRUNCATE` outside the one sanctioned override. `npm run audit:relocate -w @dts/api` moves rows older than five years to `AUDIT_ARCHIVE_DATABASE_URL`, deleting each one only after an identical copy is verified in the archive, whose table is append-only with no override. `audit-relocation.test.ts` fails if any other purge path appears, and `audit-relocation.int.test.ts` proves the move against real Postgres. Procedure: `docs/runbooks/audit-relocation.md`. **Owed by IT operations:** the archive host | Phase 6   |
 | P-09 | **Document retention / disposal** — archive period and whether hard deletion is ever permitted      | Records section  | `AGREED` | Soft delete only (`deleted_at`); no hard deletion. The archive is the registry filtered to `ARCHIVED`, reachable from the sidebar by anyone holding `DOCUMENT_ARCHIVE` | Phase 2   |
 | P-10 | **Session inactivity timeout**                                                                     | IT security      | `AGREED` | 30 minutes of inactivity (`COOKIE_MAX_AGE_MS` default), renewed on each authenticated request; see [ADR-0002](adr/0002-session-transport.md) | Phase 1   |
 | P-11 | **Account provisioning** — who may approve an account request, and whether self-service is allowed  | Admin office     | `AGREED` | Administrator only; no self-service. `account_requests` supports request -> approve/reject and the capabilities are administrator-only, as agreed | Phase 1   |

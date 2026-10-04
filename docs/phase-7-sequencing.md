@@ -266,18 +266,44 @@ exclude them.
 
 ## Wave D — evidence
 
-~5 sessions.
+~5 sessions. **D1 and D4 done 2026-10-04**, on branch `wave-d-evidence`. Two migrations: `0011`
+adds an index and `0012` adds the audit triggers.
 
-- [ ] **D1** (2h) Pilot-sized seed + the `EXPLAIN` pass. The indexes exist; this proves they are the
+- [x] **D1** (2h) Pilot-sized seed + the `EXPLAIN` pass. The indexes exist; this proves they are the
       right ones. _Done-when:_ each critical query's plan is recorded against pilot-sized data.
 
   Watch the `documentIsPending` predicate: `PENDING` is derived from unaccepted route rows through a
   correlated subquery that the registry filter, the dashboard tiles and `pendingByDivision` all
   compose, so it is the query most likely to want an index the schema does not have.
 
+  The warning pointed at the right table but the wrong query. `documentIsPending` is fine: its
+  partial index serves it. The missing index was **any index leading with
+  `document_routes.document_id`**. The current-lead-hop subquery behind `custodyDivisionId` /
+  `custodySectionId` therefore scanned all 127,000 routes once per document. The registry's custody
+  filters and the dashboard's pending-by-division chart took **more than 30 s** (about 90 s
+  observed) on 60,000 documents. Migration `0011`'s `document_routes_document_idx` brings them to
+  80–272 ms. **Every critical read is now under 300 ms**, and no other index is warranted at this
+  size. Verdicts: `docs/evidence/d1-query-plans.md`. Generated plans, before and after:
+  `d1-explain-plans*.md`.
+
+  The dataset is 60,000 documents over five years. That is an assumption, because the decision
+  register states no volume; it is written down in `apps/api/perf/pilot-seed.ts`. It extends
+  `apps/e2e/fixtures/accounts.ts` verbatim, so D2 can sign in as the acceptance scenarios'
+  principals. The plans come from the **real repository methods**, with their emitted SQL captured
+  rather than hand-copied.
+
+  The seed also put a number on Wave C's open question. Nothing can accept a for-information copy,
+  so `documentIsPending` holds for **10,609** documents while only **113** await custody. The Pending
+  tile and filter would be wrong by two orders of magnitude on day one of a real year.
+
 - [ ] **D2** (2h) Load test (search + upload + workflow) over D1's data. _Done-when:_ latency and
       throughput are recorded against a stated target. The target needs setting — P-13's numbers are
       about recovery, not serving.
+
+  **Check before measuring:** the API rate-limits per client IP (120/min default, 5/min login), and
+  nothing sets Express `trust proxy`. Behind the pilot's TLS ingress, every user would share one
+  bucket. A load test from one machine hits the same ceiling, so it would measure the throttle, not
+  the server. Settle how the limiter identifies a client first.
 - [ ] **D3** (2h) Backup/restore rehearsal. The scripts and `runbooks/backup-restore.md` are already
       thorough; what is missing is a **performed** restore, timed against P-13's 2–4 hour window, with
       the evidence written down. _Done-when:_ a restore is verified against a checklist.
@@ -285,7 +311,7 @@ exclude them.
   Rehearse the real failure — loss of the application host — which means restoring from an archive on
   different storage, not from `./backups` on the same machine.
 
-- [ ] **D4** (2h) Audit retention (P-08). _Done-when:_ the relocation path exists and a test asserts
+- [x] **D4** (2h) Audit retention (P-08). _Done-when:_ the relocation path exists and a test asserts
       no purge path does.
 
   Scope this honestly. The decision is retain 5 years, then relocate to a separate database, never
@@ -293,6 +319,23 @@ exclude them.
   running. What is genuinely owed is the relocation path and a test that no purge exists — **not** a
   retention window that would delete things. Needs one input from IT: where the separate database
   lives.
+
+  Built as scoped. `AuditRelocator` and `npm run audit:relocate` copy rows older than five years
+  into `AUDIT_ARCHIVE_DATABASE_URL`, then read back a fingerprint of each copy. A row is deleted from
+  the primary **only after its fingerprint matches**, so an interrupted run loses nothing and a rerun
+  is a no-op. Timestamps travel as Postgres JSON, because a JS `Date` would round off the
+  microseconds. The cutoff is always computed from the current time; no caller can pass one.
+
+  The test that no purge exists comes in **two layers**. `audit-relocation.test.ts` scans every
+  place SQL lives and fails on any `DELETE`, `TRUNCATE` or `UPDATE` of audit rows outside the
+  relocator. Migration `0012` makes the table refuse the same statements at runtime: `UPDATE`
+  always, and `DELETE`/`TRUNCATE` unless `dts.allow_audit_removal` is set. Exactly two places set
+  it: the relocator, and the E2E suite's reset of its disposable database. The archive's table is
+  append-only with no override at all. This guards against mistakes, not against a DBA. Withholding
+  `UPDATE`/`DELETE` from the runtime role is the real boundary, and it stays an M6 item.
+
+  The IT input is now configuration, not code. Until it arrives, the command refuses to run, which
+  is correct for the next five years. Procedure: `docs/runbooks/audit-relocation.md`.
 
 ## Wave E — the writing that needs the rest done
 
@@ -318,7 +361,7 @@ Chase these now; they are not engineering work.
 | -------------------------- | ---------------------------------------------------------- | --------------------------------------- |
 | Risk register (Slice 0.1)  | A named owner per risk                                     | Engineering lead, with the admin office |
 | Phase 0 sign-off           | The IT infrastructure blocker (P-13) cleared               | IT operations                           |
-| D4 — audit retention       | Where the post-5-year database lives                       | IT operations                           |
+| D4 — audit retention       | Where the post-5-year database lives (now configuration: `AUDIT_ARCHIVE_DATABASE_URL`) | IT operations |
 | A4 — release methods       | Confirmation that `MAILED` → Postal is the right mapping   | Records section                         |
 
 A4's confirmation is now the only one that is **chasing applied code rather than blocking it**. The
@@ -333,5 +376,5 @@ cannot be signed off without it.
 ## Shape
 
 ~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent, with C2–C4 waiting only on the
-CI run. **Wave D** is next, and D1's pilot-sized seed can reuse `apps/e2e/fixtures/accounts.ts`'s
-organization tree rather than inventing another.
+CI run. In **Wave D**, D1 and D4 are done. D2 runs over D1's dataset (`npm run perf:seed`), and
+D3 needs a second machine to restore onto.

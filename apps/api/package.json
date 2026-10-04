@@ -9,14 +9,17 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "start:worker": "node dist/worker.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p perf/tsconfig.json",
+    "perf:seed": "tsx perf/pilot-seed.ts",
+    "perf:explain": "tsx perf/explain.ts",
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:coverage": "vitest run --coverage",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/database/migrate.ts",
-    "db:seed": "tsx src/database/seed.ts"
+    "db:seed": "tsx src/database/seed.ts",
+    "audit:relocate": "tsx src/database/relocate-audit.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.0",
