@@ -206,9 +206,39 @@ and D1 build fixtures on is now fixed.
 
 ## Wave C — write the scenarios, then automate them
 
-~7 sessions.
+~7 sessions. **Implemented 2026-10-04; 24/24 green locally.** C2–C4's done-when is _green in CI_,
+so their boxes close when the new `e2e` job passes on the PR.
 
-- [ ] **C1** (2h) **Acceptance scenarios** (Slice 0.1). One incoming→archive journey and the outgoing
+Two product bugs fell out of performing the scenarios, which is the argument for writing them first:
+
+- **`COMPLY` was unreachable from the UI.** The server requires remarks (decision 163) and the
+  action runner never asked for them, so **Record compliance** sent an empty command and toasted a
+  failure. The terminal state of every incoming document could not be reached. Fixed in
+  `use-action-runner.tsx`, with a unit test.
+- **The rail never said _Pending_.** It badged the stored column, which is `IN_PROCESS` from
+  creation, so a fresh document read _In process_ beside **Accept custody**. Fixed with
+  `presentedStatus` (lead hop only). The registry and _My work_ rows still badge the column; see
+  the open question below.
+
+And three harness traps worth knowing before touching `apps/e2e`:
+
+- `config.rootDir` is the **test** directory, not the config's — `fixtures/paths.ts` resolves from
+  `configFile` instead. Resolving from `rootDir` put `.auth/` and the repository root one level off.
+- `next build` leaves `.next/static` out of the standalone output, and the standalone server
+  **indexes static files at boot** — so they must be copied before it starts, not in the global
+  setup (which Playwright runs after `webServer`). `start-web.mjs` does the Dockerfile's two copies
+  and then imports `server.js` in-process.
+- Stopping a run from outside Playwright (killing the npm process) orphans the three servers on
+  Windows; the next run then fails on "port already used".
+
+**Open question for the policy owner.** `documentIsPending` counts an unacknowledged
+for-information copy as outstanding, and `query-scope.int.test.ts` pins that deliberately. But a
+copy has no **Accept custody** — nothing in the UI ever acknowledges one — so any document forwarded
+with a copy stays in the registry's _Pending_ filter and the dashboard tile forever, including after
+it is complied with and archived. Either copies need an acknowledge action, or the predicate should
+exclude them.
+
+- [x] **C1** (2h) **Acceptance scenarios** (Slice 0.1). One incoming→archive journey and the outgoing
       release path, given/when/then. _Done-when:_ both journeys are executable as written by someone
       who has not read the code.
 
@@ -216,9 +246,17 @@ and D1 build fixtures on is now fixed.
   means the outgoing path needs a Director actor for exactly one hop, which is the thing fixtures get
   wrong.
 
+  Done in `docs/acceptance-scenarios.md`: both journeys plus the ORD variant (ADR-0007), with the
+  Director named for exactly one hop and asserted to hold exactly one button.
+
 - [ ] **C2** (2h) Playwright harness. Nothing is installed today. It needs the full stack, so it
       inherits B1/B2's compose-in-CI pattern. Decide once: per-test truncation or a seeded snapshot
       restored per spec. _Done-when:_ one trivial spec is green in CI.
+
+  `apps/e2e`, and an `e2e` job in `ci.yml`. **Truncation, of the document side only**: the accounts
+  must survive because a saved session is a JWT keyed on the user id and login is throttled to five a
+  minute, and a per-spec template restore is impossible while the API holds a pool open on the
+  database. The reasoning is at the head of `fixtures/database.ts`.
 - [ ] **C3** (2h) The E2E flow: login → register → upload → workflow → release, transcribing C1 rather
       than inventing coverage. _Done-when:_ green in CI.
 - [ ] **C4** (2h) The axe sweep via `@axe-core/playwright` on the C2 harness — login, registry,
@@ -294,6 +332,6 @@ cannot be signed off without it.
 
 ## Shape
 
-~25 sessions, so 5–6 weeks at 2 h/day; Waves A and B's ~9 are spent. **Wave C** is next, and C1 —
-the acceptance scenarios — is the one to start: it is the script C3 transcribes, and it can now be
-written against the organization structure that will actually ship.
+~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent, with C2–C4 waiting only on the
+CI run. **Wave D** is next, and D1's pilot-sized seed can reuse `apps/e2e/fixtures/accounts.ts`'s
+organization tree rather than inventing another.

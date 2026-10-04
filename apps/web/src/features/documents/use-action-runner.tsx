@@ -45,10 +45,32 @@ import { useReleaseMethods, useRunAction, type DocumentDetail } from './queries'
  * A known, accepted duplication of a rule `WorkflowService` also enforces (see
  * docs/frontend-rebuild-plan.md). It is acceptable because the server still has the final say: if
  * this table is wrong, the result is a validation error rather than a bad transition.
+ *
+ * `COMPLY` was missing from it, which made the row above untrue in the one direction that matters:
+ * the server requires compliance remarks (decision 163, `COMPLY_REMARKS_REQUIRED`), so pressing
+ * **Record compliance** sent an empty command and the only outcome was a toast saying it failed —
+ * the terminal state of every incoming document was unreachable from the UI. Found by writing
+ * `docs/acceptance-scenarios.md` §1.5 down and then trying to perform it.
  */
 const ACTION_REQUIRES: Partial<Record<WorkflowAction, 'remarks' | 'releaseMethod'>> = {
   REQUEST_REVISION: 'remarks',
+  COMPLY: 'remarks',
   RELEASE: 'releaseMethod',
+};
+
+/**
+ * What the dialog says it is collecting, per action rather than per input kind.
+ *
+ * Two actions now ask for remarks and they ask for different things — a revision request says what
+ * must change, a compliance record says what was done — so one sentence keyed on "needs remarks"
+ * would be wrong for one of them.
+ */
+const ACTION_PROMPTS: Partial<Record<WorkflowAction, string>> = {
+  REQUEST_REVISION:
+    'Say what needs changing. This is recorded on the document timeline and sent to the assignee.',
+  COMPLY:
+    'Record what was done about this document. The remark is the evidence that it was acted upon, so it is required.',
+  RELEASE: 'Record how the document left the office. This is kept as part of the release record.',
 };
 
 /** Sending a document back for revision is the one action that undoes someone else's work. */
@@ -168,11 +190,7 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
           >
             <DialogHeader>
               <DialogTitle>{ACTION_LABELS[pendingAction]}</DialogTitle>
-              <DialogDescription>
-                {needs === 'remarks'
-                  ? 'Say what needs changing. This is recorded on the document timeline and sent to the assignee.'
-                  : 'Record how the document left the office. This is kept as part of the release record.'}
-              </DialogDescription>
+              <DialogDescription>{ACTION_PROMPTS[pendingAction]}</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-4">

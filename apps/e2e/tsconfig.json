@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Playwright transpiles these files itself, so nothing here describes an emit — only how the
+    // same source is type-checked. `Bundler` resolution is what makes the extensionless relative
+    // imports Playwright accepts (`./fixtures/accounts`) resolve under `tsc` too.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "allowJs": true,
+    // `baseUrl` is inherited from tsconfig.base.json and points at the repository root; nothing
+    // here uses a path alias, and re-anchoring it keeps a future one meaning this package.
+    "baseUrl": "."
+  },
+  // `start-web.mjs` is here so the linter's type-aware project service can find it; `allowJs`
+  // without `checkJs` lets it in without type-checking it.
+  "include": ["**/*.ts", "start-web.mjs"],
+  "exclude": ["node_modules", "test-results", "playwright-report"]
+}

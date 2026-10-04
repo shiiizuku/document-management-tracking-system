@@ -11,6 +11,9 @@ storage/
 backups/
 playwright-report/
 test-results/
+# Saved browser sessions written by apps/e2e/tests/auth.setup.ts. They are signed session cookies
+# for the seeded local accounts — short-lived, but still credentials, and regenerated every run.
+.auth/
 
 # Filled-in routing slips kept locally for layout reference. Both carry real office traffic —
 # subject, sender, addressee, dates — and the Word template also carries its author's name and a

@@ -152,6 +152,27 @@ export const currentCustody = (
 };
 
 /**
+ * The status as a reader should see it: `PENDING` while the lead hop is unaccepted, otherwise the
+ * stored lifecycle status.
+ *
+ * The column cannot hold `PENDING` — registration confers no custody (decision 154), so a new
+ * document enters at `IN_PROCESS` and is pending only by virtue of an unaccepted route row
+ * (ADR-0005). Badging the column alone showed **In process** beside an **Accept custody** button,
+ * i.e. a document reading as in hand when nobody had taken it on.
+ *
+ * **Narrower than the server's `documentIsPending`, deliberately.** That predicate also counts an
+ * unacknowledged for-information copy, which is right for a "what is outstanding" filter. This
+ * badge sits beside *Currently with* and answers a custody question, which only the lead hop can
+ * answer — a copy is never waited on (decisions 159–160), so it must not hold the badge at Pending
+ * after the lead has accepted and acted.
+ */
+export const presentedStatus = (document: DocumentDetail): WorkflowStatus => {
+  const hops = document.routes.filter((hop) => !hop.forInformation);
+  const lead = hops[hops.length - 1];
+  return lead !== undefined && lead.acceptedAt === null ? 'PENDING' : document.status;
+};
+
+/**
  * A referenced document as the detail payload summarises it — enough to list it and to open the
  * modal, and nothing more.
  */

@@ -106,6 +106,39 @@ describe('DocumentActions', () => {
     );
   });
 
+  /*
+   * Decision 163: an incoming document terminates by being acted upon *with remarks*, and the
+   * server refuses `COMPLY` without them (`COMPLY_REMARKS_REQUIRED`). This action was absent from
+   * the runner's input table for a while, so the button sent an empty command and the only
+   * outcome was a toast saying it failed — which made the terminal state of every incoming
+   * document unreachable. The dialog is what closes that, so it is what this asserts.
+   */
+  it('collects the required remarks before recording compliance', async () => {
+    renderWithQuery(<DocumentActions document={documentDetail({ allowedActions: ['COMPLY'] })} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Record compliance' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Record compliance' })).toBeDisabled();
+    expect(apiMock).not.toHaveBeenCalled();
+    // Not the revision request's wording: the two actions both take remarks and mean different
+    // things by them.
+    expect(
+      within(dialog).getByText(/Record what was done about this document/),
+    ).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Remarks'), 'Certified copy issued.');
+    apiMock.mockResolvedValue(documentDetail({ status: 'COMPLIED' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Record compliance' }));
+
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith('/documents/doc-1/actions/COMPLY', {
+        method: 'POST',
+        body: JSON.stringify({ expectedVersion: 3, remarks: 'Certified copy issued.' }),
+      }),
+    );
+  });
+
   it('collects the delivery method before releasing', async () => {
     withReleaseMethods(documentDetail({ status: 'RELEASED' }));
     renderWithQuery(<DocumentActions document={documentDetail({ allowedActions: ['RELEASE'] })} />);
