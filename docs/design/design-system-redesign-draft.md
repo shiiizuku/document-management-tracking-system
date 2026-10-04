@@ -2,11 +2,13 @@
 
 **Status:** Proposal for review · **Branch:** `codex/design-system-redesign-draft` · **Scope:** Web client
 
-This is a proposal for the Document Management and Tracking System (DTS), with a [static registry
-preview](./redesign-preview.html) and a [desktop image](./redesign-preview.png). It does not change
-the running UI. The sample records in the
-preview are fictional. The existing [Material 3 and shadcn bridge](./md3-shadcn-bridge.md) remains
-the implementation baseline until this proposal is accepted.
+This is a proposal for the Document Management and Tracking System (DTS). Five
+[separate redesign samples](./samples/index.html) show Apple, Material Design 3, Atlassian, Fluent
+UI, and eBay Evo directions on the same fictional registry content. The earlier
+[synthesized preview](./redesign-preview.html) and its [desktop image](./redesign-preview.png) remain
+available. These drafts do not change the running UI. The existing
+[Material 3 and shadcn bridge](./md3-shadcn-bridge.md) remains the implementation baseline until a
+direction is accepted.
 
 ## Design direction
 
