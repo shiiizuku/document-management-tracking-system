@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DTS design system draft · Registry preview</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --canvas: #f5f7f4;
+        --surface: #ffffff;
+        --sidebar: #eef3ef;
+        --border: #d9e2dc;
+        --ink: #172b22;
+        --muted: #52665a;
+        --green: #175c43;
+        --green-soft: #deeee4;
+        --amber-soft: #fff0ce;
+        --amber-ink: #6e4b00;
+        --blue-soft: #e2eff8;
+        --blue-ink: #174c6d;
+        --gray-soft: #ebefed;
+        --gray-ink: #46544c;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; color: var(--ink); background: var(--canvas); font-size: 14px; line-height: 1.45; }
+      button, input { font: inherit; }
+      button { cursor: default; }
+      :focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+      .draft-banner { padding: 9px 24px; background: #173d30; color: white; text-align: center; font-size: 12px; letter-spacing: .02em; }
+      .workspace { display: grid; grid-template-columns: 228px minmax(0, 1fr); min-height: calc(100vh - 35px); }
+      aside { background: var(--sidebar); border-right: 1px solid var(--border); padding: 24px 15px; }
+      .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 28px; font-weight: 750; font-size: 17px; letter-spacing: -.03em; }
+      .brand-mark { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 9px; background: var(--green); color: white; font-size: 13px; letter-spacing: 0; }
+      .brand small { display: block; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+      nav h2 { margin: 24px 12px 8px; color: var(--muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+      nav a { display: flex; align-items: center; gap: 11px; min-height: 40px; padding: 0 12px; border-radius: 10px; color: var(--muted); text-decoration: none; font-weight: 600; }
+      nav a[aria-current="page"] { background: var(--green-soft); color: var(--green); }
+      nav a span { width: 19px; text-align: center; font-size: 16px; font-weight: 400; }
+      .main-wrap { min-width: 0; }
+      .topbar { display: flex; justify-content: space-between; align-items: center; min-height: 62px; padding: 0 36px; border-bottom: 1px solid var(--border); background: var(--surface); }
+      .crumb { color: var(--muted); font-size: 12px; }
+      .topbar-right { display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 12px; }
+      .avatar { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 50%; background: var(--green-soft); color: var(--green); font-weight: 700; }
+      main { max-width: 1270px; margin: 0 auto; padding: 38px 36px 72px; }
+      .eyebrow { margin: 0 0 6px; color: var(--green); font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+      .heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; }
+      h1 { margin: 0; font-size: clamp(25px, 3vw, 34px); line-height: 1.12; letter-spacing: -.04em; }
+      .description { margin: 10px 0 0; color: var(--muted); }
+      .primary { min-height: 41px; padding: 0 18px; border: 0; border-radius: 999px; background: var(--green); color: white; font-weight: 700; white-space: nowrap; }
+      .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 30px; }
+      .search { display: flex; align-items: center; gap: 10px; flex: 1 1 315px; min-width: 220px; height: 44px; padding: 0 15px; border: 1px solid #a6b9ac; border-radius: 11px; background: var(--surface); color: var(--muted); }
+      .search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); }
+      .search input::placeholder { color: #65766b; }
+      .secondary { min-height: 42px; padding: 0 15px; border: 1px solid #a6b9ac; border-radius: 10px; background: var(--surface); color: var(--ink); font-weight: 650; white-space: nowrap; }
+      .selected { border-color: var(--green); background: var(--green-soft); color: var(--green); }
+      .active-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 44px; color: var(--muted); font-size: 12px; }
+      .chip { padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 12px; }
+      .results-head { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin: 20px 0 12px; }
+      h2 { margin: 0; font-size: 17px; letter-spacing: -.02em; }
+      .results-head p, .footnote { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+      .view-tabs { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+      .view-tabs span { padding: 5px 9px; border-radius: 7px; color: var(--muted); font-size: 12px; }
+      .view-tabs .current { background: var(--green-soft); color: var(--green); font-weight: 700; }
+      .list { overflow: hidden; border: 1px solid var(--border); border-radius: 15px; background: var(--surface); }
+      .list-header, .record { display: grid; grid-template-columns: minmax(250px, 2.6fr) minmax(130px, 1fr) minmax(145px, 1.2fr) 110px; align-items: center; gap: 18px; padding: 15px 22px; }
+      .list-header { background: #f8faf8; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+      .record { min-height: 79px; border-top: 1px solid var(--border); }
+      .record a { color: var(--ink); font-weight: 700; text-decoration: none; }
+      .record a:hover { color: var(--green); text-decoration: underline; }
+      .record small { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+      .status { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+      .status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+      .waiting { background: var(--amber-soft); color: var(--amber-ink); }
+      .moving { background: var(--blue-soft); color: var(--blue-ink); }
+      .done { background: var(--green-soft); color: var(--green); }
+      .closed { background: var(--gray-soft); color: var(--gray-ink); }
+      .custody, .date { color: var(--muted); font-size: 12px; }
+      .date { text-align: right; font-variant-numeric: tabular-nums; }
+      .priority { color: #aa431e; font-weight: 700; }
+      .list-footer { display: flex; justify-content: space-between; gap: 14px; padding: 15px 22px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+      .pattern-note { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px; }
+      .note { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: #fbfcfb; }
+      .note strong { display: block; margin-bottom: 5px; font-size: 12px; }
+      .note p { margin: 0; color: var(--muted); font-size: 12px; }
+      @media (max-width: 1050px) { .workspace { grid-template-columns: 68px minmax(0, 1fr); } aside { padding-inline: 10px; } .brand { padding: 0 8px 25px; } .brand > div:last-child, nav h2, nav a { font-size: 0; } nav a { justify-content: center; padding: 0; } nav a span { font-size: 18px; } .list-header, .record { grid-template-columns: minmax(220px, 2.5fr) minmax(120px, 1fr) minmax(120px, 1fr); } .list-header > :last-child, .date { display: none; } }
+      @media (max-width: 700px) { .workspace { display: block; } aside { display: none; } .topbar { min-height: 52px; padding: 0 18px; } .topbar-right span { display: none; } main { padding: 27px 18px 56px; } .heading { align-items: start; flex-direction: column; gap: 16px; } .toolbar { margin-top: 25px; } .search { flex-basis: 100%; } .list-header { display: none; } .record { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 16px; } .record > div:first-child { grid-column: 1 / -1; } .custody { grid-column: 1 / -1; } .record small { margin-top: 3px; } .pattern-note { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="draft-banner">DESIGN DRAFT · Fictional records · Static preview, not the live DTS app</div>
+    <div class="workspace">
+      <aside aria-label="Preview navigation">
+        <div class="brand"><div class="brand-mark">D</div><div>DTS<small>Records workspace</small></div></div>
+        <nav aria-label="Main navigation">
+          <a href="#dashboard"><span aria-hidden="true">◫</span>Dashboard</a>
+          <a href="#documents" aria-current="page"><span aria-hidden="true">▤</span>Documents</a>
+          <a href="#my-work"><span aria-hidden="true">▣</span>My work</a>
+          <a href="#reports"><span aria-hidden="true">▥</span>Reports</a>
+          <h2>Administration</h2>
+          <a href="#audit"><span aria-hidden="true">≡</span>Audit trail</a>
+        </nav>
+      </aside>
+      <div class="main-wrap">
+        <div class="topbar"><span class="crumb">Workspace / Documents</span><div class="topbar-right"><span>Illustrative account</span><div class="avatar" aria-hidden="true">IA</div></div></div>
+        <main id="documents">
+          <p class="eyebrow">Registry</p>
+          <div class="heading">
+            <div><h1>Documents</h1><p class="description">Find records in your authorized scope and follow their progress.</p></div>
+            <button class="primary" type="button" title="Illustrative control">+ Register document</button>
+          </div>
+          <div class="toolbar" role="group" aria-label="Illustrative registry controls">
+            <label class="search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search title, tracking number, sender" aria-label="Search documents" /></label>
+            <button class="secondary selected" type="button">Status ▾</button>
+            <button class="secondary" type="button">Currently with ▾</button>
+            <button class="secondary" type="button">More filters ▾</button>
+          </div>
+          <div class="active-filters"><strong>Active filters</strong><span class="chip">In process ×</span><span class="chip">For signature ×</span><span>Clear all</span></div>
+          <div class="results-head"><div><h2>Records <span style="color: var(--muted); font-weight: 500">24</span></h2><p>Sorted by most recently registered</p></div><div class="view-tabs" aria-label="Illustrative list view"><span>Cards</span><span class="current">Table</span><span>Lines</span></div></div>
+          <div class="list" aria-label="Fictional document list">
+            <div class="list-header"><span>Document</span><span>Status</span><span>Currently with</span><span style="text-align: right">Registered</span></div>
+            <div class="record"><div><a href="#record-1">Regional operations summary</a><small>DTS-2026-000184 · Incoming</small></div><span class="status moving">In process</span><span class="custody">Planning Division</span><span class="date">4 Oct 2026</span></div>
+            <div class="record"><div><a href="#record-2">Quarterly resource request</a><small>DTS-2026-000183 · Outgoing · <span class="priority">High priority</span></small></div><span class="status waiting">For signature</span><span class="custody">Office of the Director</span><span class="date">3 Oct 2026</span></div>
+            <div class="record"><div><a href="#record-3">Field activity memorandum</a><small>DTS-2026-000182 · Incoming</small></div><span class="status done">Signed</span><span class="custody">Records Section</span><span class="date">2 Oct 2026</span></div>
+            <div class="record"><div><a href="#record-4">Interagency correspondence</a><small>DTS-2026-000181 · Outgoing</small></div><span class="status closed">Archived</span><span class="custody">Records Section</span><span class="date">1 Oct 2026</span></div>
+            <div class="list-footer"><span>Showing 1–4 of 24 fictional records</span><span>Page 1 of 6　‹　›</span></div>
+          </div>
+          <p class="footnote" style="margin-top: 10px">Concept only. Search, filters, links, views, and pagination do not connect to the application.</p>
+          <div class="pattern-note" aria-label="Design notes"><div class="note"><strong>Clear next step</strong><p>One emphasized creation action; quieter browsing controls keep records in focus.</p></div><div class="note"><strong>Workflow language</strong><p>Status, direction, custody, and priority remain readable without relying on color.</p></div><div class="note"><strong>Adaptive layout</strong><p>The same record summary reflows into a stacked reading order on narrow screens.</p></div></div>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>
