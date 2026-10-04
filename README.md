@@ -98,8 +98,15 @@ Linux container, and a CRLF copy stops clamd from starting (see
 | `WEB_ORIGIN`                            | the public URL of the web app, e.g. `https://dts.example.gov.ph`. CORS allows only this |
 | `PUBLIC_API_URL`                        | the public API base the browser calls, e.g. `https://dts.example.gov.ph/api/v1`         |
 | `SEED_ADMIN_PASSWORD`                   | the first administrator's password                                                      |
+| `TRUST_PROXY`                           | `1` for one reverse proxy, or its IP/CIDR. Required behind HTTPS termination, see below |
 
 `PUBLIC_API_URL` is compiled into the web bundle, so changing it later means rebuilding `web`.
+
+`TRUST_PROXY` tells the API which hop in front of it may report the real client address through
+`X-Forwarded-For`. Left unset (the default, right for local work) every request appears to come
+from the reverse proxy, so the whole office shares one 120/min rate-limit bucket and one 5/min
+login window, and login audit events record the proxy's address. `true` is refused at boot,
+because it would trust an address the client wrote itself.
 
 **3. Build and start.**
 

@@ -11,6 +11,7 @@ import {
   type SubmitAccountRequestInput,
 } from '@dts/contracts';
 import { AuthGuard } from '../../common/auth.guard.js';
+import { clientIpTracker } from '../../common/client-throttler.guard.js';
 import { CsrfGuard } from '../../common/csrf.guard.js';
 import { CurrentUser } from '../../common/current-user.decorator.js';
 import type { RequestUser } from '../../common/request-user.js';
@@ -29,7 +30,7 @@ export class AccountRequestsController {
    * posting the form themselves.
    */
   @Post()
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Throttle({ default: { limit: 3, ttl: 60_000, getTracker: clientIpTracker } })
   async submit(
     @Body(new ZodValidationPipe(submitAccountRequestSchema)) input: SubmitAccountRequestInput,
     @Ip() sourceIp: string,

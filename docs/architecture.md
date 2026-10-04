@@ -232,10 +232,20 @@ corresponding object is a corrupt system. Single host means no automatic failove
 restore-from-backup _is_ the availability plan, which is why the phase-7 recovery rehearsal is not
 optional.
 
-Configuration is eighteen environment variables validated at boot by
+Configuration is nineteen environment variables validated at boot by
 [environment.ts](../apps/api/src/config/environment.ts), which refuses to start on
 `NODE_ENV=production` with `COOKIE_SECURE=false`, on `SameSite=None` combined with an insecure
 cookie, or on a `SESSION_SECRET` shorter than 32 characters.
+
+**Behind the ingress.** The pilot is reached through TLS ingress (CONTEXT.md decision 136), so
+without help every request appears to come from the ingress address. `TRUST_PROXY` tells Express
+which hops may speak for the client through `X-Forwarded-For`: a hop count (`1` for one ingress)
+or the ingress addresses/CIDRs. It defaults to off, which ignores the header — correct for local
+development, wrong for the pilot, where the whole office would then share one 120/min bucket and
+one 5/min login window. `true` is refused at boot, because trusting every hop makes the left-most,
+client-written entry the address the API rate-limits and audits. Rate-limit buckets are keyed per
+signed-in user (the session is verified in the global guard) and otherwise per client address;
+login and account requests stay keyed per client address regardless of any session cookie.
 
 ## 9 · Security posture
 
