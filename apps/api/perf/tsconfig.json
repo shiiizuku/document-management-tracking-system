@@ -1,0 +1,12 @@
+{
+  "//": "Its own project because it imports the E2E suite's organization tree from apps/e2e, which sits outside the API's rootDir. Typechecked by `npm run typecheck`, never built.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "noEmit": true,
+    "incremental": false,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["./**/*.ts"]
+}

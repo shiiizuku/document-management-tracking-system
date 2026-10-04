@@ -98,7 +98,7 @@ read them before adding a list, a report or anything that resolves a reference.
 | workflow              | **DONE** (pure FSM, tested)              | Persist transitions to `workflow_events`; transactional version bump |
 | authorization         | **DONE** (pure RBAC/scope, tested)       | Enforce over _persisted_ users/divisions/sections                   |
 | auth / session        | **DONE** (Postgres users, JWT + bcrypt)  | —                                                                   |
-| documents / search    | **Postgres-backed** (Phase 2–3)          | UI **built** (registry list/filters/sort/pagination/search, create, detail+timeline, metadata edit, forward/route, delete/restore, routing slip). Remaining: the indexes exist (`documents_scope_status_idx`, `documents_created_at_idx`, `document_routes_unaccepted_idx`, `document_references_incoming_idx`); what is missing is an `EXPLAIN` pass over pilot-sized data to confirm they are the right ones |
+| documents / search    | **Postgres-backed** (Phase 2–3)          | UI **built** (registry list/filters/sort/pagination/search, create, detail+timeline, metadata edit, forward/route, delete/restore, routing slip). The `EXPLAIN` pass over pilot-sized data (60,000 documents, D1) found one missing index. Nothing on `document_routes` led with `document_id`, so the custody filters and the dashboard's division chart took more than 30 s. Migration `0011` fixes that, and every critical read is now under 300 ms (`docs/evidence/d1-query-plans.md`) |
 | files / versions      | **Postgres metadata + MinIO storage + ClamAV auto-scan** (Phase 4) | UI **built** (upload, scan-status badges, gated download, inline preview of CLEAN PDFs/images). Remaining: — |
 | notifications         | **Postgres in-tx + outbox relay/worker + realtime WS** (Phase 5) | UI **built** (inbox, unread badge, mark-read, live WS updates). Remaining: reconnect catch-up — the socket reconnects but invalidates nothing on `connect`, so events missed while down wait for the next refetch |
 | reports / print       | **Postgres data + real XLSX/PDF** (Phase 6) | Reports UI **built** (month view + XLSX/PDF export), routing-slip download, audit-trail viewer, scope-aware dashboard. Remaining: — |
@@ -612,15 +612,16 @@ Pull from this list whenever a slice above reaches "verify."
         without them (ADR-0006). `director@dts.local` is now a local convenience that production
         cannot reach by forgetting to configure anything.
 
-      _Remaining, and a real code change:_
-      - **Audit retention (P-08)** — 5-year retain-then-relocate is decided; the code retains
-        everything in the primary database with no window and no relocation path. Nothing to decide,
-        only to build.
+      - ~~**Audit retention (P-08)**~~. Wave D (D4) built the relocation path,
+        `npm run audit:relocate`. It verifies each copy in the archive before it deletes the
+        original. Migration `0012` makes `audit_events` refuse `UPDATE`, and refuse `DELETE`/`TRUNCATE`
+        outside that path. `audit-relocation.test.ts` fails if another purge path appears. IT
+        operations still has to name the archive host (`AUDIT_ARCHIVE_DATABASE_URL`).
 - [ ] (2h) Runbooks for the remaining failure modes. _Done-when:_ each has a rehearsed runbook.
       _(`docs/runbooks/backup-restore.md` exists; incident response, scanner-down and Redis-loss do
       not.)_
 
 ---
 
-_No unresolved policy is encoded as permanent behavior. Audit retention remains preserve-by-default
-for development only, with no automated purge, until the M6 policy box above is resolved._
+_No unresolved policy is encoded as permanent behavior. Audit retention is P-08 as decided: five
+years in the primary, then relocation to a separate database, never purged (D4)._

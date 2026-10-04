@@ -180,10 +180,19 @@ export const seedOrganization = async (): Promise<void> => {
 export const truncateDocuments = async (): Promise<void> => {
   assertSafeTarget(databaseUrl());
   await withClient(databaseUrl(), async (client) => {
+    /*
+     * `audit_events` refuses TRUNCATE unless `dts.allow_audit_removal` is set (migration 0012,
+     * policy P-08). This reset is one of the two places allowed to set it — the database is
+     * disposable by construction — and `audit-relocation.test.ts` fails if a third appears.
+     * `SET LOCAL` keeps the override inside this one transaction.
+     */
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL dts.allow_audit_removal = 'on'`);
     await client.query(
       `TRUNCATE TABLE documents, notifications, audit_events, outbox_events,
          reference_counters, document_sequences RESTART IDENTITY CASCADE`,
     );
+    await client.query('COMMIT');
   });
 };
 

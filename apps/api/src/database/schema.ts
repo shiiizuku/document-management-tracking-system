@@ -415,6 +415,15 @@ export const documentRoutes = pgTable(
       table.toSectionId,
       table.documentId,
     ),
+    /*
+     * Backs every per-document read of the hops: the current-lead-hop subquery behind
+     * `custodyDivisionId` / `custodySectionId` (a backward scan that stops at the first lead hop)
+     * and the routing slip's ascending list. Neither index above leads with the document, so before
+     * migration 0011 each of those subqueries scanned the whole table once per document — D1's
+     * EXPLAIN pass measured the registry's division filter at about ninety seconds on pilot-sized
+     * data (`docs/evidence/d1-query-plans.md`).
+     */
+    index('document_routes_document_idx').on(table.documentId, table.createdAt, table.id),
   ],
 );
 
