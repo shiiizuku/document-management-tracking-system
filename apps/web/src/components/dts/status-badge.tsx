@@ -55,6 +55,7 @@ export function StatusBadge({
 }: Readonly<{ status: WorkflowStatus; className?: string }>) {
   return (
     <span
+      data-slot="status-badge"
       className={cn(
         'inline-block rounded-xl px-2 py-1 text-[10px] font-bold whitespace-nowrap',
         STATUS_TONES[status] ?? 'bg-secondary text-secondary-foreground',
@@ -78,7 +79,14 @@ const PRIORITY_TONES: Record<DocumentPriority, string> = {
 };
 
 export function PriorityLabel({ priority }: Readonly<{ priority: DocumentPriority }>) {
-  return <span className={cn('text-[10px] font-bold', PRIORITY_TONES[priority])}>{priority}</span>;
+  return (
+    <span
+      data-slot="priority-label"
+      className={cn('text-[10px] font-bold', PRIORITY_TONES[priority])}
+    >
+      {priority}
+    </span>
+  );
 }
 
 /** `FOI_REQUEST` reads as "FOI request"; `SPECIAL_ORDER` as "Special order". */

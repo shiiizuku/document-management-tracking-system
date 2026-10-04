@@ -77,6 +77,7 @@ export function ListShell({
   return (
     <div className={cn('space-y-3', className)}>
       <div
+        data-slot={framed ? 'list-frame' : 'list-body'}
         className={cn(
           'transition-opacity',
           framed && 'overflow-x-auto rounded-lg border border-border bg-card',

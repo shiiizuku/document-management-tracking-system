@@ -2,7 +2,7 @@
 
 Open `/ui-draft` in the web app to review this read-only concept. It is isolated from the production navigation and uses five fictional records dated relative to **4 October 2026**. It makes no API requests and submits no workflow actions.
 
-The draft uses the repository's existing shadcn UI components and theme. It explores:
+The draft uses the repository's owned UI components and follows the selected shadcn or M3 Expressive appearance. It explores:
 
 - A registry with visible search, advanced filters, removable filter chips, and table, card, and compact line layouts.
 - A “My work” view ordered by due date, with overdue and due-today labels.

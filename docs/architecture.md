@@ -133,7 +133,7 @@ correlation-ID middleware, a PII-redacting structured logger, and the Zod pipe.
 | Layer           | Choice                                                     |
 | --------------- | ---------------------------------------------------------- |
 | Framework    | Next.js 16 App Router, React 19                       |
-| Styling      | Tailwind v4 (`@tailwindcss/postcss`) with shadcn/ui    |
+| Styling      | Tailwind v4 (`@tailwindcss/postcss`) with shadcn/ui and an M3 Expressive appearance |
 | Server state | TanStack Query 5                                      |
 | Realtime     | socket.io-client                                      |
 | Feedback     | sonner toasts plus skeletons                          |
@@ -141,7 +141,7 @@ correlation-ID middleware, a PII-redacting structured logger, and the Zod pipe.
 | Tests        | Vitest + Testing Library + jsdom                      |
 
 **The rebuild is done** (F0–F2 of [frontend-rebuild-plan.md](audits/frontend-rebuild-plan.md)): `DtsApp` and
-the bespoke `globals.css` are gone, there is one design system, and every surface the MVP boundary
+the bespoke `globals.css` are gone, and every surface the MVP boundary
 names is routed. Two App Router groups divide the app by who may enter:
 
 - `app/(public)` — sign in, and the account request form.
@@ -155,6 +155,11 @@ own query keys _and_ its invalidation, so screens never see a cache key and the 
 can invalidate a document without knowing how documents are cached. The shared list components
 (`DataTable`, `FilterBar`, `PageHeader`, `EmptyState`) are in `src/components/dts/`, and the
 shadcn primitives they are built from are owned source in `src/components/ui/`.
+
+The UI selector in the public forms and authenticated shell saves `shadcn` or `md3` per browser,
+independently of the light/dark setting. The root layout applies both choices before paint. The
+M3 Expressive treatment lives in `app/md3-expressive.css` and covers the owned controls and DTS
+compositions; it keeps their React and Radix behavior, forms, queries, and authorization paths.
 
 Capabilities come from the `capabilities[]` that `/auth/me` returns — the client never derives
 authority from `role`. The same list gates the navigation, whose administrative group disappears

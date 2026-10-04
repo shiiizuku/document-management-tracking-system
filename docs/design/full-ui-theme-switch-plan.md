@@ -1,14 +1,21 @@
 # Full shadcn/ui and Material 3 Expressive switch — implementation plan
 
-**Status:** Proposed, not implemented  
+**Status:** Initial app-wide switch implemented; route-by-route visual review remains
+
 **Scope:** DTS web client (`apps/web`)  
 **Outcome:** A user can switch the entire web UI between shadcn/ui and Google's Material 3 Expressive (M3 Expressive), independently of light, dark, or system color mode.
+
+**Implementation note:** The current switch uses system-specific tokens and component treatments
+selected by `data-design-system` on `<html>`. Both modes share React and Radix behavior to keep
+forms, focus, and workflow state mounted during a switch. The remaining review is visual and
+interaction parity on authenticated routes and overlays against live data; the public pages have
+been browser checked.
 
 ## What “full switch” means
 
 The selection changes component shape, structure, typography, spacing, color roles, motion, state treatment, navigation, tables, forms, and overlays. It is not a CSS palette swap or a return to the older MD3 skin. The same routes, records, validation, permissions, API operations, and workflow outcomes remain available in both systems. A shadcn control must not appear in the M3 Expressive interface except where a browser-native control is intentionally shared (for example, the file picker); the converse also applies.
 
-The first release covers every production route and global surface. `/ui-draft` is a read-only shadcn concept and remains explicitly labeled as such unless it is separately redesigned. Both systems support light, dark, and system color mode. The initial M3 Expressive palette uses the project's existing sage identity; accent and density customization from the retired MD3 appearance UI are **not** part of this first switch unless separately approved. “Full” means full coverage of components the application actually uses, not adding every component in Google's catalog without a product use.
+The first release covers every production route and global surface. `/ui-draft` is a read-only concept that follows the selected appearance; it does not submit workflow actions. Both systems support light, dark, and system color mode. The initial M3 Expressive palette uses the project's existing sage identity; accent and density customization from the retired MD3 appearance UI are **not** part of this first switch unless separately approved. “Full” means full coverage of components the application actually uses, not adding every component in Google's catalog without a product use.
 
 ## Current baseline and constraints
 
@@ -33,9 +40,9 @@ Put a labeled design-system selector beside the current light/dark control in th
 
 Keep domain queries, API transport, URL filter/page state, capability checks, React Hook Form/Zod schemas, mutation and invalidation logic, and realtime behavior outside the design-system boundary. Define a small shared UI contract only where two implementations really need the same props. Preserve current public import paths initially so migration can be incremental.
 
-Move the existing shadcn source without changing its behavior, then add separate owned M3 Expressive implementations. A theme-aware `components/ui` entry point can select corresponding controls. Compound components (Dialog, Select, DropdownMenu, Sheet, Form) need one consistent implementation per subtree; test their portals, refs, `asChild` behavior, controlled state, and form registration. Do not create thin wrappers for every primitive merely to hide filenames: only expose contracts that real callers share.
+Keep the owned React/Radix behavior and use the root design-system attribute to select complete component treatments. This avoids remounting forms, dialogs, inputs and workflow state when the user switches designs. Compound components (Dialog, Select, DropdownMenu, Sheet, Form) still need visual and interaction review as complete subtrees, including portals, refs, `asChild` behavior, controlled state, and form registration. Extract a separate renderer only where the M3 Expressive structure truly differs; do not create thin wrappers merely to hide filenames.
 
-For larger DTS compositions, use a shared controller or data model with two renderers where layout differs materially. Examples are `AppShell`, `DataTable`, `FilterBar`, `DocumentCards`/`DocumentLines`, `PageHeader`, `EmptyState`, status and priority indicators, and skeletons. Split a screen's data and actions from presentation only as needed; do not duplicate queries and mutation handlers across two full screen files. Preserve document links, sort semantics, pagination, list-view preference, filtering, and server-authorized actions.
+For larger DTS compositions, use the same shared component with system-specific treatments where the layout can retain its structure. Examples are `AppShell`, `DataTable`, `FilterBar`, `DocumentCards`/`DocumentLines`, `PageHeader`, `EmptyState`, status and priority indicators, and skeletons. Split a screen's data and actions from presentation only when a different structure is necessary; do not duplicate queries and mutation handlers across two full screen files. Preserve document links, sort semantics, pagination, list-view preference, filtering, and server-authorized actions.
 
 ### 3. M3 Expressive foundations and component mapping
 
@@ -100,6 +107,6 @@ Track the inventory in a checklist during implementation: each route and overlay
 
 1. **Confirmed by request:** The switch selects complete shadcn and Google's Material 3 Expressive component experiences; light/dark is independent.
 2. **Proposed default:** Existing users stay on shadcn; design preference is per browser.
-3. **Proposed M3 Expressive implementation:** Owned React components, with existing Radix behavior where suitable, because the official Material Web package is in maintenance mode and the current app is already React/Radix based.
+3. **M3 Expressive implementation:** Owned component treatments on existing React/Radix behavior, because the official Material Web package is in maintenance mode and the current app is already React/Radix based. Introduce separate structural renderers only for patterns that require them.
 4. **Open product choice:** Whether to restore older MD3 accent and density controls later. They are excluded from the first release so that the requested two-system switch has a clear completion boundary.
 

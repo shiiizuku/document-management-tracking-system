@@ -252,3 +252,7 @@ The backend is feature-complete through phase 6 and persisted to Postgres — th
 run against real infrastructure. The frontend is partially built and mid-rebuild on shadcn/ui
 (`docs/audits/frontend-rebuild-plan.md`). See `docs/IMPLEMENTATION_STATUS.md` for the exact boundary; the
 repository does not claim pilot readiness.
+
+The web UI has a per-browser selector for shadcn/ui or Material 3 Expressive on the sign-in,
+request-account, and authenticated screens. It is independent of the light/dark control and does
+not change document data or permissions.
