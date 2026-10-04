@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import './theme.css';
+import './md3-expressive.css';
 import { AppProviders } from '@/components/app-providers';
-const themeBootScript = `(function(){try{var t=localStorage.getItem('dts.theme');if(!t){var old=JSON.parse(localStorage.getItem('dts.appearance')||'null');t=old&&old.mode;}var dark=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',dark);}catch(e){}})();`;
+const themeBootScript = `(function(){var root=document.documentElement;try{var t=localStorage.getItem('dts.theme');if(!t){var old=JSON.parse(localStorage.getItem('dts.appearance')||'null');t=old&&old.mode;}var dark=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);root.classList.toggle('dark',dark);root.dataset.designSystem=localStorage.getItem('dts.design-system.v1')==='md3'?'md3':'shadcn';}catch(e){root.dataset.designSystem='shadcn';}})();`;
 
 /*
  * Inter, from two files committed under `app/fonts` (see the README beside them).

@@ -23,7 +23,7 @@ export function PageHeader({
   actions?: ReactNode;
 }>) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-4">
+    <header data-slot="page-header" className="flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         <p className="eyebrow">{eyebrow}</p>
         <h1 className="mt-1 flex items-baseline gap-2 text-3xl text-foreground">

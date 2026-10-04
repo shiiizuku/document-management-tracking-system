@@ -157,7 +157,7 @@ const sectionHref = (section: Section): string =>
 const recordHref = (id: string, section: Section): string =>
   `/ui-draft?record=${encodeURIComponent(id)}${section === 'work' ? '&view=work' : ''}`;
 
-/** A standalone, read-only review surface composed only from the repository's shadcn UI kit. */
+/** A standalone, read-only review surface using the selected UI treatment. */
 export function UiDraft() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -214,7 +214,7 @@ export function UiDraft() {
             </span>
             <div>
               <p className="font-semibold leading-tight">Records workspace</p>
-              <p className="text-xs text-muted-foreground">Shadcn UI concept</p>
+              <p className="text-xs text-muted-foreground">Design preview</p>
             </div>
           </div>
           <Badge variant="outline">Draft · sample date 4 Oct 2026 · read only</Badge>

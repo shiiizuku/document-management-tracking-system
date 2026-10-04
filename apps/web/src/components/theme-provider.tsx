@@ -3,13 +3,25 @@
 import * as React from 'react';
 
 type Theme = 'light' | 'dark' | 'system';
+export type DesignSystem = 'shadcn' | 'md3';
 type ThemeContext = {
   theme: Theme;
   resolvedTheme: 'light' | 'dark';
   setTheme: (theme: Theme) => void;
+  designSystem: DesignSystem;
+  setDesignSystem: (system: DesignSystem) => void;
 };
 const ThemeContext = React.createContext<ThemeContext | null>(null);
 const STORAGE_KEY = 'dts.theme';
+export const DESIGN_SYSTEM_STORAGE_KEY = 'dts.design-system.v1';
+
+function storedDesignSystem(): DesignSystem {
+  try {
+    return window.localStorage.getItem(DESIGN_SYSTEM_STORAGE_KEY) === 'md3' ? 'md3' : 'shadcn';
+  } catch {
+    return 'shadcn';
+  }
+}
 
 function storedTheme(): Theme {
   try {
@@ -28,11 +40,13 @@ function storedTheme(): Theme {
 
 export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [theme, setThemeState] = React.useState<Theme>('system');
+  const [designSystem, setDesignSystemState] = React.useState<DesignSystem>('shadcn');
   const [systemDark, setSystemDark] = React.useState(false);
   const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
     setThemeState(storedTheme());
+    setDesignSystemState(storedDesignSystem());
     const media = window.matchMedia?.('(prefers-color-scheme: dark)');
     if (!media) {
       setReady(true);
@@ -51,6 +65,11 @@ export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode
     document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
   }, [ready, resolvedTheme]);
 
+  React.useEffect(() => {
+    if (!ready) return;
+    document.documentElement.dataset.designSystem = designSystem;
+  }, [ready, designSystem]);
+
   const setTheme = React.useCallback((next: Theme) => {
     setThemeState(next);
     try {
@@ -60,8 +79,19 @@ export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode
     }
   }, []);
 
+  const setDesignSystem = React.useCallback((next: DesignSystem) => {
+    setDesignSystemState(next);
+    try {
+      window.localStorage.setItem(DESIGN_SYSTEM_STORAGE_KEY, next);
+    } catch {
+      /* Keep this session's choice. */
+    }
+  }, []);
+
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+    <ThemeContext.Provider
+      value={{ theme, resolvedTheme, setTheme, designSystem, setDesignSystem }}
+    >
       {children}
     </ThemeContext.Provider>
   );

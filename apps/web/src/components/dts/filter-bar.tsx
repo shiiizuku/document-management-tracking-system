@@ -115,6 +115,7 @@ export function FilterBar({
 
   return (
     <CollapsiblePrimitive.Root
+      data-slot="filter-bar"
       open={open}
       onOpenChange={setOpen}
       className="rounded-lg border border-border bg-card"

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { RequestAccountForm } from '@/features/admin/request-account-form';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export const metadata: Metadata = {
   title: 'Request an account · Document Tracking System',
@@ -14,7 +15,10 @@ export const metadata: Metadata = {
 export default function RequestAccountPage() {
   return (
     <main className="grid min-h-screen lg:grid-cols-[1.15fr_0.85fr]">
-      <section className="relative hidden flex-col justify-center overflow-hidden bg-primary px-[8vw] py-16 text-primary-foreground lg:flex">
+      <section
+        data-slot="public-story"
+        className="relative hidden flex-col justify-center overflow-hidden bg-primary px-[8vw] py-16 text-primary-foreground lg:flex"
+      >
         {/* The seal. Decorative, so it is hidden from assistive technology. */}
         <span
           className="mb-10 flex size-16 items-center justify-center rounded-full border-2 border-gold/70 text-xl font-semibold tracking-widest"
@@ -52,9 +56,12 @@ export default function RequestAccountPage() {
         />
       </section>
 
-      <section className="grid place-items-center bg-background px-6 py-12">
+      <section data-slot="public-form" className="grid place-items-center bg-background px-6 py-12">
         <div className="w-full max-w-sm">
           <RequestAccountForm />
+          <div className="mt-8">
+            <ThemeToggle />
+          </div>
         </div>
       </section>
     </main>

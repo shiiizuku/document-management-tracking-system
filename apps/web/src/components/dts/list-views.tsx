@@ -105,6 +105,7 @@ export function DocumentCards<Row>({
               return (
                 <li key={key}>
                   <article
+                    data-slot="document-card"
                     data-state={selectedKey === key ? 'selected' : undefined}
                     {...(onRowClick
                       ? {
@@ -192,6 +193,7 @@ export function DocumentLines<Row>({
               const key = rowKey(row);
               return (
                 <li
+                  data-slot="document-line"
                   key={key}
                   data-state={selectedKey === key ? 'selected' : undefined}
                   {...(onRowClick

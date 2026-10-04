@@ -68,6 +68,10 @@
   --priority-high: oklch(0.82 0.11 75);
 }
 
+.dark:not([data-design-system='md3']) [data-slot='public-story'] .text-gold {
+  color: #634500;
+}
+
 @theme inline {
   --font-sans: var(--font-inter), var(--font-inter-ext), system-ui, sans-serif;
   --color-background: var(--background);

@@ -25,6 +25,7 @@ export function EmptyState({
 }>) {
   return (
     <div
+      data-slot="empty-state"
       className={cn(
         'flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card/60 px-6 py-14 text-center',
         className,

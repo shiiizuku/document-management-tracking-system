@@ -79,8 +79,9 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
   const realtime = useRealtimeSync();
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div data-slot="app-shell" className="flex min-h-screen bg-background">
       <aside
+        data-slot="app-sidebar"
         className={cn(
           'sticky top-0 hidden h-screen shrink-0 flex-col border-r border-border bg-card lg:flex',
           'transition-[width] duration-200 ease-in-out',
@@ -112,7 +113,10 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card/95 px-4 backdrop-blur lg:px-8">
+        <header
+          data-slot="app-topbar"
+          className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card/95 px-4 backdrop-blur lg:px-8"
+        >
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon-sm" className="lg:hidden" aria-label="Open menu">
@@ -158,7 +162,9 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 space-y-6 px-4 py-6 lg:px-8">{children}</main>
+        <main data-slot="app-main" className="min-w-0 flex-1 space-y-6 px-4 py-6 lg:px-8">
+          {children}
+        </main>
       </div>
     </div>
   );
@@ -223,7 +229,11 @@ function SidebarNav({
   );
 
   return (
-    <nav aria-label="Primary" className="flex-1 space-y-4 overflow-y-auto p-3">
+    <nav
+      data-slot="app-navigation"
+      aria-label="Primary"
+      className="flex-1 space-y-4 overflow-y-auto p-3"
+    >
       {sections.map((group) => (
         <div key={group.section ?? 'workspace'} className="space-y-1">
           {/*
@@ -243,6 +253,7 @@ function SidebarNav({
             const isCurrent = active === item.href;
             const link = (
               <Link
+                data-slot="navigation-link"
                 key={item.href}
                 href={item.href}
                 onClick={onNavigate}
