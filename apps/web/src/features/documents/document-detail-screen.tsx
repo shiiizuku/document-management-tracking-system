@@ -24,7 +24,7 @@ import { MetadataDialog } from './metadata-dialog';
 import { ReferencesSection } from './references-section';
 import { RouteDialog } from './route-dialog';
 import { RoutingSlipDialog } from './routing-slip-dialog';
-import { currentCustody, useDocument, type DocumentDetail } from './queries';
+import { currentCustody, presentedStatus, useDocument, type DocumentDetail } from './queries';
 
 /** A released or archived document is a closed record: its files no longer change. */
 const isClosed = (document: DocumentDetail) =>
@@ -223,7 +223,7 @@ function LocationBlock({ document }: Readonly<{ document: DocumentDetail }>) {
 
   return (
     <section className="space-y-2">
-      <StatusBadge status={document.status} />
+      <StatusBadge status={presentedStatus(document)} />
       <div>
         <h2 className="text-label-medium tracking-wide text-muted-foreground uppercase">
           Currently with

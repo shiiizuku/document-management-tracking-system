@@ -98,3 +98,88 @@ jobs:
       - run: npm run test:integration -w @dts/api
       - if: always()
         run: docker compose down -v
+
+  # The end-to-end and accessibility suites (Wave C of docs/phase-7-sequencing.md). Same split as
+  # the integration job: the infrastructure comes from compose in a step, and the application runs
+  # as plain Node processes — started, probed and torn down by Playwright's `webServer`. Putting the
+  # api/worker/web into compose instead would mean building two more images per run for no extra
+  # fidelity, and would lose the server logs `webServer` prints when one fails to come up.
+  #
+  # It is a job of its own rather than more steps on `integration`: both want the whole stack, but
+  # this one also wants a build and a browser, and a failure in one should not hide the other.
+  e2e:
+    name: e2e · axe (playwright)
+    runs-on: ubuntu-latest
+    env:
+      # A database of its own, created by the suite's global setup from the `postgres` maintenance
+      # database — so compose's own POSTGRES_DB is left at its default and is never touched. The
+      # name has to contain "e2e" or "test": `fixtures/database.ts` refuses to drop a schema in
+      # anything else, because the seed is destructive.
+      DATABASE_URL: postgresql://dts:dts@localhost:5433/dts_e2e
+      ALLOW_DATABASE_RESET: 'true'
+      REDIS_URL: redis://localhost:6380
+      # As with the integration job: these have to be the credentials MinIO is actually started
+      # with, and the harness deliberately defaults none of them.
+      MINIO_ENDPOINT: http://localhost:9002
+      MINIO_ACCESS_KEY: dts-local
+      MINIO_SECRET_KEY: dts-local1
+      MINIO_BUCKET: dts-files
+      CLAMAV_HOST: localhost
+      CLAMAV_PORT: '3311'
+      SESSION_SECRET: end-to-end-session-secret-at-least-32-characters
+      COOKIE_SECURE: 'false'
+      COOKIE_SAME_SITE: lax
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Everything else resolves `@dts/contracts` through its gitignored `dist/`, so this comes
+      # first here exactly as it does in the other two jobs.
+      - run: npm run build -w @dts/contracts
+
+      # Postgres archives WAL into this path (compose BACKUP_PATH), and the directories are
+      # gitignored, so every archive_command would fail on a clean checkout without them.
+      - run: mkdir -p backups/wal backups/base backups/objects
+
+      # The same cache key as the integration job, so whichever job runs second gets a hit.
+      - name: Restore the MinIO image built from vendored source
+        id: minio-image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/dts-minio-image.tar
+          key: dts-minio-${{ hashFiles('minio/go.sum', 'minio/go.mod', 'minio/Dockerfile.fromsource') }}
+      - if: steps.minio-image.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/dts-minio-image.tar
+      - if: steps.minio-image.outputs.cache-hit != 'true'
+        run: |
+          docker compose build minio
+          docker save dts-minio:from-source -o /tmp/dts-minio-image.tar
+
+      - name: Start the infrastructure
+        run: docker compose up -d --wait --wait-timeout 420 postgres redis minio clamav
+      - if: failure()
+        run: docker compose logs --tail 100 clamav minio
+
+      # The suites run the built artefacts, not `tsx` or `next dev`: the point is to exercise what
+      # ships. `global-setup.ts` refuses to start without them.
+      - run: npm run build
+
+      # Chromium only. The browser matrix is a separate box; one engine is what C4 needs and it
+      # keeps the download to one browser rather than three.
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run test:e2e -w @dts/e2e
+
+      # The report carries the axe findings for every screen, including the `serious` ones the
+      # sweep records without failing on, plus a trace for anything that broke.
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/e2e/playwright-report/
+          retention-days: 14
+      - if: always()
+        run: docker compose down -v

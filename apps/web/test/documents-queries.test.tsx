@@ -5,11 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_DOCUMENT_FILTERS,
   invalidateDocument,
+  presentedStatus,
   useRunAction,
   useUpdateMetadata,
 } from '../src/features/documents/queries';
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
+import type { RouteEntry } from '../src/features/documents/queries';
 import { documentDetail, documentItem } from './fixtures';
 import { invalidatedKeys, requestBody } from './mock-api';
 
@@ -172,5 +174,50 @@ describe('useUpdateMetadata', () => {
       expectedVersion: 3,
       sender: null,
     });
+  });
+});
+
+/*
+ * Decision 154: registration confers no custody, so a document is Pending while its lead hop is
+ * unaccepted even though the column says IN_PROCESS. The rail showed the column alone, which put
+ * "In process" beside an "Accept custody" button — found by performing
+ * `docs/acceptance-scenarios.md` §2.1 end to end.
+ */
+describe('presentedStatus', () => {
+  const hop = (overrides: Partial<RouteEntry> = {}): RouteEntry => ({
+    id: 'route-1',
+    fromDivisionId: null,
+    toDivisionId: 'division-a',
+    toSectionId: null,
+    routedById: 'user-1',
+    remarks: null,
+    forInformation: false,
+    acceptedAt: null,
+    acceptedById: null,
+    createdAt: '2026-10-04T00:00:00.000Z',
+    ...overrides,
+  });
+
+  it('reads Pending while the lead hop is unaccepted', () => {
+    expect(presentedStatus(documentDetail({ status: 'IN_PROCESS', routes: [hop()] }))).toBe(
+      'PENDING',
+    );
+  });
+
+  it('reads the stored status once the lead hop is accepted', () => {
+    const accepted = hop({ acceptedAt: '2026-10-04T01:00:00.000Z', acceptedById: 'user-2' });
+    expect(presentedStatus(documentDetail({ status: 'IN_PROCESS', routes: [accepted] }))).toBe(
+      'IN_PROCESS',
+    );
+  });
+
+  // A copy is never waited on (decisions 159–160), so it cannot hold the badge at Pending after
+  // the lead has accepted and acted.
+  it('ignores an unacknowledged for-information copy', () => {
+    const lead = hop({ acceptedAt: '2026-10-04T01:00:00.000Z', acceptedById: 'user-2' });
+    const copy = hop({ id: 'route-2', toDivisionId: 'division-c', forInformation: true });
+    expect(presentedStatus(documentDetail({ status: 'COMPLIED', routes: [lead, copy] }))).toBe(
+      'COMPLIED',
+    );
   });
 });
