@@ -183,6 +183,9 @@ const serverEnvironment = (): NodeJS.ProcessEnv => {
     TRUST_PROXY: 'loopback',
     // Production refuses insecure cookies; the generator's jar ignores the flag.
     COOKIE_SECURE: 'true',
+    // Production also refuses an `http:` CORS origin, and the root .env supplies one. The
+    // generator never sends `Origin`, so any HTTPS value will do; it only has to pass validation.
+    WEB_ORIGIN: 'https://localhost:3001',
     DIRECTOR_EMAIL: ACCOUNTS.director.email,
     DIRECTOR_PASSWORD: ACCOUNTS.director.password,
   };
