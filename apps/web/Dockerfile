@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 ARG NEXT_PUBLIC_API_URL=http://localhost:4001/api/v1
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
@@ -13,7 +13,7 @@ COPY packages/contracts packages/contracts
 COPY apps/web apps/web
 RUN npm run build -w @dts/contracts && npm run build -w @dts/web
 
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 ENV NODE_ENV=production
 # As in the API image: the server is started with `node`, so npm and its dependencies — the only
 # packages Trivy flagged here (D6) — are removed rather than shipped unused.
