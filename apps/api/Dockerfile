@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
@@ -15,7 +15,7 @@ RUN npm run build -w @dts/contracts && npm run build -w @dts/api
 # attacker could reach (D6).
 RUN npm prune --omit=dev
 
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 ENV NODE_ENV=production
 # The runtime starts `node` directly and never installs anything, so the package managers the base
 # image bundles are removed: every finding Trivy reported in this image's OS layer was in npm's own
