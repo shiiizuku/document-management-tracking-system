@@ -20,6 +20,7 @@ import type {
   PlacementResult,
   RecordedRelease,
   ReferenceDocumentSummary,
+  ReleaseCarrierRow,
   ReleaseMethodRow,
   RoutingSlipRoute,
   SignatureEventRow,
@@ -28,23 +29,36 @@ import type {
 const now = () => new Date();
 
 /*
- * The same six methods migration 0010 seeds, because the release path reads its method from the
- * repository now rather than from an enum (policy register P-15) — a double that served none
- * would make every `RELEASE` in these suites a 400. Timestamps are fixed: nothing asserts on them
- * and a stable value keeps snapshots quiet.
+ * The same four methods and three carriers migrations 0010 and 0013 leave, because the release
+ * path reads them from the repository rather than from an enum (policy register P-15) — a double
+ * that served none would make every `RELEASE` in these suites a 400. Timestamps are fixed: nothing
+ * asserts on them and a stable value keeps snapshots quiet.
  */
 const RELEASE_METHOD_ROWS: ReleaseMethodRow[] = [
+  ['MAILED', 'Mailed', true],
   ['EMAILED', 'Emailed', false],
-  ['POSTAL', 'Postal', false],
-  ['LBC', 'LBC', true],
-  ['JRS', 'JRS', true],
-  ['PICKED_UP', 'Picked up', false],
   ['PERSONALLY_DELIVERED', 'Personally delivered', false],
-].map(([code, label, requiresTrackingReference], index) => ({
+  ['PICKED_UP', 'Picked up', false],
+].map(([code, label, requiresCarrier], index) => ({
   id: `release-method-${String(code).toLowerCase()}`,
   code: code as string,
   label: label as string,
-  requiresTrackingReference: requiresTrackingReference as boolean,
+  requiresCarrier: requiresCarrier as boolean,
+  active: true,
+  sortOrder: index + 1,
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+}));
+
+const RELEASE_CARRIER_ROWS: ReleaseCarrierRow[] = [
+  ['POSTAL', 'Postal'],
+  ['LBC', 'LBC'],
+  ['JRS', 'JRS'],
+].map(([code, label], index) => ({
+  id: `release-carrier-${String(code).toLowerCase()}`,
+  code: code as string,
+  label: label as string,
+  requiresTrackingReference: true,
   active: true,
   sortOrder: index + 1,
   createdAt: new Date(0),
@@ -280,18 +294,49 @@ export class InMemoryDocumentsRepository {
     documentId: string;
     releasedById: string;
     methodId: string;
+    carrierId: string | null;
     trackingReference: string | null;
   }): Promise<void> {
     const method = RELEASE_METHOD_ROWS.find((row) => row.id === event.methodId);
     if (method === undefined) throw new Error(`Unknown release method id: ${event.methodId}`);
+    const carrier = RELEASE_CARRIER_ROWS.find((row) => row.id === event.carrierId);
     this.releases.set(event.documentId, {
-      id: method.id,
       code: method.code,
       label: method.label,
-      requiresTrackingReference: method.requiresTrackingReference,
+      requiresCarrier: method.requiresCarrier,
+      carrier: carrier === undefined ? null : { code: carrier.code, label: carrier.label },
       trackingReference: event.trackingReference,
     });
     return Promise.resolve();
+  }
+
+  recordReleaseCarrier(
+    documentId: string,
+    carrierId: string,
+    trackingReference: string | null,
+  ): Promise<boolean> {
+    const release = this.releases.get(documentId);
+    const carrier = RELEASE_CARRIER_ROWS.find((row) => row.id === carrierId);
+    if (release === undefined || release.carrier !== null || carrier === undefined)
+      return Promise.resolve(false);
+    this.releases.set(documentId, {
+      ...release,
+      carrier: { code: carrier.code, label: carrier.label },
+      trackingReference,
+    });
+    return Promise.resolve(true);
+  }
+
+  /** Test seam: a mailed release as migration 0013 leaves a pre-carrier one — no carrier. */
+  seedReleaseWithoutCarrier(documentId: string): void {
+    const mailed = RELEASE_METHOD_ROWS.find((row) => row.code === 'MAILED')!;
+    this.releases.set(documentId, {
+      code: mailed.code,
+      label: mailed.label,
+      requiresCarrier: true,
+      carrier: null,
+      trackingReference: null,
+    });
   }
 
   findReleaseMethod(documentId: string): Promise<RecordedRelease | null> {
@@ -306,6 +351,21 @@ export class InMemoryDocumentsRepository {
 
   findActiveReleaseMethodByCode(code: string): Promise<ReleaseMethodRow | null> {
     const row = RELEASE_METHOD_ROWS.find(
+      (candidate) => candidate.code === code && candidate.active,
+    );
+    return Promise.resolve(row === undefined ? null : { ...row });
+  }
+
+  listReleaseCarriers(includeInactive = false): Promise<ReleaseCarrierRow[]> {
+    return Promise.resolve(
+      RELEASE_CARRIER_ROWS.filter((row) => includeInactive || row.active).map((row) => ({
+        ...row,
+      })),
+    );
+  }
+
+  findActiveReleaseCarrierByCode(code: string): Promise<ReleaseCarrierRow | null> {
+    const row = RELEASE_CARRIER_ROWS.find(
       (candidate) => candidate.code === code && candidate.active,
     );
     return Promise.resolve(row === undefined ? null : { ...row });

@@ -22,6 +22,7 @@ import { DeleteDocumentDialog } from './delete-document-dialog';
 import { DocumentActions } from './document-actions';
 import { MetadataDialog } from './metadata-dialog';
 import { ReferencesSection } from './references-section';
+import { ReleaseCarrierDialog } from './release-carrier-dialog';
 import { RouteDialog } from './route-dialog';
 import { RoutingSlipDialog } from './routing-slip-dialog';
 import { currentCustody, presentedStatus, useDocument, type DocumentDetail } from './queries';
@@ -124,6 +125,21 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
             {detail.releaseMethod === null ? null : (
               <Field label="Released by" value={detail.releaseMethod.label} />
             )}
+            {/* Asked only of a mailed release. A blank one predates carriers (migration 0013) and
+                says so rather than showing a dash, because "not recorded" is the fact. */}
+            {detail.releaseMethod?.requiresCarrier === true ? (
+              <div>
+                <dt className="text-xs tracking-wide text-muted-foreground uppercase">Carrier</dt>
+                <dd className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-sm text-foreground">
+                  {detail.releaseMethod.carrier?.label ?? (
+                    <span className="text-muted-foreground">Not recorded</span>
+                  )}
+                  {detail.releaseMethod.carrier === null && can('DOCUMENT_RELEASE_CORRECT') ? (
+                    <ReleaseCarrierDialog document={detail} />
+                  ) : null}
+                </dd>
+              </div>
+            ) : null}
             {detail.releaseMethod?.trackingReference == null ? null : (
               <Field label="Tracking reference" value={detail.releaseMethod.trackingReference} />
             )}
@@ -345,9 +361,21 @@ export function timelineRows(
           transition: null,
         };
 
-    // A for-information recipient can remark but never takes custody, so its row carries no
-    // acceptance even if one were ever stamped on it.
-    if (route.forInformation || route.acceptedAt === null) return [forward];
+    if (route.acceptedAt === null) return [forward];
+    // A for-information recipient never takes custody, so a stamp on its row is an acknowledgement
+    // that it read the copy — drawn as a copy, not as custody (decision 160).
+    if (route.forInformation)
+      return [
+        forward,
+        {
+          key: `${route.id}:acknowledged`,
+          at: route.acceptedAt,
+          title: `Acknowledged by ${to}`,
+          detail: null,
+          transition: null,
+          copy: true,
+        },
+      ];
     return [
       forward,
       {

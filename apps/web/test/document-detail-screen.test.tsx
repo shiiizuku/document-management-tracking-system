@@ -127,6 +127,30 @@ describe('DocumentDetailScreen', () => {
     expect(screen.getByText('Legal Division')).toBeInTheDocument();
   });
 
+  it('shows an acknowledged copy as an acknowledgement, not an acceptance', async () => {
+    serve(
+      documentDetail({
+        routes: [
+          route(),
+          route({
+            id: 'route-2',
+            toDivisionId: 'division-3',
+            forInformation: true,
+            remarks: null,
+            acceptedAt: '2026-09-03T01:00:00.000Z',
+            acceptedById: 'user-3',
+          }),
+        ],
+      }),
+    );
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Acknowledged by Finance Division')).toBeInTheDocument(),
+    );
+    expect(screen.queryByText('Accepted by Finance Division')).not.toBeInTheDocument();
+  });
+
   it('says so when nothing has happened yet', async () => {
     serve(documentDetail({ timeline: [], routes: [] }));
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
@@ -187,23 +211,66 @@ describe('DocumentDetailScreen', () => {
   });
 
   /*
-   * The server resolves the configured method to its label, so this screen prints what it is
-   * given rather than translating a code (policy register P-15) — and the courier's consignment
-   * number is shown beside it, because a release that cannot be traced is not the same record.
+   * The server resolves the configured method and carrier to their labels, so this screen prints
+   * what it is given rather than translating a code (policy register P-15), and the consignment
+   * number is shown beside them, because a release that cannot be traced is not the same record.
    */
-  it('prints the release method by its configured label, with any tracking reference', async () => {
+  it('prints the release method and carrier by their configured labels, with any tracking reference', async () => {
     serve(
       documentDetail({
         status: 'RELEASED',
-        releaseMethod: { code: 'LBC', label: 'LBC', trackingReference: 'LBC-00042' },
+        releaseMethod: {
+          code: 'MAILED',
+          label: 'Mailed',
+          requiresCarrier: true,
+          carrier: { code: 'LBC', label: 'LBC' },
+          trackingReference: 'LBC-00042',
+        },
       }),
     );
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
 
     await waitFor(() => expect(screen.getByText('Released by')).toBeInTheDocument());
+    expect(screen.getByText('Mailed')).toBeInTheDocument();
+    expect(screen.getByText('Carrier')).toBeInTheDocument();
     expect(screen.getByText('LBC')).toBeInTheDocument();
-    expect(screen.getByText('Tracking reference')).toBeInTheDocument();
     expect(screen.getByText('LBC-00042')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record carrier' })).not.toBeInTheDocument();
+  });
+
+  /*
+   * A mailed release recorded before carriers were asked for (migration 0013). It says "not
+   * recorded" rather than a dash, and only someone who may correct it is offered the correction.
+   */
+  const preCarrierRelease = () =>
+    documentDetail({
+      status: 'RELEASED',
+      releaseMethod: {
+        code: 'MAILED',
+        label: 'Mailed',
+        requiresCarrier: true,
+        carrier: null,
+        trackingReference: null,
+      },
+    });
+
+  it('shows a missing carrier as not recorded, offering the correction to records staff', async () => {
+    serve(
+      preCarrierRelease(),
+      sessionUser({ capabilities: ['DOCUMENT_RELEASE', 'DOCUMENT_RELEASE_CORRECT'] }),
+    );
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() => expect(screen.getByText('Not recorded')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Record carrier' })).toBeInTheDocument();
+  });
+
+  it('does not offer the carrier correction without the capability', async () => {
+    serve(preCarrierRelease(), sessionUser({ capabilities: ['DOCUMENT_RELEASE'] }));
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() => expect(screen.getByText('Not recorded')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Record carrier' })).not.toBeInTheDocument();
   });
 
   it('marks a confidential document as such', async () => {

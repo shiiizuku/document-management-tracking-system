@@ -22,6 +22,7 @@ describe('shared API contracts', () => {
   it('preserves the exact approved workflow action vocabulary', () => {
     expect(workflowActionSchema.options).toEqual([
       'ACCEPT',
+      'ACKNOWLEDGE',
       'REQUEST_REVISION',
       'RESUBMIT',
       'INITIAL',
@@ -75,6 +76,7 @@ describe('shared API contracts', () => {
       'DOCUMENT_SIGN',
       'DOCUMENT_PREPARE_RELEASE',
       'DOCUMENT_RELEASE',
+      'DOCUMENT_RELEASE_CORRECT',
       'DOCUMENT_COMPLY',
       'DOCUMENT_ARCHIVE',
       'DOCUMENT_DELETE',

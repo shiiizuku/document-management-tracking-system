@@ -611,8 +611,11 @@ Pull from this list whenever a slice above reaches "verify."
       - ~~**Release methods (decision 27 as amended)**~~ — `release_methods` is six configurable
         rows seeded Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered, so a seventh
         carrier is an INSERT. LBC and JRS are flagged as requiring a tracking reference, which
-        `WorkflowService` then makes mandatory. One factual confirmation is still owed by the
-        Records section: that the pre-existing `MAILED` rows should read as Postal.
+        `WorkflowService` then makes mandatory. **Superseded 2026-10-06** by the Records
+        section's answer. Migration `0013` makes it two questions, the method (Mailed / Emailed /
+        Personally Delivered / Picked Up) and, for Mailed, the carrier (Postal / LBC / JRS). Every
+        carrier requires a tracking reference. Pre-existing `MAILED` rows read "carrier not
+        recorded" until Records staff fill it in (Phase 7 box D5).
       - ~~**Decision 152's other half**~~ — the Records Unit is a Section inside the ORD. The
         `RECORDS` division is deactivated rather than deleted, because its code is embedded in
         reference numbers already issued (decision 153), and the migration moves placement without

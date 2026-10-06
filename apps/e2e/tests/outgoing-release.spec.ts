@@ -94,17 +94,19 @@ test('an outgoing letter is drafted, endorsed, signed, released by courier and a
     await runAction(records, 'Prepare release', 'For release');
 
     /*
-     * Six configured rows, not a four-value enum (policy register P-15, decision 27 as amended).
-     * LBC and JRS are flagged as requiring a tracking reference because they are the two that issue
-     * one — a property of the method, not of the action — and the server refuses a tracking
-     * reference against a method that is not flagged.
+     * Two questions, not one (policy register P-15 as decided 2026-10-06): how the document left,
+     * and for Mailed, by which carrier. Every carrier requires a tracking reference, a property
+     * of the carrier row rather than of the action, and the server refuses one against a method
+     * that takes no carrier.
      */
     await runAction(records, 'Release document', 'Released', {
-      method: 'LBC',
+      method: 'Mailed',
+      carrier: 'LBC',
       trackingReference: 'LBC-2026-884411',
     });
 
     await expect(records.getByText('Released by')).toBeVisible();
+    await expect(records.getByText('Mailed', { exact: true })).toBeVisible();
     await expect(records.getByText('LBC-2026-884411')).toBeVisible();
 
     await runAction(records, 'Archive', 'Archived');

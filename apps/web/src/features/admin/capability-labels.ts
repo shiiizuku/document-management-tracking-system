@@ -22,7 +22,10 @@ export const capabilityLabels: Readonly<
 > = {
   DOCUMENT_CREATE: { label: 'Register documents', group: 'Documents' },
   DOCUMENT_EDIT: { label: 'Edit document details', group: 'Documents' },
-  DOCUMENT_ACCEPT: { label: 'Accept forwarded documents', group: 'Documents' },
+  DOCUMENT_ACCEPT: {
+    label: 'Accept forwarded documents and acknowledge copies',
+    group: 'Documents',
+  },
   DOCUMENT_ASSIGN: { label: 'Forward, assign and share', group: 'Documents' },
   DOCUMENT_REQUEST_REVISION: { label: 'Return for revision', group: 'Documents' },
   DOCUMENT_RESUBMIT: { label: 'Resubmit after revision', group: 'Documents' },
@@ -31,6 +34,10 @@ export const capabilityLabels: Readonly<
   DOCUMENT_SIGN: { label: 'Sign (Regional Director)', group: 'Documents' },
   DOCUMENT_PREPARE_RELEASE: { label: 'Prepare for release', group: 'Documents' },
   DOCUMENT_RELEASE: { label: 'Release', group: 'Documents' },
+  DOCUMENT_RELEASE_CORRECT: {
+    label: 'Fill in the carrier of an earlier mailed release',
+    group: 'Documents',
+  },
   DOCUMENT_COMPLY: { label: 'Record as complied', group: 'Documents' },
   DOCUMENT_ARCHIVE: { label: 'Archive', group: 'Documents' },
   DOCUMENT_DELETE: { label: 'Delete', group: 'Documents' },

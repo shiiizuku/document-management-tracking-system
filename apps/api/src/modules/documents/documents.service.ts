@@ -39,7 +39,7 @@ import {
   type RouteCustody,
 } from '../workflow/workflow.service.js';
 // The presented vocabulary, which includes the derived `PENDING`; see `TimelineEntry`.
-import type { ReleaseMethod, WorkflowStatus } from '@dts/contracts';
+import type { ReleaseCarrier, ReleaseMethod, WorkflowStatus } from '@dts/contracts';
 import {
   DocumentsRepository,
   type DashboardActivityEntry,
@@ -52,6 +52,7 @@ import {
   type DocumentSearchFilters,
   type RecordedRelease,
   type ReferenceDocumentSummary,
+  type ReleaseCarrierRow,
   type ReleaseMethodRow,
   type RoutingSlipRoute,
 } from './documents.repository.js';
@@ -64,6 +65,12 @@ import {
 export interface PublicRelease {
   code: string;
   label: string;
+  /*
+   * Whether the method takes a carrier. With `carrier: null` it means the release predates
+   * carriers and reads "carrier not recorded", the one state Records staff can correct.
+   */
+  requiresCarrier: boolean;
+  carrier: { code: string; label: string } | null;
   trackingReference: string | null;
 }
 
@@ -294,6 +301,8 @@ export class DocumentsService {
           : {
               code: release.code,
               label: release.label,
+              requiresCarrier: release.requiresCarrier,
+              carrier: release.carrier,
               trackingReference: release.trackingReference,
             },
       createdAt: row.createdAt,
@@ -777,13 +786,112 @@ export class DocumentsService {
    * anyway, so serving it would only make a picker that produces 400s.
    */
   async listReleaseMethods(): Promise<ReleaseMethod[]> {
-    const rows = await this.repository.listReleaseMethods();
+    const [rows, carrierRows] = await Promise.all([
+      this.repository.listReleaseMethods(),
+      this.repository.listReleaseCarriers(),
+    ]);
+    const carriers = carrierRows.map((row) => this.toReleaseCarrier(row));
     return rows.map((row) => ({
       id: row.id,
       code: row.code,
       label: row.label,
-      requiresTrackingReference: row.requiresTrackingReference,
+      requiresCarrier: row.requiresCarrier,
+      carriers: row.requiresCarrier ? carriers : [],
     }));
+  }
+
+  private toReleaseCarrier(row: ReleaseCarrierRow): ReleaseCarrier {
+    return {
+      id: row.id,
+      code: row.code,
+      label: row.label,
+      requiresTrackingReference: row.requiresTrackingReference,
+    };
+  }
+
+  /**
+   * Fills in the carrier of a mailed release recorded before carriers were asked for (P-15 as
+   * decided 2026-10-06; migration `0013`). Records staff only, through `DOCUMENT_RELEASE_CORRECT`.
+   *
+   * Narrow on purpose. It completes a blank and never rewrites an answer: a release whose carrier
+   * is recorded, or whose method takes none, is refused, and the repository's update is
+   * conditional on the carrier still being null so two corrections cannot race. The tracking
+   * reference is optional even for a carrier that requires one at release, because these releases
+   * were made without one; it is still refused for a carrier that takes none, as at release.
+   *
+   * A released document is otherwise frozen (decision 178), so this neither bumps the document's
+   * version nor touches its row. It corrects the release record, and the audit event is what says
+   * who made the correction.
+   */
+  async recordReleaseCarrier(
+    actor: RequestUser,
+    id: string,
+    input: { carrier: string; trackingReference?: string | undefined },
+  ): Promise<PublicDocument> {
+    const { row, facts } = await this.requireReadableWithFacts(actor, id);
+    if (!this.authorization.can(actor, this.asResource(row, facts), 'DOCUMENT_RELEASE_CORRECT'))
+      throw new ForbiddenException('Action is not allowed');
+
+    const release = await this.repository.findReleaseMethod(id);
+    if (release === null)
+      throw new UnprocessableEntityException({
+        code: 'NOT_RELEASED',
+        message: 'This document has not been released',
+      });
+    if (!release.requiresCarrier)
+      throw new UnprocessableEntityException({
+        code: 'RELEASE_CARRIER_NOT_ACCEPTED',
+        message: `${release.label} does not take a carrier`,
+      });
+    if (release.carrier !== null)
+      throw new ConflictException({
+        code: 'RELEASE_CARRIER_RECORDED',
+        message: `The carrier is already recorded as ${release.carrier.label}`,
+      });
+
+    const carrier = await this.repository.findActiveReleaseCarrierByCode(input.carrier);
+    if (carrier === null) throw new BadRequestException(`Unknown carrier: ${input.carrier}`);
+    const trackingReference = input.trackingReference?.trim() ?? '';
+    if (!carrier.requiresTrackingReference && trackingReference.length > 0)
+      throw new UnprocessableEntityException({
+        code: 'TRACKING_REFERENCE_NOT_ACCEPTED',
+        message: `${carrier.label} does not take a tracking reference`,
+      });
+
+    await this.database.transaction(async (tx) => {
+      const recorded = await this.repository.recordReleaseCarrier(
+        id,
+        carrier.id,
+        trackingReference.length > 0 ? trackingReference : release.trackingReference,
+        tx,
+      );
+      if (!recorded)
+        throw new ConflictException({
+          code: 'RELEASE_CARRIER_RECORDED',
+          message: 'The carrier was recorded by someone else in the meantime',
+        });
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'document.release.carrier-recorded',
+          targetType: 'document',
+          targetId: id,
+          outcome: 'SUCCESS',
+          summary: {
+            method: release.code,
+            carrier: carrier.code,
+            trackingReferenceRecorded: trackingReference.length > 0,
+          },
+        },
+        tx,
+      );
+    });
+
+    const [updated, clean] = await Promise.all([
+      this.repository.findReleaseMethod(id),
+      this.releasableFlag(row),
+    ]);
+    return this.toPublic(row, updated, clean);
   }
 
   async executeAction(
@@ -794,6 +902,7 @@ export class DocumentsService {
       expectedVersion: number;
       remarks?: string;
       releaseMethod?: ReleaseMethodCode;
+      releaseCarrier?: ReleaseMethodCode;
       trackingReference?: string;
     },
   ): Promise<PublicDocument> {
@@ -817,12 +926,25 @@ export class DocumentsService {
      * a method withdrawn by the office must not be recordable on a new release, even though every
      * release that already cites it keeps reading correctly.
      */
-    const { releaseMethod: releaseMethodCode, ...command } = input;
+    const {
+      releaseMethod: releaseMethodCode,
+      releaseCarrier: releaseCarrierCode,
+      ...command
+    } = input;
     let releaseMethod: ReleaseMethodRow | null = null;
     if (releaseMethodCode !== undefined) {
       releaseMethod = await this.repository.findActiveReleaseMethodByCode(releaseMethodCode);
       if (releaseMethod === null)
         throw new BadRequestException(`Unknown release method: ${releaseMethodCode}`);
+    }
+    // The carrier on the same terms. Whether the method takes one is the engine's rule, not this
+    // lookup's, so a carrier sent with "Emailed" resolves here and is refused there with a reason.
+    let releaseCarrier: ReleaseCarrier | null = null;
+    if (releaseCarrierCode !== undefined) {
+      const carrierRow = await this.repository.findActiveReleaseCarrierByCode(releaseCarrierCode);
+      if (carrierRow === null)
+        throw new BadRequestException(`Unknown carrier: ${releaseCarrierCode}`);
+      releaseCarrier = this.toReleaseCarrier(carrierRow);
     }
 
     try {
@@ -834,6 +956,7 @@ export class DocumentsService {
           actorId: actor.id,
           ...command,
           ...(releaseMethod === null ? {} : { releaseMethod }),
+          ...(releaseCarrier === null ? {} : { releaseCarrier }),
         },
       );
 
@@ -842,8 +965,14 @@ export class DocumentsService {
        * status and version are untouched, because nothing about the document changed: a hop that
        * was outstanding is now taken on (ADR-0005). It is also the one action with a second writer
        * racing it, so the conditional update is the real guard and this is where it happens.
+       *
+       * `ACKNOWLEDGE` takes the same path on a for-information copy. It is told apart in the audit
+       * and outbox names only, because "the division read its copy" is not "the division took
+       * custody", and an auditor filtering for one must not be shown the other.
        */
       if (result.acceptedRouteId !== null) {
+        const stampEvent =
+          action === 'ACKNOWLEDGE' ? 'document.copy-acknowledged' : 'document.custody-accepted';
         return await this.database.transaction(async (tx) => {
           const accepted = await this.repository.acceptRoute(result.acceptedRouteId!, actor.id, tx);
           if (accepted === null)
@@ -872,7 +1001,7 @@ export class DocumentsService {
           await this.audit.write(
             {
               actorId: actor.id,
-              action: 'document.custody-accepted',
+              action: stampEvent,
               targetType: 'document',
               targetId: id,
               outcome: 'SUCCESS',
@@ -884,9 +1013,9 @@ export class DocumentsService {
             {
               aggregateType: 'document',
               aggregateId: id,
-              eventType: 'document.custody-accepted',
+              eventType: stampEvent,
               payload: { documentId: id, routeId: accepted.id },
-              idempotencyKey: `document.custody-accepted:${accepted.id}`,
+              idempotencyKey: `${stampEvent}:${accepted.id}`,
             },
             tx,
           );
@@ -923,6 +1052,7 @@ export class DocumentsService {
               documentId: id,
               releasedById: actor.id,
               methodId: result.event.releaseMethod.id,
+              carrierId: result.event.releaseCarrier?.id ?? null,
               trackingReference: result.event.trackingReference,
             },
             tx,
@@ -960,7 +1090,19 @@ export class DocumentsService {
           updated,
           result.event.releaseMethod === null
             ? null
-            : { ...result.event.releaseMethod, trackingReference: result.event.trackingReference },
+            : {
+                code: result.event.releaseMethod.code,
+                label: result.event.releaseMethod.label,
+                requiresCarrier: result.event.releaseMethod.requiresCarrier,
+                carrier:
+                  result.event.releaseCarrier === null
+                    ? null
+                    : {
+                        code: result.event.releaseCarrier.code,
+                        label: result.event.releaseCarrier.label,
+                      },
+                trackingReference: result.event.trackingReference,
+              },
           currentClean,
         );
       });

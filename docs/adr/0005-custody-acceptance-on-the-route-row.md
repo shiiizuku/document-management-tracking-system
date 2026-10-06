@@ -41,7 +41,8 @@ column.
 read-and-remark only, no workflow actions, division-level only, and attached to the hop that
 created them rather than following the document onward). Workflow progress gates on the lead
 alone; unaccepted information copies surface as an outstanding acknowledgement, never as a
-block.
+block. _(2026-10-04: the acknowledgement is the `ACKNOWLEDGE` action, which stamps the copy's own
+`accepted_at`. `ACCEPT` is restricted to lead hops.)_
 
 **`relocate` stops overwriting `documents.division_id` destructively.** Authorization scope
 resolves through accepted route rows.

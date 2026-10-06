@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { hashSync } from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { and, count, eq, sql } from 'drizzle-orm';
+import { and, count, eq, isNull, sql } from 'drizzle-orm';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -14,6 +14,7 @@ import { DATABASE } from '../src/database/database.constants.js';
 import type { Database } from '../src/database/client.js';
 import {
   documentReferences,
+  documentRoutes,
   divisions,
   notifications,
   outboxEvents,
@@ -34,8 +35,8 @@ const HEAD_PASSWORD = 'HeadPass123456!';
 const DIV_A = '00000000-0000-4000-9000-0000000000a0';
 const DIV_B = '00000000-0000-4000-9000-0000000000b0';
 // A third division, consulted for information. It has a head so the notification a copy writes
-// has a recipient, but nobody signs in as it — the forwarding assertions read its rows directly,
-// which keeps this suite inside the 5-per-minute login window.
+// has a recipient, and that head signs in once to acknowledge a copy — the fifth and last login
+// this suite's 5-per-minute window allows.
 const DIV_C = '00000000-0000-4000-9000-0000000000c0';
 const SEC_A = '00000000-0000-4000-9000-0000000000a1';
 const SEC_B = '00000000-0000-4000-9000-0000000000b1';
@@ -85,6 +86,8 @@ describe('document registry REST against a real database', () => {
   // A Division A head: the lowest-privileged role that holds REPORT_VIEW, and therefore the one
   // that exercises reporting over a scope narrower than the whole office.
   let head: Session;
+  // Division C's head, the recipient of for-information copies.
+  let divCHead: Session;
   const server = (): Server => app.getHttpServer() as Server;
 
   const login = async (email: string, password: string): Promise<Session> => {
@@ -206,6 +209,7 @@ describe('document registry REST against a real database', () => {
     staff = await login('staff@dts.local', STAFF_PASSWORD);
     admin = await login('admin@dts.local', ADMIN_PASSWORD);
     head = await login('head@dts.local', HEAD_PASSWORD);
+    divCHead = await login('div-c-head@dts.local', HEAD_PASSWORD);
   }, 30_000);
 
   afterAll(async () => {
@@ -601,6 +605,116 @@ describe('document registry REST against a real database', () => {
       ).items.map((item) => item.id);
     expect(await listedIn(DIV_B)).toContain(created.id);
     expect(await listedIn(DIV_A)).not.toContain(created.id);
+  }, 30_000);
+
+  /*
+   * A copy is acknowledged, not accepted (ADR-0005, decision 160). Before ACKNOWLEDGE existed the
+   * copied head was offered "Accept custody" — which would have stamped the copy as custody — and
+   * otherwise nothing could ever clear it, so the document stayed in the Pending filter for good.
+   */
+  it('lets a copied division acknowledge its copy, which clears pending without taking custody', async () => {
+    const created = dataOf<DocumentPayload>(
+      await registerDocument(records, {
+        title: 'Copied for information',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/actions/ACCEPT`)
+      .set('Cookie', staff.cookies)
+      .set('x-csrf-token', staff.csrf)
+      .send({ expectedVersion: 1 })
+      .expect(201);
+    await request(server())
+      .post(`/api/v1/documents/${created.id}/routes`)
+      .set('Cookie', records.cookies)
+      .set('x-csrf-token', records.csrf)
+      .send({ expectedVersion: 1, toDivisionId: DIV_B, forInformationDivisionIds: [DIV_C] })
+      .expect(201);
+
+    const allowedFor = async (session: Session): Promise<string[]> =>
+      dataOf<string[]>(
+        await request(server())
+          .get(`/api/v1/documents/${created.id}/allowed-actions`)
+          .set('Cookie', session.cookies)
+          .expect(200),
+      );
+    // Offered before the lead has accepted: a copy never waits on custody.
+    expect(await allowedFor(divCHead)).toEqual(['ACKNOWLEDGE']);
+
+    const act = (action: string) =>
+      request(server())
+        .post(`/api/v1/documents/${created.id}/actions/${action}`)
+        .set('Cookie', divCHead.cookies)
+        .set('x-csrf-token', divCHead.csrf)
+        .send({ expectedVersion: 2 });
+    // The outstanding custody hop is Division B's, so Division C has nothing to accept.
+    const refused = await act('ACCEPT').expect(422);
+    expect(refused.body.error.code).toBe('ROUTE_NOT_FOR_ACTOR');
+
+    const acknowledged = dataOf<DocumentPayload>(await act('ACKNOWLEDGE').expect(201));
+    expect(acknowledged).toMatchObject({ status: 'IN_PROCESS', version: 2 });
+    expect(await allowedFor(divCHead)).toEqual([]);
+    expect((await act('ACKNOWLEDGE').expect(422)).body.error.code).toBe('ROUTE_ALREADY_ACCEPTED');
+
+    const detail = dataOf<{
+      timeline: { action: string }[];
+      routes: { toDivisionId: string; forInformation: boolean; acceptedAt: string | null }[];
+    }>(
+      await request(server())
+        .get(`/api/v1/documents/${created.id}`)
+        .set('Cookie', records.cookies)
+        .expect(200),
+    );
+    expect(detail.timeline.map((event) => event.action)).toEqual(['ACCEPT', 'ACKNOWLEDGE']);
+    const copy = detail.routes.find((route) => route.forInformation);
+    const lead = detail.routes.find(
+      (route) => !route.forInformation && route.toDivisionId === DIV_B,
+    );
+    expect(copy?.acceptedAt).not.toBeNull();
+    // Custody did not move: the lead hop to Division B is still outstanding.
+    expect(lead?.acceptedAt).toBeNull();
+
+    const [enqueued] = await app
+      .get<Database>(DATABASE)
+      .select({ value: count() })
+      .from(outboxEvents)
+      .where(
+        and(
+          eq(outboxEvents.aggregateId, created.id),
+          eq(outboxEvents.eventType, 'document.copy-acknowledged'),
+        ),
+      );
+    expect(enqueued?.value).toBe(1);
+
+    // Still pending, because the lead has not accepted — but only on that account now.
+    const pendingIds = async (): Promise<string[]> =>
+      dataOf<{ items: { id: string }[] }>(
+        await request(server())
+          .get('/api/v1/documents?status=PENDING&pageSize=100')
+          .set('Cookie', records.cookies)
+          .expect(200),
+      ).items.map((item) => item.id);
+    expect(await pendingIds()).toContain(created.id);
+    // Division B accepting is ACCEPT's own test above; stamped directly here because nobody from
+    // Division B can sign in inside this suite's login window.
+    await app
+      .get<Database>(DATABASE)
+      .update(documentRoutes)
+      .set({ acceptedAt: new Date() })
+      .where(
+        and(
+          eq(documentRoutes.documentId, created.id),
+          eq(documentRoutes.forInformation, false),
+          isNull(documentRoutes.acceptedAt),
+        ),
+      );
+    expect(await pendingIds()).not.toContain(created.id);
   }, 30_000);
 
   /*

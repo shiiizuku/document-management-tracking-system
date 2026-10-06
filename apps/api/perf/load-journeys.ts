@@ -11,7 +11,8 @@ import { HttpError, type Session } from './load-client.js';
  * the arrival rate rather than by how fast one journey can be pushed through.
  *
  * The journeys are `docs/acceptance-scenarios.md` §1 and §2, without the for-information copy's
- * acknowledgement (nothing can perform it — Wave C's open question) and without the ORD variant.
+ * acknowledgement (added after D2 was measured; it is one route-row stamp, the same write as an
+ * acceptance) and without the ORD variant.
  */
 
 export interface DocumentState {
@@ -223,7 +224,11 @@ const OUTGOING: readonly Step[] = [
       'RELEASE',
       context,
       context.random() < 0.3
-        ? { releaseMethod: 'LBC', trackingReference: `LBC-${journey.document!.id.slice(0, 12)}` }
+        ? {
+            releaseMethod: 'MAILED',
+            releaseCarrier: 'LBC',
+            trackingReference: `LBC-${journey.document!.id.slice(0, 12)}`,
+          }
         : { releaseMethod: 'EMAILED' },
     ),
   (journey, context) => act(journey, context.pick(context.principals.records), 'ARCHIVE', context),

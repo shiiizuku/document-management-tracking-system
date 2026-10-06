@@ -67,14 +67,32 @@ export const releaseMethods = pgTable('release_methods', {
   code: varchar('code', { length: 40 }).notNull().unique(),
   label: varchar('label', { length: 80 }).notNull().unique(),
   /*
-   * Decision 27 as amended: "a method may be flagged as requiring a tracking reference, which is
-   * then mandatory at release." A courier consignment that is recorded without its tracking number
-   * cannot be traced, which is the only reason to record the courier at all — so the requirement
-   * is a property of the method rather than a rule written into the release code.
+   * P-15 as decided 2026-10-06: releasing asks how the document left and, only for Mailed, by
+   * which carrier. The flag rather than a hard-coded `MAILED` check, so the rule reads off the row.
    */
-  requiresTrackingReference: boolean('requires_tracking_reference').notNull().default(false),
+  requiresCarrier: boolean('requires_carrier').notNull().default(false),
   active: boolean('active').notNull().default(true),
   // The order the office reads the list in, which is neither alphabetical nor insertion order.
+  sortOrder: integer('sort_order').notNull().default(0),
+  ...timestampColumns(),
+});
+
+/*
+ * The carriers a mailed document travels by: Postal, LBC, JRS (migration `0013`). Configurable
+ * rows for the same reasons as the methods, and deactivated rather than deleted for the same
+ * reason too — `release_events` cites them.
+ */
+export const releaseCarriers = pgTable('release_carriers', {
+  ...identityColumns(),
+  code: varchar('code', { length: 40 }).notNull().unique(),
+  label: varchar('label', { length: 80 }).notNull().unique(),
+  /*
+   * Decision 27 as amended: a tracking reference may be required, and then it is mandatory at
+   * release. Every carrier the office uses issues one, so all three are seeded `true`; the flag
+   * stays per carrier so one that does not can be configured without a code change.
+   */
+  requiresTrackingReference: boolean('requires_tracking_reference').notNull().default(true),
+  active: boolean('active').notNull().default(true),
   sortOrder: integer('sort_order').notNull().default(0),
   ...timestampColumns(),
 });
@@ -520,7 +538,14 @@ export const releaseEvents = pgTable('release_events', {
     .notNull()
     .references(() => releaseMethods.id),
   /*
-   * The courier's consignment number, where the method requires one. Nullable because most
+   * Set when the method takes a carrier. Null on every other method, and also on a mailed release
+   * recorded before carriers were asked for: migration `0013` will not invent the carrier such a
+   * row never recorded, so it reads "carrier not recorded" until Records staff fill it in. That
+   * fill-in is the one update this table takes, and it only ever replaces a null.
+   */
+  carrierId: uuid('carrier_id').references(() => releaseCarriers.id),
+  /*
+   * The carrier's consignment number, where the carrier requires one. Nullable because most
    * methods do not: a document picked up at the counter has nothing to track. The "required when
    * the method says so" rule is enforced in `WorkflowService`, which is where every other release
    * precondition lives.

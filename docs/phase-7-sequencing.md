@@ -236,13 +236,22 @@ And three harness traps worth knowing before touching `apps/e2e`:
 - Stopping a run from outside Playwright (killing the npm process) orphans the three servers on
   Windows; the next run then fails on "port already used".
 
-**Open question for the policy owner** — _decided 2026-10-04: copies get an **Acknowledge**
-action, as ADR-0005's "outstanding acknowledgement" anticipates. Separate PR._ `documentIsPending` counts an unacknowledged
-for-information copy as outstanding, and `query-scope.int.test.ts` pins that deliberately. But a
-copy has no **Accept custody** — nothing in the UI ever acknowledges one — so any document forwarded
-with a copy stays in the registry's _Pending_ filter and the dashboard tile forever, including after
-it is complied with and archived. Either copies need an acknowledge action, or the predicate should
-exclude them.
+**Open question for the policy owner — closed 2026-10-04.** `documentIsPending` counts an
+unacknowledged for-information copy as outstanding, and `query-scope.int.test.ts` pins that
+deliberately — but nothing could ever acknowledge one, so any document forwarded with a copy stayed
+in the registry's _Pending_ filter and the dashboard tile forever. **Copies now get an
+`ACKNOWLEDGE` action**, as ADR-0005's "outstanding acknowledgement" anticipates. It stamps the
+copy's own `accepted_at`, so the predicate, its partial index and the pin are unchanged: a copy is
+outstanding until its division acknowledges it. It reuses `DOCUMENT_ACCEPT`, and since a copy is
+readable only by the division's head (decision 160), in practice the head acknowledges.
+
+Building it found a bug the docs had wrong: the copied head was **already offered Accept
+custody**, because the engine never checked `forInformation`. Pressing it would have stamped the
+copy as custody, and a unit that was both lead and copied in could stamp the copy and leave its
+custody hop outstanding. `ACCEPT` is now lead hops only and `ACKNOWLEDGE` copies only. The E2E
+journey still does not sign in as the Lands head, because the login throttle is per client IP and
+the five-account budget is spent, so the acknowledgement is proven by `workflow.test.ts`,
+`documents.int.test.ts` and the web tests instead.
 
 - [x] **C1** (2h) **Acceptance scenarios** (Slice 0.1). One incoming→archive journey and the outgoing
       release path, given/when/then. _Done-when:_ both journeys are executable as written by someone
@@ -352,6 +361,18 @@ adds an index and `0012` adds the audit triggers.
   P-13's 5-minute recovery point does not hold for files. That one needs a decision. Still owed:
   the restore from a second machine or NAS. Detail: `evidence/d3-restore-rehearsal.md`.
 
+  **Decided 2026-10-06; this is what closes the box.**
+
+  - **The archive moves to the NAS.** It is an SMB share, storage only, so it cannot run the stack.
+    The rehearsal therefore restores onto this machine as a fresh compose project that reads
+    **only** from the share. That proves what P-13 asks for: the backups survive the loss of the
+    application host's disks. WAL archiving and `backup.sh` write to the share. Docker Desktop
+    reaches an SMB path through a bind mount of the mapped drive or UNC path. Check that first,
+    because the Postgres archive command runs inside the container.
+  - **Attachments meet the database's recovery point.** The MinIO mirror runs every 5–15 minutes,
+    or continuously, rather than nightly. Rehearse again afterwards and record the file recovery
+    point next to the database's.
+
 - [x] **D4** (2h) Audit retention (P-08). _Done-when:_ the relocation path exists and a test asserts
       no purge path does.
 
@@ -378,6 +399,40 @@ adds an index and `0012` adds the audit triggers.
   The IT input is now configuration, not code. Until it arrives, the command refuses to run, which
   is correct for the next five years. Procedure: `docs/runbooks/audit-relocation.md`.
 
+- [x] **D5** (2h ×2) Release methods, two levels (P-15 as decided 2026-10-06). Migration `0013`:
+      a method (Mailed, Emailed, Personally delivered, Picked up) and, for Mailed, a carrier
+      (Postal, LBC, JRS). _Done-when:_ the release dialog asks for the carrier only when Mailed;
+      a tracking number is required for every carrier and refused otherwise; old `MAILED` rows read
+      "carrier not recorded" and Records staff can set the carrier through an audited correction.
+
+  Old rows stay exempt from the tracking-number rule. Requiring a number they never recorded would
+  make the correction impossible to submit.
+
+  **Done 2026-10-06.** Migration `0013` adds `release_carriers` (Postal, LBC, JRS, each requiring
+  a tracking reference), a `MAILED` method flagged `requires_carrier`, and
+  `release_events.carrier_id`. The tracking-reference flag moves from the method to the carrier.
+  `WorkflowService` requires a carrier for Mailed and refuses one otherwise. It requires the
+  carrier's tracking reference and refuses one where no carrier takes it. The dialog asks for the
+  carrier with no default, so Postal is never recorded for someone who did not look.
+  `GET /release-methods` serves each method with its carriers. The correction is
+  `POST /documents/:id/release/carrier` under a new `DOCUMENT_RELEASE_CORRECT` capability, held by
+  Records staff and the administrator, and not by a division head. It only ever replaces a null.
+  The update is conditional, so two corrections cannot both succeed. It is audited as
+  `document.release.carrier-recorded`.
+
+  **How `0013` tells the old rows apart.** `0010` collapsed `MAILED` into `POSTAL` without a
+  trace, so a historic mailed row and a genuine Postal release look the same. The Drizzle journal
+  could not separate them: its `when` is the file's timestamp, not when it was applied. The
+  `POSTAL` method row's own `created_at` could, because `0010` inserted it. A POSTAL release older
+  than that row was a `MAILED` one and gets no carrier. `migration.int.test.ts` asserts both
+  cases. The `POSTAL`/`LBC`/`JRS` method rows are deleted after the re-point, because nothing
+  cites them any more. Decision 27's amendment is recorded in `CONTEXT.md`.
+
+- [ ] **D6** (2h ×2) Security pass (Phase 7 task 3). A threat-model pass over the trust
+      boundaries, and Dependabot plus a dependency and container scan (Trivy or CodeQL) in CI. Also a
+      recorded check of secure headers, the CORS allowlist, the upload and report rate limits, and
+      log redaction against P-14. _Done-when:_ no open critical findings, and the checks run in CI.
+
 ## Wave E — the writing that needs the rest done
 
 ~4 sessions.
@@ -389,6 +444,10 @@ adds an index and `0012` adds the audit triggers.
   must carry the requeue one-liner the README already has — BullMQ parks a job after 5 attempts and
   nothing retries it on its own.
 
+- [ ] **E0** (2h) Risk register (Slice 0.1). The project lead owns every risk until it is reassigned
+      (decided 2026-10-06). That unblocks it. Seed it from `CONTEXT.md` and this document's open
+      items. _Done-when:_ every unresolved question appears as a risk with an owner.
+
 - [ ] **E2** (2h) Traceability matrix (Slice 0.1): 75 stories → D-1–D-151 → MVP or deferred →
       implementation area → test. _Done-when:_ every story has a decision, a scope verdict, and either
       a test or an explicit deferral. Last, because the "test" column should name real files and C3/C4
@@ -396,23 +455,21 @@ adds an index and `0012` adds the audit triggers.
 
 ## Blocked on people, not code
 
-Chase these now; they are not engineering work.
+**Resolved 2026-10-06.** Every item has an answer, so nothing in Phase 7 waits on a person now.
 
-| Item                       | Needs                                                      | From                                    |
-| -------------------------- | ---------------------------------------------------------- | --------------------------------------- |
-| Risk register (Slice 0.1)  | A named owner per risk                                     | Engineering lead, with the admin office |
-| Phase 0 sign-off           | The IT infrastructure blocker (P-13) cleared               | IT operations                           |
-| D4 — audit retention       | Where the post-5-year database lives (now configuration: `AUDIT_ARCHIVE_DATABASE_URL`) | IT operations |
-| A4 — release methods       | Confirmation that `MAILED` → Postal is the right mapping   | Records section                         |
+| Item                      | Answer                                                                                                  | Now                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------- |
+| Risk register (Slice 0.1) | The project lead owns every risk for now                                                                | Box E0                      |
+| Phase 0 sign-off          | Not an infrastructure blocker. P-13 is agreed, so the gate is Slice 0.1's documents: the risk register (E0) and the traceability matrix (E2) | E0 + E2                     |
+| D3 — off-host storage     | A NAS, as an SMB share, storage only                                                                    | D3                          |
+| D3 — attachment recovery  | Mirror often enough to meet the database's recovery point                                               | D3                          |
+| D4 — audit archive host   | Deferred to 2031. The command refuses to run until it is configured                                     | Revisit 2031                |
+| A4 — release methods      | Not "Postal". A two-level model replaces the flat list                                                  | Box D5; P-15 is `DECIDED`   |
 
-A4's confirmation is now the only one that is **chasing applied code rather than blocking it**. The
-mapping was applied as planned because the alternative — reading `MAILED` as a courier and splitting
-it across LBC and JRS — would invent a carrier the row never recorded. If the answer comes back
-differently, the correction is an `UPDATE` of `release_events.method_id`: the old value survives in
-the method row it maps to rather than having been overwritten in place.
-
-The risk register is the one to start today: it needs nothing but a conversation, and Phase 0's gate
-cannot be signed off without it.
+**Deferred to the UAT/pilot contingency**, out of Phase 7: monitoring and alerts, the
+release-candidate build on a production-like environment, and guides, UAT scripts, training data
+and the viewport/browser matrix (Phase 7 tasks 4–6 in `TO - IMPLEMENT.md`). Of the brief's items
+missing from this plan, only the security pass was added (D6).
 
 ## Shape
 

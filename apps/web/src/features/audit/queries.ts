@@ -132,6 +132,10 @@ export const AUDIT_ACTION_GROUPS: readonly { label: string; actions: readonly st
   {
     label: 'Workflow',
     actions: [
+      // Taking custody and acknowledging a copy each have their own name on success; the
+      // `document.workflow.*` names below are what a refused command records.
+      'document.custody-accepted',
+      'document.copy-acknowledged',
       'document.workflow.accept',
       'document.workflow.request_revision',
       'document.workflow.resubmit',

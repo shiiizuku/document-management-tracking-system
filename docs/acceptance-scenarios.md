@@ -148,7 +148,16 @@ Division for information**, the second drawn as a hollow dot rather than a fille
 > saying that a copy is not custody.
 
 **And** signing in as `lands.head@dts.local` shows the document in that division's registry, with
-**Accept custody** absent — there is nothing for an informed division to accept.
+**Accept custody** absent — there is nothing for an informed division to accept — and
+**Acknowledge copy** offered instead
+
+**When** the Lands head presses **Acknowledge copy**
+**Then** the timeline shows **Acknowledged by Lands Management Division**, drawn as a copy
+**And** **Currently with** still reads **Pilot Division**: acknowledging is not custody
+
+> Acknowledging is how an informed division says it has read the copy. Until it does, the copy is
+> outstanding and the document counts as **Pending**; it never blocks the lead (decision 160). It
+> may be done before or after the lead accepts.
 
 ### 1.5 The lead acts on it, with remarks
 
@@ -267,25 +276,30 @@ produce a draft its own author cannot accept.
 **Then** the status becomes **For release**
 
 **When** I press **Release document**
-**Then** a dialog asks for a **Delivery method**, offering `Emailed`, `Postal`, `LBC`, `JRS`,
-`Picked up` and `Personally delivered`
+**Then** a dialog asks for a **Delivery method**, offering `Mailed`, `Emailed`,
+`Personally delivered` and `Picked up`
 
-> Six configured rows, not a four-value enum. LBC and JRS are the couriers the office actually
-> uses and could not be recorded at all until migration `0010`; a seventh carrier is now an
-> `INSERT` rather than a migration (policy register P-15, decision 27 as amended).
+> Two questions, not one flat list (policy register P-15 as decided 2026-10-06; migration `0013`).
+> How the document left comes first. The carrier is asked only when it was mailed.
+
+**When** I choose `Mailed`
+**Then** a **Carrier** picker appears, offering `Postal`, `LBC` and `JRS`, with none preselected
+**And** **Release document** stays disabled until I choose one
 
 **When** I choose `LBC`
 **Then** a required **LBC tracking reference** field appears
 
-> The requirement is a property of the method, not of the action: LBC and JRS issue a consignment
-> number and are flagged as requiring one. Choosing `Picked up` makes the field disappear, and the
-> server **refuses** a tracking reference against an unflagged method — a tracking number against
-> "Picked up" asserts that something can be traced when it cannot.
+> The requirement belongs to the carrier, not to the action. Every carrier issues a consignment
+> number, Postal included, so all three require one. Choosing `Picked up` instead removes both the
+> carrier and the field. The server **refuses** a carrier or a tracking reference against a method
+> that takes none: a tracking number against "Picked up" claims that something can be traced
+> when it cannot.
 
 **When** I enter `LBC-2026-884411` and confirm
 
 **Then** the status becomes **Released**
-**And** the detail page shows **Released by · LBC** and **Tracking reference · LBC-2026-884411**
+**And** the detail page shows **Released by · Mailed**, **Carrier · LBC** and
+**Tracking reference · LBC-2026-884411**
 
 **When** I press **Archive**
 **Then** the status becomes **Archived**
