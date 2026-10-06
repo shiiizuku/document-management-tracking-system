@@ -2,6 +2,77 @@
 
 A greenfield DTS implementation based on `docs/Document-management-tracking-system.md`. The repository uses npm workspaces, a NestJS modular API, a Next.js App Router client, shared Zod contracts, Drizzle/PostgreSQL migrations, Redis/BullMQ dependencies, MinIO object-storage infrastructure, and ClamAV infrastructure.
 
+## Tech stack
+
+The repository is an npm-workspaces monorepo with four packages: `apps/api`, `apps/web`,
+`apps/e2e` and `packages/contracts`. Each layer below lists its pieces and the job each one does.
+
+### Language and shared code
+
+| Technology                 | Core function                                                                                                                                |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TypeScript**             | The one language across the API, the web app, the tests and the shared contracts, so a type change breaks every caller at compile time.      |
+| **Node.js 22+**            | The runtime for the API, the background worker, the Next.js server and every script.                                                         |
+| **Zod** (`@dts/contracts`) | Shared request/response schemas. The API validates input with them and the web app types its calls with them, so the two cannot drift apart. |
+| **npm workspaces**         | Links the four packages together and runs `build`, `test` and `typecheck` across all of them from the root.                                  |
+
+### Backend — `apps/api`
+
+| Technology                                       | Core function                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| **NestJS**                                       | The application framework: modules, controllers, dependency injection and guards that structure the REST API. |
+| **Express** (`@nestjs/platform-express`)         | The HTTP server underneath NestJS.                                                                            |
+| **Drizzle ORM** + **drizzle-kit**                | Type-safe SQL queries and the schema definition; drizzle-kit generates the versioned SQL migrations.          |
+| **pg** (node-postgres)                           | The PostgreSQL driver Drizzle runs on.                                                                        |
+| **BullMQ** + **ioredis**                         | The job queue the worker consumes: it drains the transactional outbox and runs virus scans with retries.      |
+| **Socket.IO** (`@nestjs/websockets`)             | Pushes realtime notifications to signed-in browsers.                                                          |
+| **minio** (client)                               | Reads and writes attachment files in the S3-compatible object store.                                          |
+| **multer** + **file-type**                       | Accepts multipart uploads and checks a file's real type from its bytes, not its extension.                    |
+| **@nestjs/jwt**, **cookie-parser**, **bcryptjs** | Session tokens in secure cookies, and password hashing.                                                       |
+| **helmet**, **@nestjs/throttler**                | Security headers, and per-client rate limits (including the login window).                                    |
+| **class-validator** / **class-transformer**      | DTO validation and conversion at the controller boundary.                                                     |
+| **@nestjs/swagger**                              | Generates the OpenAPI document and the interactive API docs at `/api/docs`.                                   |
+| **pdfkit**, **fflate**                           | Generate PDF exports (reports, routing slips) and build XLSX workbooks for monthly reports.                   |
+| **@nestjs/config**, **dotenv**                   | Load and validate environment configuration at startup; the API refuses to boot with a missing variable.      |
+
+### Frontend — `apps/web`
+
+| Technology                                                 | Core function                                                                                 |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Next.js** (App Router)                                   | The web framework: routing, layouts and server rendering of the operational UI.               |
+| **React**                                                  | The component model every screen is built from.                                               |
+| **Tailwind CSS**                                           | Utility-first styling and the design tokens behind light/dark themes.                         |
+| **shadcn/ui** on **Radix UI**                              | Accessible, unstyled primitives (dialogs, menus, selects) composed into the app's components. |
+| **TanStack Query**                                         | Fetches, caches and refreshes server data, and keeps lists in sync after mutations.           |
+| **React Hook Form** + **@hookform/resolvers**              | Form state, with the shared Zod schemas as validators.                                        |
+| **socket.io-client**                                       | Receives realtime notifications from the API.                                                 |
+| **sonner**, **lucide-react**, **cmdk**                     | Toast messages, icons, and the command palette.                                               |
+| **clsx**, **tailwind-merge**, **class-variance-authority** | Compose and de-duplicate class names, and define component variants.                          |
+
+### Infrastructure — `docker-compose.yml`
+
+| Service                        | Core function                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **PostgreSQL 16**              | The system of record: organisation, users, documents, workflow, routing, file versions, notifications, the audit log and the outbox. |
+| **Redis 7**                    | The backing store for BullMQ jobs, and the pub/sub channel that relays worker events to realtime clients.                            |
+| **MinIO**                      | S3-compatible object storage for attachment files, built from the vendored source in `./minio`.                                      |
+| **ClamAV**                     | Scans every uploaded file; a file can be downloaded only once it is marked `CLEAN`.                                                  |
+| **migrate**                    | A one-shot container that applies database migrations before the API starts.                                                         |
+| **api** / **worker** / **web** | The REST API, the background job processor, and the Next.js web app.                                                                 |
+
+### Testing and tooling
+
+| Technology                                 | Core function                                                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------------ |
+| **Vitest**                                 | Unit and integration tests for the API, the web app and the contracts.         |
+| **Testing Library** + **jsdom**            | Renders React components in tests and asserts on what a user would see.        |
+| **Supertest**                              | Drives the API over HTTP in integration tests.                                 |
+| **Playwright** + **axe-core** (`apps/e2e`) | End-to-end tests through a real browser, plus automated accessibility checks.  |
+| **ESLint** + **typescript-eslint**         | Static analysis; CI fails on any warning.                                      |
+| **Prettier**                               | Code formatting.                                                               |
+| **Husky** + **lint-staged**                | A pre-commit hook that formats and lints the staged files.                     |
+| **Docker Compose**                         | Runs the development dependencies and the full production stack from one file. |
+
 ## Implemented vertical slice
 
 - Secure cookie login with seeded development users and inactivity expiry.
