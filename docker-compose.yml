@@ -126,6 +126,8 @@ services:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 4000
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-3001}}
+      # /api/docs: on outside production, off in it, unless this says otherwise.
+      API_DOCS: ${API_DOCS:-}
       # The API refuses to boot with NODE_ENV=production unless this is true (HTTPS only).
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       DATABASE_URL: postgresql://${POSTGRES_USER:-dts}:${POSTGRES_PASSWORD:-dts}@postgres:5432/${POSTGRES_DB:-dts}

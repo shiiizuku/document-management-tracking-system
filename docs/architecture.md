@@ -94,7 +94,7 @@ its own `/health` and `/ready`.
 | Scanning   | ClamAV over raw TCP ([clamav-scanner.ts](../apps/api/src/modules/files/clamav-scanner.ts)) |
 | Exports    | pdfkit (PDF), fflate (hand-rolled XLSX)                                                    |
 | Hardening  | helmet, `@nestjs/throttler`, cookie-parser, `file-type` magic-byte checks                  |
-| API docs   | `@nestjs/swagger` → `/api/docs`                                                            |
+| API docs   | `@nestjs/swagger` → `/api/docs`; off in production unless `API_DOCS=true`                  |
 
 ### Module structure
 
@@ -283,7 +283,18 @@ Decisions 89–134 of CONTEXT.md, realized as:
 - **Exports.** Formula-injection-safe XLSX and safe filenames; reports and routing slips render
   from authoritative server data.
 - **Errors and logs.** Generic client messages, correlation IDs retained for support, and
-  structured logs that redact credential-shaped values and omit names and emails.
+  structured logs that redact credential-shaped values, email addresses anywhere in the text, and
+  name and email fields (P-14) — error stacks included, since a stack repeats its message.
+- **The HTTP edge.** One function, [http-app.ts](../apps/api/src/http-app.ts), sets helmet's headers,
+  the CORS allowlist (`WEB_ORIGIN`: bare origins only, HTTPS in production, shared with the
+  Socket.IO handshake) and whether the OpenAPI UI is served; `http-edge.test.ts` asserts what it
+  produces. The web app sends its own policy ([security-headers.ts](../apps/web/src/lib/security-headers.ts)):
+  no framing, and `connect-src` limited to itself and the API, which also binds the `blob:` preview
+  frames. Uploads (30/min) and report exports (10/min per format) have rate limits of their own.
+- **Supply chain.** Images run as `node`, carry no dev dependencies and no npm. CI fails on a
+  critical advisory (`npm audit`, Trivy over the lockfile and all three built images) and
+  Dependabot proposes the upgrades weekly. Detail and the threat model:
+  [d6-security-pass.md](evidence/d6-security-pass.md).
 
 ## 10 · Testing and CI
 

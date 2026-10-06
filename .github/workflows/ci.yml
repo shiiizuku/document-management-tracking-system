@@ -183,3 +183,79 @@ jobs:
           retention-days: 14
       - if: always()
         run: docker compose down -v
+
+  # D6 of docs/phase-7-sequencing.md: the dependency and container scan. It fails on any CRITICAL
+  # finding — in the lockfile, in the two images the application ships, or in the MinIO server
+  # built from vendored source — and prints the HIGH ones beside it so they are seen before they
+  # are promoted. The behavioural checks (secure headers, CORS allowlist, rate limits, log
+  # redaction) are ordinary unit suites and run in `quality`.
+  #
+  # Trivy is pinned by commit, not by tag. In March 2026 76 of trivy-action's 77 tags were
+  # force-pushed to credential-stealing code (GHSA-69fq-xp46-6x23); a tag is a pointer anyone with
+  # the credentials can move. The SHA is v0.36.0, an immutable release published after the
+  # cleanup, and `version` pins the scanner binary to v0.75.0, also an immutable release.
+  security:
+    name: security · npm audit · trivy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The registry's own advisory feed, over the whole tree: dev tools run in this pipeline, so a
+      # critical in one of them is as much ours as one in a runtime dependency.
+      - run: npm audit --audit-level=critical
+
+      - name: Lockfile and repository (report HIGH and CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.75.0
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          # The vendored MinIO tree is scanned as the image it builds, below.
+          skip-dirs: minio
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+      - name: Lockfile and repository (fail on CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.75.0
+          skip-setup-trivy: true
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          skip-dirs: minio
+          severity: CRITICAL
+          exit-code: '1'
+
+      - run: docker build -f apps/api/Dockerfile -t dts-api:ci .
+      - run: docker build -f apps/web/Dockerfile -t dts-web:ci .
+
+      # The same cache key as the integration and e2e jobs.
+      - name: Restore the MinIO image built from vendored source
+        id: minio-image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/dts-minio-image.tar
+          key: dts-minio-${{ hashFiles('minio/go.sum', 'minio/go.mod', 'minio/Dockerfile.fromsource') }}
+      - if: steps.minio-image.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/dts-minio-image.tar
+      - if: steps.minio-image.outputs.cache-hit != 'true'
+        run: |
+          docker compose build minio
+          docker save dts-minio:from-source -o /tmp/dts-minio-image.tar
+
+      - name: Images (report HIGH and CRITICAL)
+        run: |
+          for image in dts-api:ci dts-web:ci dts-minio:from-source; do
+            echo "::group::$image"
+            trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 "$image"
+            echo "::endgroup::"
+          done
+      - name: Images (fail on CRITICAL)
+        run: |
+          for image in dts-api:ci dts-web:ci dts-minio:from-source; do
+            trivy image --scanners vuln --severity CRITICAL --exit-code 1 "$image"
+          done

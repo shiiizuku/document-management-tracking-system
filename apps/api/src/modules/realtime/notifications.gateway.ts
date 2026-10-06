@@ -1,13 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { type OnGatewayConnection, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
+import { parseWebOrigins } from '../../config/environment.js';
 import { AuthService } from '../auth/auth.service.js';
 import { SessionService, SESSION_COOKIE } from '../auth/session.service.js';
 import { roomForUser } from './realtime.contract.js';
 
-const webOrigins = (process.env.WEB_ORIGIN ?? 'http://localhost:3001')
-  .split(',')
-  .map((origin) => origin.trim());
+// Read at decoration time, before ConfigModule has run, so it parses the raw variable with the
+// same function the validated environment uses: the socket and the REST API share one allowlist.
+const webOrigins = parseWebOrigins(process.env.WEB_ORIGIN, process.env.NODE_ENV === 'production');
 
 /**
  * Pulls the session token out of a Socket.IO handshake. It prefers the `dts_session` cookie the

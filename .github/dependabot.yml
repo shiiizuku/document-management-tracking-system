@@ -1,0 +1,38 @@
+# D6 of docs/phase-7-sequencing.md. Weekly, grouped, so the upkeep arrives as a few PRs a week
+# rather than one per package, and every one of them runs the CI that gates on CRITICAL findings.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      # Patch and minor bumps that should be safe together; majors stay one PR each.
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions:
+        patterns: ['*']
+
+  # The base images: node:22-alpine for the API and web, and the Go toolchain and Alpine release
+  # the vendored MinIO server is built on.
+  - package-ecosystem: docker
+    directories: [/apps/api, /apps/web]
+    schedule: { interval: weekly }
+
+  - package-ecosystem: docker
+    directory: /minio
+    schedule: { interval: weekly }
+
+  # The vendored MinIO server's Go modules. Upstream no longer publishes community releases, so
+  # these bumps are the only way its dependencies move (D6 raised them by hand once).
+  - package-ecosystem: gomod
+    directory: /minio
+    schedule: { interval: weekly }
+    groups:
+      minio-go-modules:
+        patterns: ['*']

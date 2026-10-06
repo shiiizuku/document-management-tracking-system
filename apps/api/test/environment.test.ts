@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_WEB_ORIGIN,
   parseTrustProxy,
+  parseWebOrigins,
   validateDirectorAccount,
   validateEnvironment,
   validateSeedAdminPassword,
@@ -119,7 +121,12 @@ describe('environment validation', () => {
  * the cases that make it visible instead.
  */
 describe('Director account configuration', () => {
-  const production = { ...validEnvironment, NODE_ENV: 'production', COOKIE_SECURE: 'true' };
+  const production = {
+    ...validEnvironment,
+    NODE_ENV: 'production',
+    COOKIE_SECURE: 'true',
+    WEB_ORIGIN: 'https://dts.mgb.example.gov.ph',
+  };
 
   it('refuses a production boot with no Director configured', () => {
     expect(() => validateEnvironment(production)).toThrow(
@@ -235,9 +242,74 @@ describe('Seed administrator password', () => {
         ...validEnvironment,
         NODE_ENV: 'production',
         COOKIE_SECURE: 'true',
+        WEB_ORIGIN: 'https://dts.mgb.example.gov.ph',
         DIRECTOR_EMAIL: 'director@mgb.example.gov.ph',
         DIRECTOR_PASSWORD: 'Regional-Director-2026!',
       }),
     ).not.toThrow();
+  });
+});
+
+/*
+ * The CORS allowlist and the OpenAPI switch (D6, Phase 7). The HTTP behaviour these produce is
+ * asserted end to end in http-edge.test.ts; this covers what configuration is refused.
+ */
+describe('WEB_ORIGIN', () => {
+  it('parses a comma-separated list and trims it', () => {
+    expect(parseWebOrigins(' https://dts.example , https://records.dts.example ')).toEqual([
+      'https://dts.example',
+      'https://records.dts.example',
+    ]);
+  });
+
+  it('falls back to the local web port when unset, which no deployment is served from', () => {
+    expect(parseWebOrigins(undefined)).toEqual([DEFAULT_WEB_ORIGIN]);
+    expect(parseWebOrigins('')).toEqual([DEFAULT_WEB_ORIGIN]);
+  });
+
+  it('refuses a wildcard, a path, or a trailing slash, none of which a browser Origin matches', () => {
+    expect(() => parseWebOrigins('*')).toThrow('must be an HTTP(S) origin');
+    expect(() => parseWebOrigins('https://dts.example/app')).toThrow('must be a bare origin');
+    expect(() => parseWebOrigins('https://dts.example/')).toThrow('must be a bare origin');
+    expect(() => parseWebOrigins('ftp://dts.example')).toThrow('must be an HTTP(S) origin');
+  });
+
+  it('requires HTTPS in production, where the session cookie is Secure', () => {
+    expect(() => parseWebOrigins('http://dts.example', true)).toThrow(
+      'must be HTTPS in production',
+    );
+    expect(parseWebOrigins('https://dts.example', true)).toEqual(['https://dts.example']);
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        COOKIE_SECURE: 'true',
+        WEB_ORIGIN: 'http://dts.example',
+        DIRECTOR_EMAIL: 'director@mgb.example.gov.ph',
+        DIRECTOR_PASSWORD: 'Regional-Director-2026!',
+      }),
+    ).toThrow('must be HTTPS in production');
+  });
+});
+
+describe('API_DOCS', () => {
+  const production = {
+    ...validEnvironment,
+    NODE_ENV: 'production',
+    COOKIE_SECURE: 'true',
+    WEB_ORIGIN: 'https://dts.example',
+    DIRECTOR_EMAIL: 'director@mgb.example.gov.ph',
+    DIRECTOR_PASSWORD: 'Regional-Director-2026!',
+  };
+
+  it('serves the OpenAPI UI outside production by default', () => {
+    expect(validateEnvironment(validEnvironment)).toMatchObject({ API_DOCS: true });
+  });
+
+  it('hides it in production unless asked for', () => {
+    expect(validateEnvironment(production)).toMatchObject({ API_DOCS: false });
+    expect(validateEnvironment({ ...production, API_DOCS: 'true' })).toMatchObject({
+      API_DOCS: true,
+    });
   });
 });
