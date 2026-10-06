@@ -1,5 +1,5 @@
 # Compile MinIO from the AGPL source tree (no license gate, no prebuilt binary download).
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 RUN apk add --no-cache git bash
 WORKDIR /src
 COPY . .
