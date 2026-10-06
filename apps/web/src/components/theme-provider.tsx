@@ -3,23 +3,25 @@
 import * as React from 'react';
 
 type Theme = 'light' | 'dark' | 'system';
-export type DesignSystem = 'shadcn' | 'md3';
+export const ACCENTS = ['default', 'blue', 'green', 'violet', 'rose'] as const;
+export type Accent = (typeof ACCENTS)[number];
 type ThemeContext = {
   theme: Theme;
   resolvedTheme: 'light' | 'dark';
   setTheme: (theme: Theme) => void;
-  designSystem: DesignSystem;
-  setDesignSystem: (system: DesignSystem) => void;
+  accent: Accent;
+  setAccent: (accent: Accent) => void;
 };
 const ThemeContext = React.createContext<ThemeContext | null>(null);
 const STORAGE_KEY = 'dts.theme';
-export const DESIGN_SYSTEM_STORAGE_KEY = 'dts.design-system.v1';
+export const ACCENT_STORAGE_KEY = 'dts.accent.v1';
 
-function storedDesignSystem(): DesignSystem {
+function storedAccent(): Accent {
   try {
-    return window.localStorage.getItem(DESIGN_SYSTEM_STORAGE_KEY) === 'md3' ? 'md3' : 'shadcn';
+    const value = window.localStorage.getItem(ACCENT_STORAGE_KEY);
+    return ACCENTS.find((accent) => accent === value) ?? 'default';
   } catch {
-    return 'shadcn';
+    return 'default';
   }
 }
 
@@ -40,13 +42,13 @@ function storedTheme(): Theme {
 
 export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [theme, setThemeState] = React.useState<Theme>('system');
-  const [designSystem, setDesignSystemState] = React.useState<DesignSystem>('shadcn');
+  const [accent, setAccentState] = React.useState<Accent>('default');
   const [systemDark, setSystemDark] = React.useState(false);
   const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
     setThemeState(storedTheme());
-    setDesignSystemState(storedDesignSystem());
+    setAccentState(storedAccent());
     const media = window.matchMedia?.('(prefers-color-scheme: dark)');
     if (!media) {
       setReady(true);
@@ -67,8 +69,9 @@ export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode
 
   React.useEffect(() => {
     if (!ready) return;
-    document.documentElement.dataset.designSystem = designSystem;
-  }, [ready, designSystem]);
+    document.documentElement.dataset.accent = accent;
+    delete document.documentElement.dataset.designSystem;
+  }, [ready, accent]);
 
   const setTheme = React.useCallback((next: Theme) => {
     setThemeState(next);
@@ -79,19 +82,17 @@ export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode
     }
   }, []);
 
-  const setDesignSystem = React.useCallback((next: DesignSystem) => {
-    setDesignSystemState(next);
+  const setAccent = React.useCallback((next: Accent) => {
+    setAccentState(next);
     try {
-      window.localStorage.setItem(DESIGN_SYSTEM_STORAGE_KEY, next);
+      window.localStorage.setItem(ACCENT_STORAGE_KEY, next);
     } catch {
       /* Keep this session's choice. */
     }
   }, []);
 
   return (
-    <ThemeContext.Provider
-      value={{ theme, resolvedTheme, setTheme, designSystem, setDesignSystem }}
-    >
+    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, accent, setAccent }}>
       {children}
     </ThemeContext.Provider>
   );
