@@ -1,7 +1,7 @@
 import { hash } from 'bcryptjs';
 import { config } from 'dotenv';
 import { createDatabase } from './client.js';
-import { validateDirectorAccount } from '../config/environment.js';
+import { validateDirectorAccount, validateSeedAdminPassword } from '../config/environment.js';
 import { ORD_DIVISION_CODE } from '../modules/organization/organization.constants.js';
 import { divisions, sections, users } from './schema.js';
 
@@ -13,6 +13,8 @@ config({ path: new URL('../../../../.env', import.meta.url) });
  * organization tree with no signatory in it — which is the state ADR-0006 exists to prevent.
  */
 const director = validateDirectorAccount(process.env);
+// Likewise: unset in production throws, rather than seeding the README's administrator password.
+const seedAdminPassword = validateSeedAdminPassword(process.env);
 
 const { db, pool } = createDatabase();
 try {
@@ -58,9 +60,7 @@ try {
       set: { code: 'GENERAL', active: true, updatedAt: new Date() },
     })
     .returning();
-  // `||`, not `??`: compose passes an unset variable through as an empty string, and an empty
-  // administrator password must fall back to the default rather than be hashed.
-  const passwordHash = await hash(process.env.SEED_ADMIN_PASSWORD || 'Admin@12345!', 12);
+  const passwordHash = await hash(seedAdminPassword ?? 'Admin@12345!', 12);
   await db
     .insert(users)
     .values({

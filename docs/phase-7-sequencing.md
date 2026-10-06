@@ -15,17 +15,20 @@ core workflow revision imposes on new code.
 
 **Nine open boxes and four policy-encoding gaps.** Not five — see the correction below. **Wave B
 landed on 2026-10-03** and closed the EICAR test, the CI harness and the oversize upload; **Wave A
-landed the same day** and closed three of the four policy gaps. Seven boxes and one gap remain.
+landed the same day** and closed three of the four policy gaps. **Waves C and D** (2026-10-04)
+closed the acceptance scenarios, E2E, the axe sweep, the load test and the last policy gap. **Four
+boxes remain:** the traceability matrix, the risk register, the backup/restore rehearsal (local dry
+run done, second machine owed) and the runbooks.
 
 | Open boxes |                                                                              |
 | ---------- | ---------------------------------------------------------------------------- |
-| Slice 0.1  | traceability matrix · acceptance scenarios · risk register                    |
-| Tests      | ~~EICAR integration test~~ · Playwright E2E · axe sweep · load test          |
+| Slice 0.1  | traceability matrix · ~~acceptance scenarios~~ · risk register                |
+| Tests      | ~~EICAR integration test~~ · ~~Playwright E2E~~ · ~~axe sweep~~ · ~~load test~~ |
 | Ops        | backup/restore rehearsal · runbooks for incident, scanner-down and Redis-loss |
 
 | Policy gap                                                           | Register row |
 | -------------------------------------------------------------------- | ------------ |
-| Audit retention — decided, unimplemented                             | P-08         |
+| ~~Audit retention — decided, unimplemented~~                         | P-08         |
 | ~~Release methods — decided, the enum is short of it~~               | P-15         |
 | ~~Decision 152's other half — Records Unit as a Section in the ORD~~ | —            |
 | ~~The Director's development password~~                              | — (ADR-0006) |
@@ -121,8 +124,10 @@ and D1 build fixtures on is now fixed.
   seed runs in the migrator image, which is handed a `DATABASE_URL` and little else, so making it
   validate the whole environment would turn an absent `REDIS_URL` into a failure to seed.
 
-  **The same hazard remains for `SEED_ADMIN_PASSWORD`**, which still falls back to
-  `Admin@12345!` in any environment. Out of this box's scope, and worth its own.
+  **The same hazard remained for `SEED_ADMIN_PASSWORD`**, which fell back to `Admin@12345!` in any
+  environment. Closed 2026-10-04 by `validateSeedAdminPassword`: unset in production, the seed
+  throws. It is checked by the seed only — the API never reads the variable, and demanding it at API
+  boot would keep a bootstrap password in the long-running process's environment.
 
 - [x] **A4** (2h) P-15: `release_method` stops being a pgEnum and becomes configurable rows, seeded
       Emailed / Postal / LBC / JRS / Picked Up / Personally Delivered. _Done-when:_ LBC and JRS are
@@ -206,8 +211,8 @@ and D1 build fixtures on is now fixed.
 
 ## Wave C — write the scenarios, then automate them
 
-~7 sessions. **Implemented 2026-10-04; 24/24 green locally.** C2–C4's done-when is _green in CI_,
-so their boxes close when the new `e2e` job passes on the PR.
+~7 sessions. **Done 2026-10-04.** C2–C4's done-when is _green in CI_, and the `e2e · axe
+(playwright)` job has passed on every main build since (e.g. run 37199254073, the merge of #102).
 
 Two product bugs fell out of performing the scenarios, which is the argument for writing them first:
 
@@ -231,7 +236,8 @@ And three harness traps worth knowing before touching `apps/e2e`:
 - Stopping a run from outside Playwright (killing the npm process) orphans the three servers on
   Windows; the next run then fails on "port already used".
 
-**Open question for the policy owner.** `documentIsPending` counts an unacknowledged
+**Open question for the policy owner** — _decided 2026-10-04: copies get an **Acknowledge**
+action, as ADR-0005's "outstanding acknowledgement" anticipates. Separate PR._ `documentIsPending` counts an unacknowledged
 for-information copy as outstanding, and `query-scope.int.test.ts` pins that deliberately. But a
 copy has no **Accept custody** — nothing in the UI ever acknowledges one — so any document forwarded
 with a copy stays in the registry's _Pending_ filter and the dashboard tile forever, including after
@@ -249,7 +255,7 @@ exclude them.
   Done in `docs/acceptance-scenarios.md`: both journeys plus the ORD variant (ADR-0007), with the
   Director named for exactly one hop and asserted to hold exactly one button.
 
-- [ ] **C2** (2h) Playwright harness. Nothing is installed today. It needs the full stack, so it
+- [x] **C2** (2h) Playwright harness. Nothing is installed today. It needs the full stack, so it
       inherits B1/B2's compose-in-CI pattern. Decide once: per-test truncation or a seeded snapshot
       restored per spec. _Done-when:_ one trivial spec is green in CI.
 
@@ -257,9 +263,9 @@ exclude them.
   must survive because a saved session is a JWT keyed on the user id and login is throttled to five a
   minute, and a per-spec template restore is impossible while the API holds a pool open on the
   database. The reasoning is at the head of `fixtures/database.ts`.
-- [ ] **C3** (2h) The E2E flow: login → register → upload → workflow → release, transcribing C1 rather
+- [x] **C3** (2h) The E2E flow: login → register → upload → workflow → release, transcribing C1 rather
       than inventing coverage. _Done-when:_ green in CI.
-- [ ] **C4** (2h) The axe sweep via `@axe-core/playwright` on the C2 harness — login, registry,
+- [x] **C4** (2h) The axe sweep via `@axe-core/playwright` on the C2 harness — login, registry,
       document detail, dashboard, reports, audit, `/my-work`, and the three admin screens.
       _Done-when:_ no critical violations. Cheaper here than in jsdom, and the only way to catch
       focus-order problems.
@@ -410,7 +416,6 @@ cannot be signed off without it.
 
 ## Shape
 
-~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent, with C2–C4 waiting only on the
-CI run. In **Wave D**, D1, D2 and D4 are done (D2 now meets its target after F4, F1 and JIT off; see
+~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent and closed. In **Wave D**, D1, D2 and D4 are done (D2 now meets its target after F4, F1 and JIT off; see
 its box), and
 D3 has a local dry run recorded but needs a second machine to restore onto.

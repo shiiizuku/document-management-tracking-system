@@ -3,6 +3,7 @@ import {
   parseTrustProxy,
   validateDirectorAccount,
   validateEnvironment,
+  validateSeedAdminPassword,
 } from '../src/config/environment.js';
 
 const validEnvironment = {
@@ -189,5 +190,54 @@ describe('Director account configuration', () => {
         DIRECTOR_PASSWORD: 'Regional-Director-2026!',
       }),
     ).toThrow('DIRECTOR_EMAIL must be a valid email address');
+  });
+});
+
+/*
+ * The first administrator's password. The development fallback is printed in the README, so a
+ * production seed that forgot the variable would publish the most privileged account's password.
+ */
+describe('Seed administrator password', () => {
+  it('refuses to seed in production without one', () => {
+    expect(() => validateSeedAdminPassword({ NODE_ENV: 'production' })).toThrow(
+      /SEED_ADMIN_PASSWORD is required in production/,
+    );
+    // Compose passes an unset variable through as an empty string.
+    expect(() =>
+      validateSeedAdminPassword({ NODE_ENV: 'production', SEED_ADMIN_PASSWORD: '' }),
+    ).toThrow(/SEED_ADMIN_PASSWORD is required in production/);
+  });
+
+  it('leaves the development seed to its default outside production', () => {
+    expect(validateSeedAdminPassword({ NODE_ENV: 'development' })).toBeNull();
+    expect(validateSeedAdminPassword({ NODE_ENV: 'test', SEED_ADMIN_PASSWORD: '' })).toBeNull();
+  });
+
+  it('returns a configured password verbatim', () => {
+    expect(
+      validateSeedAdminPassword({
+        NODE_ENV: 'production',
+        SEED_ADMIN_PASSWORD: 'First-Administrator-2026!',
+      }),
+    ).toBe('First-Administrator-2026!');
+  });
+
+  it('refuses a weak password in any environment', () => {
+    expect(() =>
+      validateSeedAdminPassword({ NODE_ENV: 'development', SEED_ADMIN_PASSWORD: 'admin' }),
+    ).toThrow(/SEED_ADMIN_PASSWORD is not strong enough/);
+  });
+
+  // The API never reads it, so its boot must not demand it.
+  it('is not required at API boot', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        COOKIE_SECURE: 'true',
+        DIRECTOR_EMAIL: 'director@mgb.example.gov.ph',
+        DIRECTOR_PASSWORD: 'Regional-Director-2026!',
+      }),
+    ).not.toThrow();
   });
 });

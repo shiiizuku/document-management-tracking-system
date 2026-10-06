@@ -97,7 +97,7 @@ Linux container, and a CRLF copy stops clamd from starting (see
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | new credentials; the secret must be 8+ characters                                       |
 | `WEB_ORIGIN`                            | the public URL of the web app, e.g. `https://dts.example.gov.ph`. CORS allows only this |
 | `PUBLIC_API_URL`                        | the public API base the browser calls, e.g. `https://dts.example.gov.ph/api/v1`         |
-| `SEED_ADMIN_PASSWORD`                   | the first administrator's password                                                      |
+| `SEED_ADMIN_PASSWORD`                   | the first administrator's password. Required: the seed refuses to run without it        |
 | `TRUST_PROXY`                           | `1` for one reverse proxy, or its IP/CIDR. Required behind HTTPS termination, see below |
 
 `PUBLIC_API_URL` is compiled into the web bundle, so changing it later means rebuilding `web`.
@@ -197,7 +197,8 @@ goes straight to `FOR_SIGNATURE` rather than collecting the Director's own initi
 (ADR-0007). An existing `RECORDS` division is deactivated rather than deleted, because its code is
 embedded in reference numbers already issued on paper (decision 153).
 
-Override the administrator password with `SEED_ADMIN_PASSWORD`.
+Override the administrator password with `SEED_ADMIN_PASSWORD`. With `NODE_ENV=production` the
+seed refuses to run without it, rather than plant the password printed above.
 
 **The Director is deployment configuration, not seed data** (ADR-0006). Set `DIRECTOR_EMAIL` and
 `DIRECTOR_PASSWORD` and the seed creates that account instead; with `NODE_ENV=production` both the
