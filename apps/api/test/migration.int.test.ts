@@ -431,7 +431,10 @@ describe('database migrations', () => {
         );
       }
 
-      await migrate(database, { migrationsFolder });
+      // Through 0010 only: 0013 reshapes these rows again, and has its own block below.
+      await migrate(database, {
+        migrationsFolder: await migrationsThrough('0010_configurable_release_methods'),
+      });
     });
 
     it('seeds the six configured methods, flagging the two that issue a tracking number', async () => {
@@ -481,6 +484,117 @@ describe('database migrations', () => {
     it('removes the release_method type entirely', async () => {
       const result = await database.execute(sql.raw(`SELECT to_regtype('release_method') AS type`));
       expect(result.rows[0]).toEqual({ type: null });
+    });
+  });
+
+  /**
+   * Release methods become two questions (policy register P-15 as decided 2026-10-06). The case
+   * that matters is the re-point: `0010` folded `MAILED` into `POSTAL` without a trace, so 0013
+   * tells a historic mailed release from a genuine Postal one by whether it predates the POSTAL
+   * row — and must give the historic one no carrier rather than invent one.
+   */
+  describe('0013 release carriers', () => {
+    const releases: [string, string, string | null, string][] = [
+      // [title, method code, tracking reference, released_at expression]
+      [
+        'Historic mailed',
+        'POSTAL',
+        null,
+        `(SELECT created_at FROM release_methods WHERE code = 'POSTAL') - interval '1 day'`,
+      ],
+      ['Postal since 0010', 'POSTAL', null, 'now()'],
+      ['By LBC', 'LBC', 'LBC-1', 'now()'],
+      ['By JRS', 'JRS', 'JRS-1', 'now()'],
+      ['Emailed', 'EMAILED', null, 'now()'],
+    ];
+
+    beforeAll(async () => {
+      await resetSchema();
+      await migrate(database, {
+        migrationsFolder: await migrationsThrough('0012_audit_events_append_only'),
+      });
+
+      await database.execute(
+        sql.raw(`
+        INSERT INTO divisions (id, code, name)
+        VALUES ('66666666-6666-4666-8666-666666666666', 'LEGACY', 'Legacy Division');
+
+        INSERT INTO users (id, email, display_name, password_hash, role, division_id)
+        VALUES ('77777777-7777-4777-8777-777777777777', 'releaser@dts.local', 'Releaser',
+                'not-a-real-hash', 'RECORDS_STAFF', '66666666-6666-4666-8666-666666666666');
+      `),
+      );
+
+      for (const [index, [title, method, tracking, releasedAt]] of releases.entries()) {
+        await database.execute(
+          sql.raw(`
+          INSERT INTO documents (tracking_number, title, type, priority, direction, status,
+                                 division_id, created_by_id)
+          VALUES ('DTS-2026-00200${index}', '${title}', 'LETTER', 'NORMAL', 'OUTGOING',
+                  'RELEASED', '66666666-6666-4666-8666-666666666666',
+                  '77777777-7777-4777-8777-777777777777');
+
+          INSERT INTO release_events (document_id, released_by_id, method_id, tracking_reference,
+                                      released_at)
+          SELECT d.id, d.created_by_id, m.id, ${tracking === null ? 'NULL' : `'${tracking}'`},
+                 ${releasedAt}
+          FROM documents d, release_methods m
+          WHERE d.tracking_number = 'DTS-2026-00200${index}' AND m.code = '${method}';
+        `),
+        );
+      }
+
+      await migrate(database, { migrationsFolder });
+    });
+
+    it('leaves the four methods in the order the Records section gave, Mailed taking a carrier', async () => {
+      const result = await database.execute(
+        sql.raw(`SELECT code, requires_carrier FROM release_methods ORDER BY sort_order`),
+      );
+      expect(result.rows).toEqual([
+        { code: 'MAILED', requires_carrier: true },
+        { code: 'EMAILED', requires_carrier: false },
+        { code: 'PERSONALLY_DELIVERED', requires_carrier: false },
+        { code: 'PICKED_UP', requires_carrier: false },
+      ]);
+    });
+
+    it('seeds the three carriers, every one requiring a tracking reference', async () => {
+      const result = await database.execute(
+        sql.raw(
+          `SELECT code, requires_tracking_reference FROM release_carriers ORDER BY sort_order`,
+        ),
+      );
+      expect(result.rows).toEqual([
+        { code: 'POSTAL', requires_tracking_reference: true },
+        { code: 'LBC', requires_tracking_reference: true },
+        { code: 'JRS', requires_tracking_reference: true },
+      ]);
+    });
+
+    it('re-points every release, giving a historic mailed one no carrier', async () => {
+      const result = await database.execute(
+        sql.raw(`
+        SELECT d.title, m.code AS method, c.code AS carrier, e.tracking_reference
+        FROM release_events e
+        JOIN documents d ON d.id = e.document_id
+        JOIN release_methods m ON m.id = e.method_id
+        LEFT JOIN release_carriers c ON c.id = e.carrier_id
+        ORDER BY d.tracking_number
+      `),
+      );
+      expect(result.rows).toEqual([
+        { title: 'Historic mailed', method: 'MAILED', carrier: null, tracking_reference: null },
+        {
+          title: 'Postal since 0010',
+          method: 'MAILED',
+          carrier: 'POSTAL',
+          tracking_reference: null,
+        },
+        { title: 'By LBC', method: 'MAILED', carrier: 'LBC', tracking_reference: 'LBC-1' },
+        { title: 'By JRS', method: 'MAILED', carrier: 'JRS', tracking_reference: 'JRS-1' },
+        { title: 'Emailed', method: 'EMAILED', carrier: null, tracking_reference: null },
+      ]);
     });
   });
 });

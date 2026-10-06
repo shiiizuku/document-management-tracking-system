@@ -2,7 +2,7 @@ import {
   storedWorkflowStatusSchema,
   workflowActionSchema,
   type DocumentDirection,
-  type ReleaseMethod,
+  type ReleaseCarrier,
   type ReleaseMethodCode,
   type StoredWorkflowStatus,
   type WorkflowAction,
@@ -21,9 +21,21 @@ export type {
   StoredWorkflowStatus,
   WorkflowAction,
   DocumentDirection,
-  ReleaseMethod,
+  ReleaseCarrier,
   ReleaseMethodCode,
 };
+
+/**
+ * A release method as the engine needs it: the row's identity and whether it takes a carrier. The
+ * wire shape (`ReleaseMethod` in `@dts/contracts`) also carries the carrier options for the
+ * dialog, which the engine has no use for.
+ */
+export interface ReleaseMethodRule {
+  id: string;
+  code: ReleaseMethodCode;
+  label: string;
+  requiresCarrier: boolean;
+}
 
 /**
  * What this engine moves a document between.
@@ -91,12 +103,13 @@ export interface WorkflowCommand {
   actorId: string;
   remarks?: string;
   /*
-   * The *resolved* method row, not the code the caller sent. Looking a code up is a database
-   * question, so `DocumentsService` answers it and hands the row over — which keeps this engine a
-   * pure function of its inputs and lets it enforce the row's own
-   * `requiresTrackingReference` flag without reaching for a repository.
+   * The *resolved* method and carrier rows, not the codes the caller sent. Looking a code up is a
+   * database question, so `DocumentsService` answers it and hands the rows over — which keeps this
+   * engine a pure function of its inputs and lets it enforce the rows' own `requiresCarrier` and
+   * `requiresTrackingReference` flags without reaching for a repository.
    */
-  releaseMethod?: ReleaseMethod;
+  releaseMethod?: ReleaseMethodRule;
+  releaseCarrier?: ReleaseCarrier;
   trackingReference?: string;
 }
 
@@ -106,7 +119,8 @@ export interface WorkflowEvent {
   fromStatus: WorkflowStatus;
   toStatus: WorkflowStatus;
   remarks: string | null;
-  releaseMethod: ReleaseMethod | null;
+  releaseMethod: ReleaseMethodRule | null;
+  releaseCarrier: ReleaseCarrier | null;
   trackingReference: string | null;
 }
 
@@ -367,23 +381,42 @@ export class WorkflowService {
         throw new WorkflowRuleError('Release method is required', 'RELEASE_METHOD_REQUIRED');
       }
       /*
-       * Decision 27 as amended: a method may require a tracking reference, and then it is
-       * mandatory. The rule reads off the method row rather than a list of courier codes here, so
-       * configuring a seventh carrier needs no change to this file.
+       * P-15 as decided 2026-10-06: a mailed release names its carrier, and nothing else does.
+       * Read off the method row's flag rather than a `MAILED` check, like the rest of this rule.
+       */
+      const carrier = command.releaseCarrier;
+      if (command.releaseMethod.requiresCarrier && carrier === undefined) {
+        throw new WorkflowRuleError(
+          `${command.releaseMethod.label} requires a carrier`,
+          'RELEASE_CARRIER_REQUIRED',
+        );
+      }
+      if (!command.releaseMethod.requiresCarrier && carrier !== undefined) {
+        throw new WorkflowRuleError(
+          `${command.releaseMethod.label} does not take a carrier`,
+          'RELEASE_CARRIER_NOT_ACCEPTED',
+        );
+      }
+      /*
+       * Decision 27 as amended: a carrier may require a tracking reference, and then it is
+       * mandatory. The rule reads off the carrier row rather than a list of codes here, so
+       * configuring a fourth carrier needs no change to this file.
        *
        * The converse is enforced too. A tracking number recorded against "Picked up" is a
        * statement that something can be traced when it cannot, and silently dropping it would
        * leave the person who typed it believing otherwise.
        */
-      if (command.releaseMethod.requiresTrackingReference && trackingReference.length === 0) {
+      const tracked = carrier?.requiresTrackingReference ?? false;
+      const trackedBy = carrier?.label ?? command.releaseMethod.label;
+      if (tracked && trackingReference.length === 0) {
         throw new WorkflowRuleError(
-          `${command.releaseMethod.label} requires a tracking reference`,
+          `${trackedBy} requires a tracking reference`,
           'TRACKING_REFERENCE_REQUIRED',
         );
       }
-      if (!command.releaseMethod.requiresTrackingReference && trackingReference.length > 0) {
+      if (!tracked && trackingReference.length > 0) {
         throw new WorkflowRuleError(
-          `${command.releaseMethod.label} does not take a tracking reference`,
+          `${trackedBy} does not take a tracking reference`,
           'TRACKING_REFERENCE_NOT_ACCEPTED',
         );
       }
@@ -409,6 +442,7 @@ export class WorkflowService {
         toStatus,
         remarks: remarks.length > 0 ? remarks : null,
         releaseMethod: command.releaseMethod ?? null,
+        releaseCarrier: command.releaseCarrier ?? null,
         trackingReference: trackingReference.length > 0 ? trackingReference : null,
       },
       acceptedRouteId: null,
@@ -467,6 +501,7 @@ export class WorkflowService {
         toStatus: document.status,
         remarks: remarks.length > 0 ? remarks : null,
         releaseMethod: null,
+        releaseCarrier: null,
         trackingReference: null,
       },
       acceptedRouteId: own.id,

@@ -22,6 +22,7 @@ import { DeleteDocumentDialog } from './delete-document-dialog';
 import { DocumentActions } from './document-actions';
 import { MetadataDialog } from './metadata-dialog';
 import { ReferencesSection } from './references-section';
+import { ReleaseCarrierDialog } from './release-carrier-dialog';
 import { RouteDialog } from './route-dialog';
 import { RoutingSlipDialog } from './routing-slip-dialog';
 import { currentCustody, presentedStatus, useDocument, type DocumentDetail } from './queries';
@@ -124,6 +125,21 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
             {detail.releaseMethod === null ? null : (
               <Field label="Released by" value={detail.releaseMethod.label} />
             )}
+            {/* Asked only of a mailed release. A blank one predates carriers (migration 0013) and
+                says so rather than showing a dash, because "not recorded" is the fact. */}
+            {detail.releaseMethod?.requiresCarrier === true ? (
+              <div>
+                <dt className="text-xs tracking-wide text-muted-foreground uppercase">Carrier</dt>
+                <dd className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-sm text-foreground">
+                  {detail.releaseMethod.carrier?.label ?? (
+                    <span className="text-muted-foreground">Not recorded</span>
+                  )}
+                  {detail.releaseMethod.carrier === null && can('DOCUMENT_RELEASE_CORRECT') ? (
+                    <ReleaseCarrierDialog document={detail} />
+                  ) : null}
+                </dd>
+              </div>
+            ) : null}
             {detail.releaseMethod?.trackingReference == null ? null : (
               <Field label="Tracking reference" value={detail.releaseMethod.trackingReference} />
             )}

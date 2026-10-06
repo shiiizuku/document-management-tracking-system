@@ -102,6 +102,7 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
   const [pendingAction, setPendingAction] = useState<WorkflowAction | null>(null);
   const [remarks, setRemarks] = useState('');
   const [releaseMethodCode, setReleaseMethodCode] = useState<ReleaseMethodCode | null>(null);
+  const [releaseCarrierCode, setReleaseCarrierCode] = useState<ReleaseMethodCode | null>(null);
   const [trackingReference, setTrackingReference] = useState('');
 
   const needs = pendingAction === null ? undefined : ACTION_REQUIRES[pendingAction];
@@ -118,17 +119,33 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
    */
   const selectedMethod =
     options.find((option) => option.code === releaseMethodCode) ?? options[0] ?? null;
-  const needsTracking = selectedMethod?.requiresTrackingReference ?? false;
+  /*
+   * The second question, asked only when the method takes a carrier (Mailed; P-15 as decided
+   * 2026-10-06). Deliberately no default: "which carrier" is the answer the record exists to hold,
+   * and a preselected Postal would be recorded by everyone who did not look.
+   */
+  const needsCarrier = selectedMethod?.requiresCarrier ?? false;
+  const carriers = selectedMethod?.carriers ?? [];
+  const selectedCarrier = needsCarrier
+    ? (carriers.find((carrier) => carrier.code === releaseCarrierCode) ?? null)
+    : null;
+  const needsTracking = selectedCarrier?.requiresTrackingReference ?? false;
 
   const closeDialog = () => {
     setPendingAction(null);
     setRemarks('');
+    setReleaseCarrierCode(null);
     setTrackingReference('');
   };
 
   const run = (
     action: WorkflowAction,
-    extra: { remarks?: string; releaseMethod?: ReleaseMethodCode; trackingReference?: string },
+    extra: {
+      remarks?: string;
+      releaseMethod?: ReleaseMethodCode;
+      releaseCarrier?: ReleaseMethodCode;
+      trackingReference?: string;
+    },
   ) => {
     if (document === undefined) return;
     runAction.mutate(
@@ -180,9 +197,10 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
                 run(pendingAction, { remarks });
                 return;
               }
-              if (selectedMethod === null) return;
+              if (selectedMethod === null || (needsCarrier && selectedCarrier === null)) return;
               run(pendingAction, {
                 releaseMethod: selectedMethod.code,
+                ...(selectedCarrier === null ? {} : { releaseCarrier: selectedCarrier.code }),
                 ...(needsTracking ? { trackingReference: trackingReference.trim() } : {}),
                 ...(remarks ? { remarks } : {}),
               });
@@ -203,6 +221,7 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
                       disabled={options.length === 0}
                       onValueChange={(value) => {
                         setReleaseMethodCode(value);
+                        setReleaseCarrierCode(null);
                         setTrackingReference('');
                       }}
                     >
@@ -223,12 +242,41 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
                     </Select>
                   </div>
 
-                  {/* Required by the method, not by the action: a courier consignment that is
-                      recorded without its tracking number cannot be traced (decision 27). */}
+                  {needsCarrier ? (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="release-carrier">Carrier</Label>
+                      <Select
+                        value={selectedCarrier?.code ?? ''}
+                        disabled={carriers.length === 0}
+                        onValueChange={(value) => {
+                          setReleaseCarrierCode(value);
+                          setTrackingReference('');
+                        }}
+                      >
+                        <SelectTrigger id="release-carrier">
+                          <SelectValue
+                            placeholder={
+                              carriers.length === 0 ? 'No carriers configured' : 'Choose a carrier'
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {carriers.map((carrier) => (
+                            <SelectItem key={carrier.code} value={carrier.code}>
+                              {carrier.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+
+                  {/* Required by the carrier, not by the action: a consignment that is recorded
+                      without its tracking number cannot be traced (decision 27). */}
                   {needsTracking ? (
                     <div className="space-y-1.5">
                       <Label htmlFor="tracking-reference">
-                        {selectedMethod?.label} tracking reference
+                        {selectedCarrier?.label} tracking reference
                       </Label>
                       <Input
                         id="tracking-reference"
@@ -269,6 +317,7 @@ export function useActionRunner(document: DocumentDetail | undefined): ActionRun
                   (needs === 'remarks' && remarks.trim().length === 0) ||
                   (needs === 'releaseMethod' &&
                     (selectedMethod === null ||
+                      (needsCarrier && selectedCarrier === null) ||
                       (needsTracking && trackingReference.trim().length === 0)))
                 }
               >

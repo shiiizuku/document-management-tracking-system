@@ -509,15 +509,18 @@ const insertSupportingRows = async (client: Client, accountCount: number): Promi
   });
   await step('releases and reference links', async () => {
     await client.query(
-      `INSERT INTO release_events (document_id, released_by_id, method_id, tracking_reference,
-                                   released_at)
-       SELECT d.id, $1::uuid, m.id,
-              CASE WHEN m.requires_tracking_reference THEN m.code || '-' || d.tracking_number END,
+      `INSERT INTO release_events (document_id, released_by_id, method_id, carrier_id,
+                                   tracking_reference, released_at)
+       SELECT d.id, $1::uuid, m.id, c.id,
+              CASE WHEN c.requires_tracking_reference THEN c.code || '-' || d.tracking_number END,
               d.updated_at
        FROM documents d
        JOIN perf_docs p ON p.id = d.id
        JOIN release_methods m
          ON m.sort_order = 1 + floor(p.r_ref * (SELECT count(*) FROM release_methods))::int
+       LEFT JOIN release_carriers c
+         ON m.requires_carrier
+        AND c.sort_order = 1 + floor(p.r_sender * (SELECT count(*) FROM release_carriers))::int
        WHERE d.direction = 'OUTGOING' AND d.status IN ('RELEASED', 'ARCHIVED')`,
       [ACCOUNTS.records.id],
     );

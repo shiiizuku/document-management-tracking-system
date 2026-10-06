@@ -165,7 +165,7 @@ export const runAction = async (
   page: Page,
   label: string,
   expected: string,
-  input?: { remarks?: string; method?: string; trackingReference?: string },
+  input?: { remarks?: string; method?: string; carrier?: string; trackingReference?: string },
 ): Promise<void> => {
   await action(page, label).click();
 
@@ -173,6 +173,7 @@ export const runAction = async (
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: label })).toBeVisible();
     if (input.method !== undefined) await chooseOption(dialog, 'Delivery method', input.method);
+    if (input.carrier !== undefined) await chooseOption(dialog, 'Carrier', input.carrier);
     if (input.trackingReference !== undefined)
       await dialog.getByLabel(/tracking reference/i).fill(input.trackingReference);
     if (input.remarks !== undefined) await dialog.getByLabel(/^Remarks/).fill(input.remarks);

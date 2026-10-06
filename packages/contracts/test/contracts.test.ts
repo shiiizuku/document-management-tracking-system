@@ -76,6 +76,7 @@ describe('shared API contracts', () => {
       'DOCUMENT_SIGN',
       'DOCUMENT_PREPARE_RELEASE',
       'DOCUMENT_RELEASE',
+      'DOCUMENT_RELEASE_CORRECT',
       'DOCUMENT_COMPLY',
       'DOCUMENT_ARCHIVE',
       'DOCUMENT_DELETE',

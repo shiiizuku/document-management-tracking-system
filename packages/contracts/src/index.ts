@@ -92,6 +92,9 @@ export const capabilitySchema = z.enum([
   'DOCUMENT_SIGN',
   'DOCUMENT_PREPARE_RELEASE',
   'DOCUMENT_RELEASE',
+  // Filling in the carrier of a release recorded before carriers were asked for (P-15 as
+  // decided 2026-10-06). Records staff only: it amends a release record after the fact.
+  'DOCUMENT_RELEASE_CORRECT',
   // Recording an incoming document as acted upon, with remarks — its terminal state, and the
   // counterpart to releasing an outgoing one (decision 163).
   'DOCUMENT_COMPLY',
@@ -142,13 +145,32 @@ export const releaseMethodCodeSchema = z
   .max(40)
   .regex(/^[A-Z][A-Z0-9_]*$/, 'Release method code must be upper snake case');
 
-/** One configurable release method, as `GET /release-methods` serves it to the release dialog. */
+/**
+ * A carrier a mailed document travels by — Postal, LBC, JRS (P-15 as decided 2026-10-06). A
+ * configurable row like the method, and coded the same way.
+ */
+export const releaseCarrierSchema = z.object({
+  id: z.string(),
+  code: releaseMethodCodeSchema,
+  label: z.string(),
+  /** When true, `trackingReference` is mandatory on a release sent by this carrier. */
+  requiresTrackingReference: z.boolean(),
+});
+
+/**
+ * One configurable release method, as `GET /release-methods` serves it to the release dialog.
+ *
+ * Releasing asks two questions, not one: how the document left (Mailed, Emailed, Personally
+ * delivered, Picked up) and, only when it was mailed, by which carrier. `carriers` is the second
+ * question's options, served with the method that asks it so the dialog needs one request; it is
+ * empty for every method that does not take a carrier.
+ */
 export const releaseMethodSchema = z.object({
   id: z.string(),
   code: releaseMethodCodeSchema,
   label: z.string(),
-  /** When true, `trackingReference` is mandatory on a `RELEASE` command using this method. */
-  requiresTrackingReference: z.boolean(),
+  requiresCarrier: z.boolean(),
+  carriers: z.array(releaseCarrierSchema),
 });
 
 export const loginSchema = z.object({
@@ -331,11 +353,25 @@ export const workflowCommandSchema = z.object({
   expectedVersion: z.number().int().positive(),
   remarks: z.string().trim().max(4000).optional(),
   releaseMethod: releaseMethodCodeSchema.optional(),
+  /** Required when the method takes a carrier (Mailed), refused when it does not. */
+  releaseCarrier: releaseMethodCodeSchema.optional(),
   /*
-   * Required when the chosen method is flagged `requiresTrackingReference`, refused when it is
-   * not: a tracking number against "Picked up" is noise in the record. Both halves of that rule
-   * are in `WorkflowService`, because whether it applies depends on a row this schema cannot see.
+   * Required when the chosen carrier is flagged `requiresTrackingReference`, refused otherwise: a
+   * tracking number against "Picked up" is noise in the record. Both halves of that rule are in
+   * `WorkflowService`, because whether it applies depends on rows this schema cannot see.
    */
+  trackingReference: z.string().trim().min(1).max(120).optional(),
+});
+
+/*
+ * Records staff filling in the carrier of a release recorded before carriers existed
+ * (`POST /documents/:id/release/carrier`). Only a release whose method takes a carrier and whose
+ * carrier is still blank can be corrected; a recorded carrier is never overwritten. The tracking
+ * reference is optional here even for a carrier that requires one at release, because these
+ * releases were made without one and demanding it would make the correction unsubmittable.
+ */
+export const recordReleaseCarrierSchema = z.object({
+  carrier: releaseMethodCodeSchema,
   trackingReference: z.string().trim().min(1).max(120).optional(),
 });
 
@@ -482,6 +518,8 @@ export type DocumentDirection = z.infer<typeof documentDirectionSchema>;
 export type DocumentPriority = z.infer<typeof documentPrioritySchema>;
 export type ReleaseMethodCode = z.infer<typeof releaseMethodCodeSchema>;
 export type ReleaseMethod = z.infer<typeof releaseMethodSchema>;
+export type ReleaseCarrier = z.infer<typeof releaseCarrierSchema>;
+export type RecordReleaseCarrierInput = z.infer<typeof recordReleaseCarrierSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentMetadataInput = z.infer<typeof updateDocumentMetadataSchema>;
 export type AssignDocumentInput = z.infer<typeof assignDocumentSchema>;

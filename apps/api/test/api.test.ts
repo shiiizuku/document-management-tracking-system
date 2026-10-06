@@ -114,10 +114,11 @@ describe('REST /api/v1 public seam', () => {
   });
 
   /*
-   * The point of P-15: the list is data, so LBC and JRS are recordable, and the two that issue a
-   * consignment number are the two flagged as requiring one.
+   * The point of P-15: the list is data, and releasing asks two questions. Mailed is the one
+   * method that takes a carrier, so it is the only one served with carriers, and every carrier
+   * requires a tracking reference (decided 2026-10-06).
    */
-  it('serves the configured release methods, flagging the ones that need a tracking reference', async () => {
+  it('serves the configured release methods, with carriers under Mailed only', async () => {
     const login = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
       .send({ email: 'records@dts.local', password: 'Records@1234!' })
@@ -129,19 +130,31 @@ describe('REST /api/v1 public seam', () => {
       .expect(200);
 
     const methods = (
-      response.body as { data: { code: string; requiresTrackingReference: boolean }[] }
+      response.body as {
+        data: {
+          code: string;
+          requiresCarrier: boolean;
+          carriers: { code: string; requiresTrackingReference: boolean }[];
+        }[];
+      }
     ).data;
     expect(methods.map((method) => method.code)).toEqual([
+      'MAILED',
       'EMAILED',
-      'POSTAL',
-      'LBC',
-      'JRS',
-      'PICKED_UP',
       'PERSONALLY_DELIVERED',
+      'PICKED_UP',
     ]);
-    expect(
-      methods.filter((method) => method.requiresTrackingReference).map((method) => method.code),
-    ).toEqual(['LBC', 'JRS']);
+    const [mailed, ...others] = methods;
+    expect(mailed?.requiresCarrier).toBe(true);
+    expect(mailed?.carriers).toEqual([
+      expect.objectContaining({ code: 'POSTAL', requiresTrackingReference: true }),
+      expect.objectContaining({ code: 'LBC', requiresTrackingReference: true }),
+      expect.objectContaining({ code: 'JRS', requiresTrackingReference: true }),
+    ]);
+    for (const method of others) {
+      expect(method.requiresCarrier).toBe(false);
+      expect(method.carriers).toEqual([]);
+    }
   });
 
   it('never returns inaccessible cross-division documents in search totals', async () => {
