@@ -10,6 +10,11 @@ updates:
       # Patch and minor bumps that should be safe together; majors stay one PR each.
       npm-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # typescript-eslint supports TypeScript `<6.1.0`; a TypeScript major would leave the linter
+      # on a compiler it does not support. Lift this when typescript-eslint widens its peer range.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
@@ -23,16 +28,22 @@ updates:
   - package-ecosystem: docker
     directories: [/apps/api, /apps/web]
     schedule: { interval: weekly }
+    ignore:
+      # The Node major is a deliberate move: CI, `setup-node` and the images have to change
+      # together, and only to an LTS line. Patch and minor rebuilds of node:22 still arrive.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: docker
     directory: /minio
     schedule: { interval: weekly }
 
-  # The vendored MinIO server's Go modules. Upstream no longer publishes community releases, so
-  # these bumps are the only way its dependencies move (D6 raised them by hand once).
+  # The vendored MinIO server's Go modules: security updates only. Its source is frozen, so a bulk
+  # version bump breaks the build — the first one moved 43 modules and two of them
+  # (charmbracelet/x/ansi, minio/sio) changed APIs MinIO calls. A limit of 0 turns version-update
+  # PRs off; Dependabot security updates for a vulnerable module still open, one module at a time,
+  # and the Trivy gate in CI catches anything they miss.
   - package-ecosystem: gomod
     directory: /minio
     schedule: { interval: weekly }
-    groups:
-      minio-go-modules:
-        patterns: ['*']
+    open-pull-requests-limit: 0
