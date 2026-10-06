@@ -38,6 +38,7 @@ import {
   documentShares,
   documents,
   referenceCounters,
+  releaseCarriers,
   releaseEvents,
   releaseMethods,
   sections,
@@ -53,13 +54,18 @@ import { ORD_DIVISION_CODE } from '../organization/organization.constants.js';
 
 export type DocumentRow = typeof documents.$inferSelect;
 export type ReleaseMethodRow = typeof releaseMethods.$inferSelect;
+export type ReleaseCarrierRow = typeof releaseCarriers.$inferSelect;
 
-/** A recorded release: which method, and the consignment number where the method requires one. */
+/**
+ * A recorded release: which method, which carrier where the method takes one, and the consignment
+ * number where the carrier requires one. `carrier` is null on a mailed release recorded before
+ * carriers were asked for — `requiresCarrier` with a null carrier is what "not recorded" means.
+ */
 export interface RecordedRelease {
-  id: string;
   code: string;
   label: string;
-  requiresTrackingReference: boolean;
+  requiresCarrier: boolean;
+  carrier: { code: string; label: string } | null;
   trackingReference: string | null;
 }
 
@@ -1019,6 +1025,7 @@ export class DocumentsRepository {
       documentId: string;
       releasedById: string;
       methodId: string;
+      carrierId: string | null;
       trackingReference: string | null;
     },
     executor: DatabaseExecutor = this.database,
@@ -1027,22 +1034,51 @@ export class DocumentsRepository {
   }
 
   /**
-   * How a document left the office, joined back to its method row so the caller gets the label
-   * rather than a code it would have to translate. Null until the document has been released.
+   * Fills in the carrier of a mailed release recorded before carriers were asked for. Conditional
+   * on the carrier still being null, so a recorded carrier is never overwritten and two people
+   * correcting the same release at once cannot both succeed. False when nothing was updated.
+   */
+  async recordReleaseCarrier(
+    documentId: string,
+    carrierId: string,
+    trackingReference: string | null,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<boolean> {
+    const rows = await executor
+      .update(releaseEvents)
+      .set({ carrierId, trackingReference })
+      .where(and(eq(releaseEvents.documentId, documentId), isNull(releaseEvents.carrierId)))
+      .returning({ id: releaseEvents.id });
+    return rows.length > 0;
+  }
+
+  /**
+   * How a document left the office, joined back to its method and carrier rows so the caller gets
+   * labels rather than codes it would have to translate. Null until the document has been released.
    */
   async findReleaseMethod(documentId: string): Promise<RecordedRelease | null> {
     const [row] = await this.database
       .select({
-        id: releaseMethods.id,
         code: releaseMethods.code,
         label: releaseMethods.label,
-        requiresTrackingReference: releaseMethods.requiresTrackingReference,
+        requiresCarrier: releaseMethods.requiresCarrier,
+        carrierCode: releaseCarriers.code,
+        carrierLabel: releaseCarriers.label,
         trackingReference: releaseEvents.trackingReference,
       })
       .from(releaseEvents)
       .innerJoin(releaseMethods, eq(releaseMethods.id, releaseEvents.methodId))
+      .leftJoin(releaseCarriers, eq(releaseCarriers.id, releaseEvents.carrierId))
       .where(eq(releaseEvents.documentId, documentId));
-    return row ?? null;
+    if (row === undefined) return null;
+    const { carrierCode, carrierLabel, ...release } = row;
+    return {
+      ...release,
+      carrier:
+        carrierCode === null || carrierLabel === null
+          ? null
+          : { code: carrierCode, label: carrierLabel },
+    };
   }
 
   /**
@@ -1066,6 +1102,24 @@ export class DocumentsRepository {
       .select()
       .from(releaseMethods)
       .where(and(eq(releaseMethods.code, code), eq(releaseMethods.active, true)));
+    return row ?? null;
+  }
+
+  /** The configured carriers for a mailed release, in the order the office reads them. */
+  async listReleaseCarriers(includeInactive = false): Promise<ReleaseCarrierRow[]> {
+    return this.database
+      .select()
+      .from(releaseCarriers)
+      .where(includeInactive ? undefined : eq(releaseCarriers.active, true))
+      .orderBy(asc(releaseCarriers.sortOrder), asc(releaseCarriers.label));
+  }
+
+  /** The active carrier for a code, or null, on the same terms as the method lookup above. */
+  async findActiveReleaseCarrierByCode(code: string): Promise<ReleaseCarrierRow | null> {
+    const [row] = await this.database
+      .select()
+      .from(releaseCarriers)
+      .where(and(eq(releaseCarriers.code, code), eq(releaseCarriers.active, true)));
     return row ?? null;
   }
 

@@ -15,6 +15,7 @@ import {
   assignDocumentSchema,
   createDocumentSchema,
   linkReferenceDocumentSchema,
+  recordReleaseCarrierSchema,
   routeDocumentSchema,
   shareDocumentSchema,
   updateDocumentMetadataSchema,
@@ -23,6 +24,7 @@ import {
   type AssignDocumentInput,
   type CreateDocumentInput,
   type LinkReferenceDocumentInput,
+  type RecordReleaseCarrierInput,
   type RouteDocumentInput,
   type ShareDocumentInput,
   type UpdateDocumentMetadataInput,
@@ -190,11 +192,22 @@ export class DocumentsController {
       expectedVersion: number;
       remarks?: string;
       releaseMethod?: ReleaseMethodCode;
+      releaseCarrier?: ReleaseMethodCode;
       trackingReference?: string;
     },
   ) {
     const action = workflowActionSchema.parse(rawAction);
     return this.documents.executeAction(actor, id, action, input).then((data) => ({ data }));
+  }
+
+  // Records staff filling in the carrier of a mailed release recorded before carriers existed.
+  @Post(':id/release/carrier')
+  recordReleaseCarrier(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(recordReleaseCarrierSchema)) input: RecordReleaseCarrierInput,
+  ) {
+    return this.documents.recordReleaseCarrier(actor, id, input).then((data) => ({ data }));
   }
 
   @Post(':id/assignments')

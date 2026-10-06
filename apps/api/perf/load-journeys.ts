@@ -224,7 +224,11 @@ const OUTGOING: readonly Step[] = [
       'RELEASE',
       context,
       context.random() < 0.3
-        ? { releaseMethod: 'LBC', trackingReference: `LBC-${journey.document!.id.slice(0, 12)}` }
+        ? {
+            releaseMethod: 'MAILED',
+            releaseCarrier: 'LBC',
+            trackingReference: `LBC-${journey.document!.id.slice(0, 12)}`,
+          }
         : { releaseMethod: 'EMAILED' },
     ),
   (journey, context) => act(journey, context.pick(context.principals.records), 'ARCHIVE', context),

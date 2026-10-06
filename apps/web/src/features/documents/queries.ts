@@ -103,6 +103,12 @@ export interface DocumentListItem {
   releaseMethod: {
     code: ReleaseMethodCode;
     label: string;
+    /**
+     * Whether the method takes a carrier (Mailed). With `carrier: null` the release predates
+     * carriers and the carrier is "not recorded" — the state Records staff can fill in.
+     */
+    requiresCarrier: boolean;
+    carrier: { code: ReleaseMethodCode; label: string } | null;
     trackingReference: string | null;
   } | null;
   createdAt: string;
@@ -376,6 +382,7 @@ export interface WorkflowCommand {
   expectedVersion: number;
   remarks?: string | undefined;
   releaseMethod?: ReleaseMethodCode | undefined;
+  releaseCarrier?: ReleaseMethodCode | undefined;
   trackingReference?: string | undefined;
 }
 
@@ -492,6 +499,24 @@ export function useDeleteDocument(id: string) {
       }),
     // The detail query is invalidated too, so a user who stays on the page gets the "not
     // available" state rather than a cached copy of a document that no longer exists.
+    onSuccess: () => invalidateDocument(client, id),
+    onError: () => invalidateDocument(client, id),
+  });
+}
+
+/**
+ * Fills in the carrier of a mailed release recorded before carriers were asked for (policy
+ * register P-15 as decided 2026-10-06). Records staff only; the server refuses it once a carrier
+ * is recorded, so a stale screen gets a 409 and the refetch shows what was recorded instead.
+ */
+export function useRecordReleaseCarrier(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { carrier: ReleaseMethodCode; trackingReference?: string | undefined }) =>
+      api<DocumentListItem>(`/documents/${id}/release/carrier`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
     onSuccess: () => invalidateDocument(client, id),
     onError: () => invalidateDocument(client, id),
   });

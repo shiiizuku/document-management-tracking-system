@@ -26,12 +26,21 @@ afterEach(() => {
 
 /*
  * Release methods are configured rows served by `GET /release-methods` (policy register P-15), so
- * the release dialog cannot be driven without them. Two are enough: one that takes no tracking
- * reference and one that requires one.
+ * the release dialog cannot be driven without them. Two are enough: one that takes no carrier, and
+ * Mailed, which takes a carrier that requires a tracking reference.
  */
 const RELEASE_METHODS = [
-  { id: 'rm-1', code: 'POSTAL', label: 'Postal', requiresTrackingReference: false },
-  { id: 'rm-2', code: 'LBC', label: 'LBC', requiresTrackingReference: true },
+  { id: 'rm-1', code: 'EMAILED', label: 'Emailed', requiresCarrier: false, carriers: [] },
+  {
+    id: 'rm-2',
+    code: 'MAILED',
+    label: 'Mailed',
+    requiresCarrier: true,
+    carriers: [
+      { id: 'rc-1', code: 'POSTAL', label: 'Postal', requiresTrackingReference: true },
+      { id: 'rc-2', code: 'LBC', label: 'LBC', requiresTrackingReference: true },
+    ],
+  },
 ];
 
 /**
@@ -165,7 +174,8 @@ describe('DocumentActions', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Release document' }));
     await waitFor(() => expect(screen.getByLabelText('Delivery method')).toBeEnabled());
     await userEvent.click(screen.getByLabelText('Delivery method'));
-    await userEvent.click(screen.getByRole('option', { name: 'Postal' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Emailed' }));
+    expect(screen.queryByLabelText('Carrier')).not.toBeInTheDocument();
 
     await userEvent.click(
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Release document' }),
@@ -174,30 +184,34 @@ describe('DocumentActions', () => {
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith('/documents/doc-1/actions/RELEASE', {
         method: 'POST',
-        body: JSON.stringify({ expectedVersion: 3, releaseMethod: 'POSTAL' }),
+        body: JSON.stringify({ expectedVersion: 3, releaseMethod: 'EMAILED' }),
       }),
     );
   });
 
   /*
-   * Decision 27 as amended: a method may require a tracking reference, and then it is mandatory.
-   * The requirement is a property of the chosen method, so the field appears on selecting a
-   * courier and the submit stays disabled until it is filled.
+   * P-15 as decided 2026-10-06: Mailed asks which carrier, with no default, and every carrier
+   * requires a tracking reference. The submit stays disabled until both are given.
    */
-  it('demands a tracking reference for a courier, and sends it', async () => {
+  it('asks a mailed release for its carrier and tracking reference, and sends both', async () => {
     withReleaseMethods(documentDetail({ status: 'RELEASED' }));
     renderWithQuery(<DocumentActions document={documentDetail({ allowedActions: ['RELEASE'] })} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Release document' }));
     await waitFor(() => expect(screen.getByLabelText('Delivery method')).toBeEnabled());
-    expect(screen.queryByLabelText(/tracking reference/i)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByLabelText('Delivery method'));
-    await userEvent.click(screen.getByRole('option', { name: 'LBC' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Mailed' }));
 
     const dialog = within(screen.getByRole('dialog'));
     expect(dialog.getByRole('button', { name: 'Release document' })).toBeDisabled();
-    await userEvent.type(screen.getByLabelText('LBC tracking reference'), 'LBC-00042');
+    expect(screen.queryByLabelText(/tracking reference/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText('Carrier'));
+    await userEvent.click(screen.getByRole('option', { name: 'Postal' }));
+    expect(dialog.getByRole('button', { name: 'Release document' })).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('Postal tracking reference'), 'RR123456789PH');
     await userEvent.click(dialog.getByRole('button', { name: 'Release document' }));
 
     await waitFor(() =>
@@ -205,8 +219,9 @@ describe('DocumentActions', () => {
         method: 'POST',
         body: JSON.stringify({
           expectedVersion: 3,
-          releaseMethod: 'LBC',
-          trackingReference: 'LBC-00042',
+          releaseMethod: 'MAILED',
+          releaseCarrier: 'POSTAL',
+          trackingReference: 'RR123456789PH',
         }),
       }),
     );

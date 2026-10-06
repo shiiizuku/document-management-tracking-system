@@ -3,7 +3,8 @@ import {
   IllegalTransitionError,
   WorkflowService,
   WorkflowRuleError,
-  type ReleaseMethod,
+  type ReleaseCarrier,
+  type ReleaseMethodRule,
   type RouteCustody,
   type WorkflowAction,
   type WorkflowActor,
@@ -113,19 +114,31 @@ const legalTransitions: Array<{
 const remarksActions: WorkflowAction[] = ['REQUEST_REVISION', 'COMPLY'];
 
 /*
- * A release method is a configured row now, not an enum value, and the engine is handed the
- * resolved row so it can read the row's own `requiresTrackingReference` flag (policy register
- * P-15). `EMAILED` is the one used throughout here precisely because it requires no tracking
- * reference — the two methods that do have their own cases below.
+ * Release methods and carriers are configured rows, not enum values, and the engine is handed the
+ * resolved rows so it can read their own `requiresCarrier` and `requiresTrackingReference` flags
+ * (policy register P-15). `EMAILED` is the one used throughout here precisely because it takes
+ * neither a carrier nor a tracking reference; Mailed has its own cases below.
  */
-const EMAILED: ReleaseMethod = {
+const EMAILED: ReleaseMethodRule = {
   id: 'release-method-emailed',
   code: 'EMAILED',
   label: 'Emailed',
-  requiresTrackingReference: false,
+  requiresCarrier: false,
 };
-const LBC: ReleaseMethod = {
-  id: 'release-method-lbc',
+const MAILED: ReleaseMethodRule = {
+  id: 'release-method-mailed',
+  code: 'MAILED',
+  label: 'Mailed',
+  requiresCarrier: true,
+};
+const POSTAL: ReleaseCarrier = {
+  id: 'release-carrier-postal',
+  code: 'POSTAL',
+  label: 'Postal',
+  requiresTrackingReference: true,
+};
+const LBC: ReleaseCarrier = {
+  id: 'release-carrier-lbc',
   code: 'LBC',
   label: 'LBC',
   requiresTrackingReference: true,
@@ -294,11 +307,11 @@ describe('WorkflowService public seam', () => {
   });
 
   /*
-   * Decision 27 as amended: a method may require a tracking reference, and then it is mandatory.
-   * The rule is read off the method row rather than a list of courier codes, so these two cases
-   * are what stop a seventh carrier needing a change to the engine.
+   * P-15 as decided 2026-10-06: Mailed asks for a carrier, and every carrier asks for a tracking
+   * reference. Both rules read off the rows' flags rather than lists of codes, so these cases are
+   * what stop a fourth carrier needing a change to the engine.
    */
-  describe('tracking references', () => {
+  describe('carriers and tracking references', () => {
     const releasable = {
       ...baseDocument('FOR_RELEASE'),
       hasCleanCurrentAttachment: true,
@@ -313,17 +326,37 @@ describe('WorkflowService public seam', () => {
         ...extra,
       });
 
-    it('refuses a courier release with no tracking reference', () => {
-      expect(() => release({ releaseMethod: LBC })).toThrowError(
-        'LBC requires a tracking reference',
+    it('refuses a mailed release with no carrier', () => {
+      expect(() => release({ releaseMethod: MAILED, trackingReference: 'X-1' })).toThrowError(
+        'Mailed requires a carrier',
       );
     });
 
-    it('records the tracking reference a courier release carries', () => {
-      const outcome = release({ releaseMethod: LBC, trackingReference: ' LBC-00042 ' });
+    it('refuses a carrier on a method that does not take one', () => {
+      expect(() => release({ releaseMethod: EMAILED, releaseCarrier: LBC })).toThrowError(
+        'Emailed does not take a carrier',
+      );
+    });
+
+    it('refuses a mailed release with no tracking reference, Postal included', () => {
+      expect(() => release({ releaseMethod: MAILED, releaseCarrier: LBC })).toThrowError(
+        'LBC requires a tracking reference',
+      );
+      expect(() => release({ releaseMethod: MAILED, releaseCarrier: POSTAL })).toThrowError(
+        'Postal requires a tracking reference',
+      );
+    });
+
+    it('records the carrier and tracking reference a mailed release carries', () => {
+      const outcome = release({
+        releaseMethod: MAILED,
+        releaseCarrier: POSTAL,
+        trackingReference: ' RR123456789PH ',
+      });
       expect(outcome.event).toMatchObject({
-        releaseMethod: LBC,
-        trackingReference: 'LBC-00042',
+        releaseMethod: MAILED,
+        releaseCarrier: POSTAL,
+        trackingReference: 'RR123456789PH',
       });
     });
 

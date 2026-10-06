@@ -245,16 +245,55 @@ describe('REST /api/v1 document attachments', () => {
     }).expect(400);
     expect(unknown.body.error.message).toContain('Unknown release method');
 
-    // `POSTAL`, not `MAILED`: release methods are configured rows now, and migration 0010 maps
-    // the retired enum value forward to the name decision 27 uses (policy register P-15).
+    // Mailed by Postal: two questions since migration 0013, and every carrier takes a tracking
+    // reference (policy register P-15 as decided 2026-10-06).
     const released = await act(cookie, created.id, 'RELEASE', {
       expectedVersion: 5,
-      releaseMethod: 'POSTAL',
+      releaseMethod: 'MAILED',
+      releaseCarrier: 'POSTAL',
+      trackingReference: 'RR123456789PH',
     }).expect(201);
     expect(released.body.data).toMatchObject({
       status: 'RELEASED',
-      releaseMethod: { code: 'POSTAL', label: 'Postal', trackingReference: null },
+      releaseMethod: {
+        code: 'MAILED',
+        label: 'Mailed',
+        requiresCarrier: true,
+        carrier: { code: 'POSTAL', label: 'Postal' },
+        trackingReference: 'RR123456789PH',
+      },
     });
+  });
+
+  /*
+   * A mailed release recorded before carriers were asked for has no carrier, and migration 0013
+   * will not invent one. Records staff fill it in, once: the correction completes a blank and
+   * never rewrites an answer, and nobody without `DOCUMENT_RELEASE_CORRECT` may make it.
+   */
+  it('lets records staff fill in the carrier of an earlier mailed release, once', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const created = await createOutgoing(cookie);
+    app.get<InMemoryDocumentsRepository>(DocumentsRepository).seedReleaseWithoutCarrier(created.id);
+    const correct = (session: string[], body: Record<string, unknown>) =>
+      request(server())
+        .post(`/api/v1/documents/${created.id}/release/carrier`)
+        .set('Cookie', session)
+        .send(body);
+
+    await correct(await directorLogin(), { carrier: 'LBC' }).expect(403);
+    const unknown = await correct(cookie, { carrier: 'CARRIER_PIGEON' }).expect(400);
+    expect(unknown.body.error.message).toContain('Unknown carrier');
+
+    // No tracking reference: the release was made without one, so the correction cannot demand it.
+    const recorded = await correct(cookie, { carrier: 'LBC' }).expect(201);
+    expect(recorded.body.data.releaseMethod).toMatchObject({
+      code: 'MAILED',
+      carrier: { code: 'LBC', label: 'LBC' },
+      trackingReference: null,
+    });
+
+    const again = await correct(cookie, { carrier: 'JRS' }).expect(409);
+    expect(again.body.error.code).toBe('RELEASE_CARRIER_RECORDED');
   });
 
   /*
@@ -318,7 +357,7 @@ describe('REST /api/v1 document attachments', () => {
 
     const blocked = await act(cookie, created.id, 'RELEASE', {
       expectedVersion: 6,
-      releaseMethod: 'POSTAL',
+      releaseMethod: 'EMAILED',
     }).expect(422);
     expect(blocked.body.error.code).toBe('RELEASE_BLOCKED');
   });
@@ -411,7 +450,7 @@ describe('REST /api/v1 document attachments', () => {
 
     const blocked = await act(cookie, created.id, 'RELEASE', {
       expectedVersion: 5,
-      releaseMethod: 'POSTAL',
+      releaseMethod: 'EMAILED',
     }).expect(422);
     expect(blocked.body.error.code).toBe('RELEASE_BLOCKED');
   });
