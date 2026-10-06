@@ -591,11 +591,13 @@ Pull from this list whenever a slice above reaches "verify."
       are recorded against a target. _Done in Phase 7 Wave D (D2):_ target 15 actions/s for ten
       minutes, met after F4, F1 and JIT off (read p95 126 ms at 15/s, 166 ms at 30/s, no failures).
       `docs/evidence/d2-load-test.md`.
-- [~] (2h) Backup/restore rehearsal for coordinated Postgres + MinIO using `scripts/backup.sh` and
-      `scripts/restore.sh`. _Done-when:_ a restore is verified against a checklist. _Partial:_ a
-      local host-loss dry run is recorded in `docs/evidence/d3-restore-rehearsal.md` (serving again
-      in 6 min 55 s). _Remaining:_ the restore from a second machine or NAS, and a decision on
-      attachments, which recover only to the last nightly mirror.
+- [x] (2h) Backup/restore rehearsal for coordinated Postgres + MinIO using `scripts/backup.sh` and
+      `scripts/restore.sh`. _Done-when:_ a restore is verified against a checklist. _Done in Phase 7
+      Wave D (D3), 2026-10-06:_ host loss under load, restored from the NAS alone. Serving again in
+      7 min 33 s; database back to 47 s before the failure, attachments to 3 min 1 s (the object
+      mirror now runs every 3 minutes, `scripts/mirror-objects.sh`). The archive reaches the NAS
+      through `scripts/push-archive.ps1` on Windows hosts; setup in
+      `docs/runbooks/nas-backup-target.md`. `docs/evidence/d3-restore-rehearsal.md`.
 
 **Audit / policy**
 
