@@ -188,4 +188,46 @@ describe('structured logger', () => {
     expect(serialized.message).toBe(`boom token=${REDACTED}`);
     expect(typeof serialized.stack).toBe('string');
   });
+
+  // P-14: user IDs may be logged; names and emails may not.
+  describe('P-14 personal data', () => {
+    it('removes email addresses from free text', () => {
+      const { lines, write } = capture();
+      new StructuredLogger({ write }).log(
+        'Key (email)=(ana.reyes@mgb.gov.ph) already exists; login attempt for user@example.com',
+      );
+
+      expect(lines[0]).not.toContain('ana.reyes@mgb.gov.ph');
+      expect(lines[0]).not.toContain('user@example.com');
+      expect(lines[0]).toContain(REDACTED);
+    });
+
+    it('removes name and email fields but keeps the user id', () => {
+      expect(
+        redact({
+          id: '0192f7c4-0000-7000-8000-000000000001',
+          email: 'records@dts.local',
+          displayName: 'Records Officer',
+          full_name: 'Ana Reyes',
+          name: 'TypeError',
+        }),
+      ).toEqual({
+        id: '0192f7c4-0000-7000-8000-000000000001',
+        email: REDACTED,
+        displayName: REDACTED,
+        full_name: REDACTED,
+        name: 'TypeError',
+      });
+    });
+
+    it('redacts an error stack, which repeats the message on its first line', () => {
+      const serialized = redact(
+        new Error('lookup failed for ana.reyes@mgb.gov.ph password=hunter2'),
+      ) as { stack: string };
+
+      expect(serialized.stack).not.toContain('ana.reyes@mgb.gov.ph');
+      expect(serialized.stack).not.toContain('hunter2');
+      expect(serialized.stack).toContain('at ');
+    });
+  });
 });

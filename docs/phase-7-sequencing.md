@@ -441,10 +441,20 @@ adds an index and `0012` adds the audit triggers.
   cases. The `POSTAL`/`LBC`/`JRS` method rows are deleted after the re-point, because nothing
   cites them any more. Decision 27's amendment is recorded in `CONTEXT.md`.
 
-- [ ] **D6** (2h ×2) Security pass (Phase 7 task 3). A threat-model pass over the trust
+- [x] **D6** (2h ×2) Security pass (Phase 7 task 3). A threat-model pass over the trust
       boundaries, and Dependabot plus a dependency and container scan (Trivy or CodeQL) in CI. Also a
       recorded check of secure headers, the CORS allowlist, the upload and report rate limits, and
       log redaction against P-14. _Done-when:_ no open critical findings, and the checks run in CI.
+
+  **Done 2026-10-06.** Six trust boundaries, eight findings, all fixed. Trivy reports 0 critical
+  and 0 high findings in the API, web and MinIO images, and `npm audit` reports none at either
+  level. The new `security` CI job fails on a critical; the header, CORS, rate-limit and P-14
+  checks are unit suites in `quality`. The findings that mattered most were in the containers. The
+  images ran as root with npm and every dev dependency aboard, and MinIO's vendored server, built on
+  Go 1.24, carried 4 criticals and 54 highs. Its modules were bumped and the build moved to Go 1.26.
+  Trivy is pinned by commit because its action's tags were hijacked in March 2026. CodeQL was not
+  used: the repository is private and code scanning is not enabled. Detail, the threat model and the
+  two accepted moderates: `evidence/d6-security-pass.md`.
 
 ## Wave E — the writing that needs the rest done
 
@@ -486,5 +496,5 @@ missing from this plan, only the security pass was added (D6).
 
 ## Shape
 
-~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent and closed. In **Wave D**, D1, D2, D3 and D4 are done (D2 now meets its target after F4, F1 and JIT off; see
+~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent and closed. In **Wave D**, D1–D6 are done (D2 now meets its target after F4, F1 and JIT off; see
 its box; D3 restored from the NAS on 2026-10-06).

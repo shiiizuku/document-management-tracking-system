@@ -19,13 +19,25 @@ const LEVEL_SEVERITY: Record<LogLevel, number> = {
 const SENSITIVE_KEY =
   /(pass(word|phrase)?|secret|token|authorization|auth|cookie|session|api[-_]?key|credential|private[-_]?key|otp|pin)/i;
 
+/**
+ * Personal data P-14 keeps out of logs: user IDs may be logged, names and emails may not. Bare
+ * `name` is deliberately absent — it is an `Error`'s class name and a division's label far more
+ * often than a person's.
+ */
+const PERSONAL_KEY = /^(e-?mail|(full|display|first|last|given|family)[-_]?name)$/i;
+
+/** An address anywhere in free text, e.g. the `Key (email)=(…)` detail of a Postgres error. */
+const EMAIL_ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+
 export const REDACTED = '[REDACTED]';
 
 const redactString = (value: string): string =>
-  value.replace(
-    /([A-Za-z0-9_.-]*(?:pass(?:word|phrase)?|secret|token|authorization|auth|cookie|session|api[-_]?key|credential|private[-_]?key|otp|pin)[A-Za-z0-9_.-]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&}]+)/gi,
-    (_match, key: string, separator: string) => `${key}${separator}${REDACTED}`,
-  );
+  value
+    .replace(
+      /([A-Za-z0-9_.-]*(?:pass(?:word|phrase)?|secret|token|authorization|auth|cookie|session|api[-_]?key|credential|private[-_]?key|otp|pin)[A-Za-z0-9_.-]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&}]+)/gi,
+      (_match, key: string, separator: string) => `${key}${separator}${REDACTED}`,
+    )
+    .replace(EMAIL_ADDRESS, REDACTED);
 
 export const redact = (value: unknown, seen = new WeakSet<object>()): unknown => {
   if (typeof value === 'string') return redactString(value);
@@ -33,12 +45,18 @@ export const redact = (value: unknown, seen = new WeakSet<object>()): unknown =>
   if (seen.has(value)) return '[Circular]';
   seen.add(value);
   if (Array.isArray(value)) return value.map((entry) => redact(entry, seen));
+  // A V8 stack opens with `${name}: ${message}`, so it carries everything the message does and
+  // is redacted the same way rather than passed through beside a redacted copy of itself.
   if (value instanceof Error)
-    return { name: value.name, message: redactString(value.message), stack: value.stack };
+    return {
+      name: value.name,
+      message: redactString(value.message),
+      stack: value.stack === undefined ? undefined : redactString(value.stack),
+    };
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
       key,
-      SENSITIVE_KEY.test(key) ? REDACTED : redact(entry, seen),
+      SENSITIVE_KEY.test(key) || PERSONAL_KEY.test(key) ? REDACTED : redact(entry, seen),
     ]),
   );
 };

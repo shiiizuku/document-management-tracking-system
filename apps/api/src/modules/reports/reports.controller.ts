@@ -1,4 +1,5 @@
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AuthGuard } from '../../common/auth.guard.js';
 import { CurrentUser } from '../../common/current-user.decorator.js';
@@ -6,6 +7,13 @@ import type { RequestUser } from '../../common/request-user.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import { AuditWriter } from '../audit/audit.writer.js';
 import { ReportExportService } from './report-export.service.js';
+
+/**
+ * Exports per minute, per signed-in user. A report file is a full month of the registry rendered
+ * to PDF or XLSX in the API process, so it is the most expensive read there is; ten a minute is
+ * far past any person and well short of a loop. The on-screen report keeps the default bucket.
+ */
+export const REPORT_EXPORT_RATE_LIMIT = { limit: 10, ttl: 60_000 } as const;
 
 @Controller('reports')
 @UseGuards(AuthGuard)
@@ -27,6 +35,7 @@ export class ReportsController {
   }
 
   @Get('monthly.xlsx')
+  @Throttle({ default: REPORT_EXPORT_RATE_LIMIT })
   async monthlyXlsx(
     @CurrentUser() actor: RequestUser,
     @Res() response: Response,
@@ -49,6 +58,7 @@ export class ReportsController {
   }
 
   @Get('monthly.pdf')
+  @Throttle({ default: REPORT_EXPORT_RATE_LIMIT })
   async monthlyPdf(
     @CurrentUser() actor: RequestUser,
     @Res() response: Response,

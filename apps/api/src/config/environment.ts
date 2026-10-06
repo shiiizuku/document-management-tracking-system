@@ -53,6 +53,10 @@ export interface ValidatedEnvironment {
   DIRECTOR_PASSWORD?: string;
   NODE_ENV?: string;
   WEB_ORIGIN?: string;
+  /** The parsed CORS allowlist; see {@link parseWebOrigins}. */
+  WEB_ORIGINS: string[];
+  /** Whether `/api/docs` is served; see {@link validateEnvironment}. */
+  API_DOCS: boolean;
 }
 
 const requiredString = (environment: Record<string, unknown>, name: string): string => {
@@ -91,6 +95,47 @@ const parseUrl = (
   if (!protocols.includes(parsed.protocol))
     throw new Error(`${name} must be a valid ${description} URL`);
   return value;
+};
+
+export const DEFAULT_WEB_ORIGIN = 'http://localhost:3001';
+
+/**
+ * The browser origins the API answers cross-origin, for both CORS and the Socket.IO handshake.
+ *
+ * Each entry must be a bare origin — scheme, host and optional port. A browser sends exactly that
+ * in `Origin`, so `https://dts.example/` or `https://dts.example/app` would never match and the
+ * site would fail in a way that looks like a network fault. `*` is refused for the same reason it
+ * is dangerous: with credentials, a wildcard allowlist is no allowlist.
+ *
+ * In production an explicitly configured origin must be HTTPS, because the session cookie is
+ * `Secure` there (P-10, ADR-0002) and an `http:` page could never send it. Unset falls back to the
+ * local web port, which fails closed: no real deployment is served from it.
+ */
+export const parseWebOrigins = (value: unknown, production = false): string[] => {
+  if (value === undefined || value === '') return [DEFAULT_WEB_ORIGIN];
+  if (typeof value !== 'string') throw new Error('WEB_ORIGIN must be a comma-separated list');
+  const entries = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
+  if (entries.length === 0) return [DEFAULT_WEB_ORIGIN];
+  return entries.map((entry) => {
+    let origin: string;
+    try {
+      const parsed = new URL(entry);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error();
+      origin = parsed.origin;
+    } catch {
+      throw new Error(`WEB_ORIGIN entry "${entry}" must be an HTTP(S) origin`);
+    }
+    if (origin !== entry)
+      throw new Error(
+        `WEB_ORIGIN entry "${entry}" must be a bare origin such as ${origin}, with no path`,
+      );
+    if (production && !origin.startsWith('https:'))
+      throw new Error(`WEB_ORIGIN entry "${entry}" must be HTTPS in production`);
+    return origin;
+  });
 };
 
 const TRUST_PROXY_PRESETS = new Set(['loopback', 'linklocal', 'uniquelocal']);
@@ -358,10 +403,10 @@ export const validateEnvironment = (
   // the process a deployment starts first, so it is where a missing Director must be reported.
   validateDirectorAccount(environment);
 
-  if (typeof environment.WEB_ORIGIN === 'string') {
-    for (const origin of environment.WEB_ORIGIN.split(','))
-      parseUrl(origin.trim(), 'WEB_ORIGIN', ['http:', 'https:'], 'HTTP(S)');
-  }
+  const webOrigins = parseWebOrigins(environment.WEB_ORIGIN, nodeEnvironment === 'production');
+  // The OpenAPI UI maps every route and schema. Useful on a developer's machine; in production it
+  // is a reconnaissance aid on the public hostname, so it is off unless asked for.
+  const apiDocs = parseBoolean(environment.API_DOCS, 'API_DOCS', nodeEnvironment !== 'production');
 
   return {
     ...environment,
@@ -387,5 +432,7 @@ export const validateEnvironment = (
     PORT: port,
     WORKER_HEALTH_PORT: workerHealthPort,
     TRUST_PROXY: trustProxy,
+    WEB_ORIGINS: webOrigins,
+    API_DOCS: apiDocs,
   };
 };

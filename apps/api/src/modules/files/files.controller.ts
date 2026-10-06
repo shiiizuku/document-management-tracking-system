@@ -11,6 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { recordScanSchema, type RecordScanInput } from '@dts/contracts';
 import { AuthGuard } from '../../common/auth.guard.js';
@@ -31,6 +32,13 @@ interface UploadedAttachment {
 // The original filename is untrusted input. It is preserved verbatim in the JSON metadata,
 // but for the Content-Disposition header it is reduced to an ASCII-safe token so it cannot
 // inject header characters (CR/LF/quotes) or smuggle path separators.
+/**
+ * Uploads per minute, per signed-in user. Each one buffers up to 25 MB in memory, writes to
+ * object storage and queues a ClamAV scan, so the API-wide 120/min would let one account pin
+ * gigabytes of memory and the scanner's whole queue. Thirty is a scanning clerk working fast.
+ */
+export const UPLOAD_RATE_LIMIT = { limit: 30, ttl: 60_000 } as const;
+
 const safeDispositionFilename = (name: string): string => {
   const token = name
     .replace(/[^A-Za-z0-9._-]+/g, '_')
@@ -45,6 +53,7 @@ export class FilesController {
   constructor(private readonly attachments: AttachmentsService) {}
 
   @Post()
+  @Throttle({ default: UPLOAD_RATE_LIMIT })
   // Memory storage (multer's default) exposes file.buffer; the fileSize limit rejects
   // oversized uploads at the edge before they are fully buffered into memory.
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_ATTACHMENT_BYTES } }))

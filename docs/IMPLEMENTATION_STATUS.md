@@ -553,13 +553,13 @@ Pull from this list whenever a slice above reaches "verify."
 
 **Backend / infra**
 
-- [~] (2h) `ConfigModule` env validation across all services + `ThrottlerModule` rate limiting on
-      auth and mutations. _Partial:_ env validated at boot. `ThrottlerGuard` is an `APP_GUARD`, so a
+- [x] (2h) `ConfigModule` env validation across all services + `ThrottlerModule` rate limiting on
+      auth and mutations. ✓ Env validated at boot. `ThrottlerGuard` is an `APP_GUARD`, so a
       default bucket of **120 requests/minute covers every route**, with tight per-route buckets on
       login (5/min) and account-request submission (3/min); `rate-limit.test.ts` proves the login cap
       returns `429` and that the tight window does not leak onto ordinary authenticated routes.
-      _Remaining:_ the expensive mutations — attachment upload and report export — still sit on the
-      120/min default and want buckets of their own.
+      **D6 (2026-10-06)** gave the expensive routes their own buckets, per user: attachment upload
+      30/min and report export 10/min per format (`http-edge.test.ts`).
 - [x] (2h) Readiness probes every critical dependency, split by process so each probes its own
       request path: the API's `GET /health/ready` (and `/ready`) probes **Postgres + object storage**,
       and the worker's `/ready` probes **Postgres + Redis**. Each probe runs under a 2s timeout and
@@ -580,13 +580,15 @@ Pull from this list whenever a slice above reaches "verify."
       scenarios.
 - [x] (2h) Accessibility automation (axe) on the key screens. _Done-when:_ no critical violations.
       _Done in Phase 7 Wave C (C4):_ `accessibility.spec.ts` (`@axe-core/playwright`), same job.
-- [~] (2h) Security tests: authorization matrix, IDOR, upload abuse, rate limits. _Partial:_ the
+- [x] (2h) Security tests: authorization matrix, IDOR, upload abuse, rate limits. ✓ The
       authorization matrix (`authorization.test.ts`, 30 cases incl. the confidentiality gate and the
       Director's office-wide read), IDOR (`file-api.test.ts`, `files.int.test.ts`), media-type
       spoofing and macro refusal, CSRF (`csrf.guard.test.ts`) and rate limits
       (`rate-limit.test.ts`) and the oversize upload (`upload-limit.test.ts`) are all covered.
-      _Remaining:_ a dependency and container scan, a secure-headers/CORS-allowlist assertion, and
-      a log-redaction check.
+      **D6 (2026-10-06)** added the rest: the CI `security` job (`npm audit` + Trivy over the
+      lockfile and all three images, failing on a critical), secure-headers and CORS-allowlist
+      assertions (`http-edge.test.ts`, `security-headers.test.ts`) and the P-14 redaction checks
+      (`observability.test.ts`). See `evidence/d6-security-pass.md`.
 - [x] (2h) Representative-load test (search + upload + workflow). _Done-when:_ latency/throughput
       are recorded against a target. _Done in Phase 7 Wave D (D2):_ target 15 actions/s for ten
       minutes, met after F4, F1 and JIT off (read p95 126 ms at 15/s, 166 ms at 30/s, no failures).
