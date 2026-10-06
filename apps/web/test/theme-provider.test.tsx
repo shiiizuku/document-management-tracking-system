@@ -1,11 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  DESIGN_SYSTEM_STORAGE_KEY,
-  ThemeProvider,
-  useTheme,
-} from '../src/components/theme-provider';
+import { ACCENT_STORAGE_KEY, ThemeProvider, useTheme } from '../src/components/theme-provider';
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <ThemeProvider>{children}</ThemeProvider>
@@ -14,13 +10,13 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 beforeEach(() => {
   window.localStorage.clear();
   document.documentElement.classList.remove('dark');
-  delete document.documentElement.dataset.designSystem;
+  delete document.documentElement.dataset.accent;
 });
 
 afterEach(() => {
   window.localStorage.clear();
   document.documentElement.classList.remove('dark');
-  delete document.documentElement.dataset.designSystem;
+  delete document.documentElement.dataset.accent;
 });
 
 describe('ThemeProvider', () => {
@@ -45,26 +41,26 @@ describe('ThemeProvider', () => {
     expect(document.documentElement).toHaveClass('dark');
   });
 
-  it('keeps the design system independent of color mode and persists the selection', async () => {
+  it('keeps the accent independent of color mode and persists the selection', async () => {
     window.localStorage.setItem('dts.theme', 'dark');
-    window.localStorage.setItem(DESIGN_SYSTEM_STORAGE_KEY, 'md3');
+    window.localStorage.setItem(ACCENT_STORAGE_KEY, 'violet');
     const { result } = renderHook(() => useTheme(), { wrapper });
 
-    await waitFor(() => expect(result.current.designSystem).toBe('md3'));
-    expect(document.documentElement.dataset.designSystem).toBe('md3');
+    await waitFor(() => expect(result.current.accent).toBe('violet'));
+    expect(document.documentElement.dataset.accent).toBe('violet');
     expect(result.current.resolvedTheme).toBe('dark');
 
-    act(() => result.current.setDesignSystem('shadcn'));
-    expect(document.documentElement.dataset.designSystem).toBe('shadcn');
+    act(() => result.current.setAccent('default'));
+    expect(document.documentElement.dataset.accent).toBe('default');
     expect(result.current.resolvedTheme).toBe('dark');
-    expect(window.localStorage.getItem(DESIGN_SYSTEM_STORAGE_KEY)).toBe('shadcn');
+    expect(window.localStorage.getItem(ACCENT_STORAGE_KEY)).toBe('default');
   });
 
-  it('uses shadcn when the saved design system is invalid', async () => {
-    window.localStorage.setItem(DESIGN_SYSTEM_STORAGE_KEY, 'unknown');
+  it('uses default when the saved accent is invalid', async () => {
+    window.localStorage.setItem(ACCENT_STORAGE_KEY, 'unknown');
     const { result } = renderHook(() => useTheme(), { wrapper });
 
-    await waitFor(() => expect(document.documentElement.dataset.designSystem).toBe('shadcn'));
-    expect(result.current.designSystem).toBe('shadcn');
+    await waitFor(() => expect(document.documentElement.dataset.accent).toBe('default'));
+    expect(result.current.accent).toBe('default');
   });
 });
