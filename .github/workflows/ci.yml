@@ -9,8 +9,8 @@ jobs:
     name: lint · typecheck · unit · build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -56,8 +56,8 @@ jobs:
       # impossible to run against a database that has not opted in.
       ALLOW_DATABASE_RESET: 'true'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -75,7 +75,7 @@ jobs:
       # run. `docker compose up` builds only when the image is absent, so a cache hit skips it.
       - name: Restore the MinIO image built from vendored source
         id: minio-image
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/dts-minio-image.tar
           key: dts-minio-${{ hashFiles('minio/go.sum', 'minio/go.mod', 'minio/Dockerfile.fromsource') }}
@@ -130,8 +130,8 @@ jobs:
       COOKIE_SECURE: 'false'
       COOKIE_SAME_SITE: lax
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -147,7 +147,7 @@ jobs:
       # The same cache key as the integration job, so whichever job runs second gets a hit.
       - name: Restore the MinIO image built from vendored source
         id: minio-image
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/dts-minio-image.tar
           key: dts-minio-${{ hashFiles('minio/go.sum', 'minio/go.mod', 'minio/Dockerfile.fromsource') }}
@@ -176,7 +176,7 @@ jobs:
       # The report carries the axe findings for every screen, including the `serious` ones the
       # sweep records without failing on, plus a trace for anything that broke.
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: apps/e2e/playwright-report/
@@ -198,8 +198,8 @@ jobs:
     name: security · npm audit · trivy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -236,7 +236,7 @@ jobs:
       # The same cache key as the integration and e2e jobs.
       - name: Restore the MinIO image built from vendored source
         id: minio-image
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/dts-minio-image.tar
           key: dts-minio-${{ hashFiles('minio/go.sum', 'minio/go.mod', 'minio/Dockerfile.fromsource') }}
