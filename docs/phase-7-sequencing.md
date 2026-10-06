@@ -345,14 +345,25 @@ adds an index and `0012` adds the audit triggers.
   the API's connections, since compiling took most of each scoped count's run time. Measured one
   change per run. With all three, read p95 is 126 ms at 15/s and 166 ms at 30/s, with no failures.
   F2, F3 and F5 are no longer needed for the target. Detail: `d2-load-test.md` § Follow-up.
-- [ ] **D3** (2h) Backup/restore rehearsal. The scripts and `runbooks/backup-restore.md` are already
+- [x] **D3** (2h) Backup/restore rehearsal. The scripts and `runbooks/backup-restore.md` are already
       thorough; what is missing is a **performed** restore, timed against P-13's 2–4 hour window, with
       the evidence written down. _Done-when:_ a restore is verified against a checklist.
 
   Rehearse the real failure — loss of the application host — which means restoring from an archive on
   different storage, not from `./backups` on the same machine.
 
-  **Local dry run done 2026-10-04; the box stays open.** A host loss was rehearsed on one machine
+  **Done 2026-10-06, restored from the NAS.** Pilot-sized data under load, the host killed, its
+  volumes and local archive deleted, and a fresh compose project restored from what was on the NAS
+  alone. Serving again **7 min 33 s** after the decision to restore. The database came back to
+  **47 s** before the failure, the attachments to **3 min 1 s**. The whole checklist passed,
+  including a restored file downloading with a matching checksum. Docker Desktop cannot write to a
+  mapped drive (it silently mounts an empty local folder), so the archive is written locally and
+  pushed to the share every minute (`scripts/push-archive.ps1`). The pilot server is expected to be
+  Windows Server; the setup is `runbooks/nas-backup-target.md`. The object mirror runs every
+  **3 minutes**, not 5: with the push, 5 comes to about 6 in the worst case. Detail:
+  `evidence/d3-restore-rehearsal.md`.
+
+  _Local dry run, 2026-10-04:_ A host loss was rehearsed on one machine
   with pilot-sized data: two compose projects sharing one archive folder, the source killed rather
   than stopped. Serving again **6 min 55 s** after the decision to restore, most of it image builds
   and ClamAV's first start. The database came back to **37 s** before the failure. Two findings:
@@ -368,10 +379,12 @@ adds an index and `0012` adds the audit triggers.
     **only** from the share. That proves what P-13 asks for: the backups survive the loss of the
     application host's disks. WAL archiving and `backup.sh` write to the share. Docker Desktop
     reaches an SMB path through a bind mount of the mapped drive or UNC path. Check that first,
-    because the Postgres archive command runs inside the container.
+    because the Postgres archive command runs inside the container. _Checked: it cannot. A mapped
+    drive mounts as an empty local folder and a UNC path is refused, so the archive is written
+    locally and pushed to the share (see the result above)._
   - **Attachments meet the database's recovery point.** The MinIO mirror runs every 5–15 minutes,
     or continuously, rather than nightly. Rehearse again afterwards and record the file recovery
-    point next to the database's.
+    point next to the database's. _Done: every 3 minutes, since 5 plus the push can exceed P-13._
 
 - [x] **D4** (2h) Audit retention (P-08). _Done-when:_ the relocation path exists and a test asserts
       no purge path does.
@@ -473,6 +486,5 @@ missing from this plan, only the security pass was added (D6).
 
 ## Shape
 
-~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent and closed. In **Wave D**, D1, D2 and D4 are done (D2 now meets its target after F4, F1 and JIT off; see
-its box), and
-D3 has a local dry run recorded but needs a second machine to restore onto.
+~25 sessions, so 5–6 weeks at 2 h/day; Waves A–C's ~16 are spent and closed. In **Wave D**, D1, D2, D3 and D4 are done (D2 now meets its target after F4, F1 and JIT off; see
+its box; D3 restored from the NAS on 2026-10-06).

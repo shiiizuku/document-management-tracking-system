@@ -17,17 +17,24 @@ $BACKUP_PATH/
   objects/    a mirror of the object store
 ```
 
-**`BACKUP_PATH` must be storage on a different machine** — a NAS export or a mount from a second
-host. The failure this scheme exists for is the loss of the application host, and an archive on
-that host is lost with it. A 60-second archive interval buys nothing if the copy dies with the
-original.
+**The archive must end up on a different machine.** The failure this scheme exists for is the
+loss of the application host, and an archive on that host is lost with it. A 60-second archive
+interval buys nothing if the copy dies with the original. Decided 2026-10-06: it goes to the
+office NAS, an SMB share. [`nas-backup-target.md`](nas-backup-target.md) sets that up. On a Linux
+host `BACKUP_PATH` is the mounted share. On a Windows host Docker cannot write to a share, so
+`BACKUP_PATH` is a local folder and `scripts/push-archive.ps1` copies it to the NAS every minute.
 
 ## Scheduling
 
 | Job | Cadence | Why |
 | --- | --- | --- |
 | WAL archiving | continuous, segment closed every 60s | Postgres does this itself; it is what bounds data loss to minutes |
-| `scripts/backup.sh` | nightly | Bounds replay time on restore, and mirrors the object store |
+| `scripts/mirror-objects.sh` | every 3 minutes | Bounds what attachments lose to the same few minutes as the rows that point at them. 5 minutes plus the push to the NAS can exceed P-13 |
+| `scripts/backup.sh` | nightly | Bounds replay time on restore; runs a mirror pass too |
+| `scripts/push-archive.ps1` | every minute, Windows hosts only | Copies the local archive to the NAS |
+
+How each is scheduled on the pilot host (Task Scheduler on Windows, cron on Linux) is in
+[`nas-backup-target.md`](nas-backup-target.md).
 
 A nightly base keeps replay under an hour for a pilot-sized database. Taking it less often does
 not lose data, but it lengthens the restore and so eats into the 4-hour window.
@@ -41,6 +48,12 @@ Order matters: **database first, then objects.** A file version row whose object
 is a refused download, which is fail-closed and safe (D-79). An object with no row is invisible.
 Restoring objects first inverts that — the window where the system is wrong is the window where
 it looks fine.
+
+**Restore from a copy of the NAS archive, never from the NAS archive itself.** Copy it down
+first (`robocopy \\<nas>\<share>\dts D:\dts-restore /E`, or `rsync -a` on Linux) and point
+`BACKUP_PATH` at the copy. Once promoted, the restored Postgres starts archiving its new timeline
+into `BACKUP_PATH`, and that must not land in the archive being read. Details:
+[`nas-backup-target.md`](nas-backup-target.md), Restoring onto a replacement server.
 
 ```bash
 scripts/restore.sh                                            # latest base, all available WAL
@@ -74,15 +87,17 @@ The restore window is a claim until it has been timed. Rehearse against a copy o
 volume sizes, record the wall-clock time from decision to accepting traffic, and compare it with
 the 2–4 hours in P-13.
 
-**Rehearsed once, on one machine (2026-10-04, [`evidence/d3-restore-rehearsal.md`](../evidence/d3-restore-rehearsal.md)).**
-Pilot-sized data, a crash rather than a clean stop: serving again in 6 min 55 s, database back to
-37 s before the failure. Still owed: a rehearsal from storage on a different machine, which is the
-failure this scheme exists for.
+**Rehearsed from the NAS (2026-10-06, [`evidence/d3-restore-rehearsal.md`](../evidence/d3-restore-rehearsal.md)).**
+Pilot-sized data under load, the host killed rather than stopped, its disks deleted, and a fresh
+compose project restored from the NAS alone. Serving again **7 min 33 s** after the decision to
+restore, 2 min 39 s of it copying the archive down from the NAS. The database came back to **47 s**
+before the failure and the attachments to **3 min 1 s**, both inside P-13's 5 minutes. The first
+dry run (2026-10-04) used one disk for everything; its findings are in the same file.
 
-**Attachments recover only to the last `backup.sh`.** WAL covers the database to the minute; the
-object mirror is taken only when the backup script runs. Uploads made since then are lost with the
-host while their rows come back, and their downloads fail closed. Until the mirror runs far more
-often, P-13's 5-minute recovery point holds for records but not for their files.
+**Attachments recover to the last mirror pass**, not to the minute. Uploads after the last pass
+come back as rows whose downloads fail closed (`404 Attachment content not found`, D-79). With the
+mirror every 3 minutes that is at most a few minutes of uploads. Tell the people who made them
+to upload those files again.
 
 ## Developing on Windows
 

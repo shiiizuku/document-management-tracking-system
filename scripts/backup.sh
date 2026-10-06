@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Base backup of Postgres plus a mirror of the object store.
+# Base backup of Postgres plus a pass of the object mirror.
 #
 # This is the periodic half of the recovery scheme; the continuous half is the WAL archiving
 # Postgres does on its own (docker-compose.yml, `archive_command`). A base backup alone recovers
@@ -27,18 +27,9 @@ mkdir -p "$ARCHIVE_ROOT/wal" "$ARCHIVE_ROOT/base" "$ARCHIVE_ROOT/objects"
 docker compose exec -T postgres pg_basebackup \
   -U "${POSTGRES_USER:-dts}" -D /archive/base/"$STAMP" -Fp -X none -c fast
 
-# The object store is mirrored at the filesystem level rather than through the S3 API.
-#
-# `mc` is not in this image: the stack builds MinIO from the AGPL source because the published
-# images are license-gated, and that build ships the server alone. Copying the data directory
-# needs no extra client, and it is the same shape as the base backup above — the restore replaces
-# the volume rather than replaying writes into a running server.
-#
-# `-u` copies only what is newer, which converges cheaply because a stored file version is never
-# rewritten (D-71/D-72). An upload in flight is either fully present or absent, since MinIO writes
-# to a temporary name and renames, so a half-written object cannot appear under a real key.
-# Deletions are not propagated — see the runbook.
-docker compose exec -T minio sh -c 'mkdir -p /archive/objects && cp -au /data/. /archive/objects/'
+# The object store is mirrored by its own script, which also runs every 3 minutes on its own so
+# attachments meet the database's recovery point rather than this job's nightly one.
+bash "$(dirname "$0")/mirror-objects.sh"
 
 printf '%s\n' "Base backup at $ARCHIVE_ROOT/base/$STAMP; objects mirrored to $ARCHIVE_ROOT/objects."
 printf '%s\n' "WAL continues to archive to $ARCHIVE_ROOT/wal between runs."
