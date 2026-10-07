@@ -467,9 +467,15 @@ adds an index and `0012` adds the audit triggers.
   must carry the requeue one-liner the README already has — BullMQ parks a job after 5 attempts and
   nothing retries it on its own.
 
-- [ ] **E0** (2h) Risk register (Slice 0.1). The project lead owns every risk until it is reassigned
+- [x] **E0** (2h) Risk register (Slice 0.1). The project lead owns every risk until it is reassigned
       (decided 2026-10-06). That unblocks it. Seed it from `CONTEXT.md` and this document's open
       items. _Done-when:_ every unresolved question appears as a risk with an owner.
+
+  **Done 2026-10-07.** [`risk-register.md`](risk-register.md) holds 20 risks. Six questions are
+  still open: the emergency evidence hold, how users reach a deployment that stays on localhost
+  (decided 2026-10-07), UAT scheduling, the contingency items, F2's capped-count UX call, and the
+  2031 audit archive host. Each maps to a risk. The largest is R-09: development-mode defaults
+  (shared Director password, `dts`/`dts` Postgres) must be replaced before real records go in.
 
 - [ ] **E2** (2h) Traceability matrix (Slice 0.1): 75 stories → D-1–D-151 → MVP or deferred →
       implementation area → test. _Done-when:_ every story has a decision, a scope verdict, and either
