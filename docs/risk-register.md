@@ -41,7 +41,7 @@ questions still open on 2026-10-07:
 | Who delivers the items deferred to the UAT contingency (monitoring, RC build, guides, UAT scripts, training data, browser matrix) | `phase-7-sequencing.md`, deferred list | R-03 |
 | Whether the registry shows a capped count ("1,000+"): the UX call behind F2                   | `d2-performance-fixes.md`                  | R-19 |
 | Which host receives audit events once they turn five                                          | P-08; deferred to 2031                     | R-08 |
-| Whether to close the two auth gaps E1 found: the default `SESSION_SECRET`, and password reset | E1 drills                                  | R-21, R-22 |
+| Whether to close the second auth gap E1 found: password reset and session revival             | E1 drills                                  | R-22 |
 
 ## Summary
 
@@ -67,7 +67,7 @@ questions still open on 2026-10-07:
 | R-18 | Secrets sit in the host `.env`                          | Security       | Low    | High   | Project lead | `MONITORING` |
 | R-19 | Registry counts grow until reads miss their target      | Performance    | Medium | Medium | Project lead | `MONITORING` |
 | R-20 | A sign-in rush stalls every other request               | Performance    | High   | Low    | Project lead | `OPEN`       |
-| R-21 | The default `SESSION_SECRET` lets anyone forge a session | Security      | High   | High   | Project lead | `OPEN`       |
+| R-21 | The default `SESSION_SECRET` lets anyone forge a session | Security      | High   | High   | Project lead | `CLOSED`     |
 | R-22 | No password reset; reactivation revives old sessions    | Security       | Medium | Medium | Project lead | `OPEN`       |
 
 ## Delivery
@@ -174,8 +174,9 @@ The consequences:
 - In development mode the seed plants the shared development password for the Director
   (`director@dts.local`), and Postgres defaults to `dts`/`dts`. Anyone who reads the repo knows
   both. Real records must never be stored under those defaults.
-- Worst of all, `SESSION_SECRET` falls back to a value printed in `docker-compose.yml`. With it,
-  anyone can sign a session as any user without a password. The E1 drill did exactly that (R-21).
+- `SESSION_SECRET` used to fall back to a value printed in `docker-compose.yml`, which let
+  anyone sign a session as any user (R-21). The API now refuses it, so a stack without its own
+  secret doesn't start.
 
 - **Mitigation:** none yet. If it stays localhost, set `SESSION_SECRET`, `SEED_ADMIN_PASSWORD`,
   `DIRECTOR_EMAIL`, `DIRECTOR_PASSWORD` and `POSTGRES_PASSWORD` before the first real record. Set
@@ -302,12 +303,14 @@ so the API accepts it in every mode, `NODE_ENV=production` included. In the E1 d
 token for `admin@dts.local` signed with that string got `200` from `GET /me`. No password was
 needed. D6 did not catch it.
 
-- **Mitigation:** none in code. Setting `SESSION_SECRET` in `.env` closes it for a given
-  deployment. `runbooks/incident-response.md` says to check for the default, and how to rotate
-  away from it (drilled: everyone is signed out, and the API is back in 9 s).
-- **Fix:** refuse the compose default, at least when `NODE_ENV=production`, the way
-  `parseWebOrigins` refuses `http:`. Under R-09's localhost decision the stack never runs in
-  production mode, so also warn loudly, or refuse, outside it.
+The `.env.example` placeholder (`replace-with-at-least-32-random-characters`) had the same
+problem, and a `.env` copied from it kept it.
+
+- **Closed 2026-10-07.** `validateEnvironment` refuses both published values in every mode except
+  `test`: development too, because the local stack publishes the API on every interface.
+  `PUBLIC_SESSION_SECRETS` in `environment.ts` lists them, and `environment.test.ts` fails if
+  `docker-compose.yml` or `.env.example` ever ships a value that isn't on that list. A stack that
+  ran on one before this should still rotate (`runbooks/incident-response.md`).
 
 ### R-22 No password reset; reactivation revives old sessions
 

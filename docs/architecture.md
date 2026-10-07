@@ -240,7 +240,9 @@ optional.
 Configuration is nineteen environment variables validated at boot by
 [environment.ts](../apps/api/src/config/environment.ts), which refuses to start on
 `NODE_ENV=production` with `COOKIE_SECURE=false`, on `SameSite=None` combined with an insecure
-cookie, or on a `SESSION_SECRET` shorter than 32 characters.
+cookie, or on a `SESSION_SECRET` shorter than 32 characters. Outside tests it also refuses a
+`SESSION_SECRET` printed in the repository (the compose fallback or the `.env.example`
+placeholder), since anyone who has read it could forge a session (risk register R-21).
 
 **Behind the ingress.** The pilot is reached through TLS ingress (CONTEXT.md decision 136), so
 without help every request appears to come from the ingress address. `TRUST_PROXY` tells Express

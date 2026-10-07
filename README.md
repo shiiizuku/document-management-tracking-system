@@ -98,6 +98,8 @@ definition database alone wants about 2 GB.
 
 ```bash
 cp .env.example .env
+# Replace SESSION_SECRET in .env with the output of this. The API refuses the placeholder.
+node -e "console.log(require('crypto').randomBytes(36).toString('base64'))"
 npm install
 npm run build -w @dts/contracts
 docker compose up -d --build postgres redis minio clamav

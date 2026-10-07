@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_WEB_ORIGIN,
+  PUBLIC_SESSION_SECRETS,
   parseTrustProxy,
   parseWebOrigins,
   validateDirectorAccount,
@@ -61,6 +63,48 @@ describe('environment validation', () => {
     expect(() => validateEnvironment({ ...validEnvironment, SESSION_SECRET: 'too-short' })).toThrow(
       'SESSION_SECRET must be at least 32 characters',
     );
+  });
+
+  // R-21: both strings are published in this repository, so anyone who has read it can sign a
+  // session for any user. The compose fallback and the `.env.example` placeholder are both 32+
+  // characters, so the length rule alone let them through.
+  it.each(PUBLIC_SESSION_SECRETS)(
+    'refuses the published session secret %s outside tests',
+    (secret) => {
+      for (const NODE_ENV of ['development', 'production', undefined])
+        expect(() =>
+          validateEnvironment({
+            ...validEnvironment,
+            NODE_ENV,
+            COOKIE_SECURE: NODE_ENV === 'production' ? 'true' : 'false',
+            WEB_ORIGIN:
+              NODE_ENV === 'production' ? 'https://dts.example.gov.ph' : 'http://localhost:3000',
+            DIRECTOR_EMAIL: 'director@example.gov.ph',
+            DIRECTOR_PASSWORD: 'Regional-Director-2026!',
+            SESSION_SECRET: secret,
+          }),
+        ).toThrow('SESSION_SECRET is published in this repository');
+    },
+  );
+
+  it('lets the test suites run on a published session secret', () => {
+    for (const secret of PUBLIC_SESSION_SECRETS)
+      expect(validateEnvironment({ ...validEnvironment, SESSION_SECRET: secret })).toMatchObject({
+        SESSION_SECRET: secret,
+      });
+  });
+
+  it('names every fallback the repository ships for SESSION_SECRET', () => {
+    const shipped = [
+      ...readFileSync(new URL('../../../docker-compose.yml', import.meta.url), 'utf8').matchAll(
+        /SESSION_SECRET: \$\{SESSION_SECRET:-([^}]+)\}/g,
+      ),
+      ...readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8').matchAll(
+        /^SESSION_SECRET=(.+)$/gm,
+      ),
+    ].map((match) => match[1]!.trim());
+    expect(shipped.length).toBeGreaterThan(0);
+    for (const secret of shipped) expect(PUBLIC_SESSION_SECRETS).toContain(secret);
   });
 
   it('fails fast when infrastructure configuration is missing', () => {

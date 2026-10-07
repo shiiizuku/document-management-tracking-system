@@ -56,17 +56,14 @@ In the drill the API was `healthy` 9 s after the recreate. Every session issued 
 `401 Session is invalid or expired`, including a valid administrator session. Everyone signs in
 again. Nothing else is lost.
 
-**Check the secret isn't the repository default.** `docker-compose.yml` falls back to
-`local-development-session-secret-change-before-pilot` when `.env` doesn't set `SESSION_SECRET`.
-The API accepts it in every mode, including `NODE_ENV=production`, because it only checks the
-length. **Anyone who has read the repository can sign a session for any user with it.** In the
-drill, a session forged with the default as `admin@dts.local`, with no password, got `200` from
-`GET /me`. Treat a stack running on the default as already compromised: rotate the secret, then
-work through steps 2 and 3.
-
-```bash
-docker compose exec api printenv SESSION_SECRET
-```
+**A stack that ran on a published secret was open to anyone.** Before 2026-10-07 the API
+accepted the `docker-compose.yml` fallback (`local-development-session-secret-change-before-pilot`)
+and the `.env.example` placeholder (`replace-with-at-least-32-random-characters`). **Anyone who has
+read the repository could sign a session for any user with either one.** In the drill, a session
+forged with the fallback as `admin@dts.local`, with no password, got `200` from `GET /me`. The API
+now refuses to start on either value outside tests (R-21). A stack that ran on one before that
+should be treated as compromised: rotate the secret, then work through steps 2 and 3. Look for
+actions that have no sign-in before them (step 3).
 
 ### The whole service: take it off the network
 
