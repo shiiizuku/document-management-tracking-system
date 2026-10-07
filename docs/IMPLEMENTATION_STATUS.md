@@ -638,9 +638,9 @@ Pull from this list whenever a slice above reaches "verify."
         original. Migration `0012` makes `audit_events` refuse `UPDATE`, and refuse `DELETE`/`TRUNCATE`
         outside that path. `audit-relocation.test.ts` fails if another purge path appears. IT
         operations still has to name the archive host (`AUDIT_ARCHIVE_DATABASE_URL`).
-- [ ] (2h) Runbooks for the remaining failure modes. _Done-when:_ each has a rehearsed runbook.
-      _(`docs/runbooks/backup-restore.md` exists; incident response, scanner-down and Redis-loss do
-      not.)_
+- [x] (2h) Runbooks for the remaining failure modes. _Done-when:_ each has a rehearsed runbook.
+      _Done 2026-10-07 (E1):_ `docs/runbooks/incident-response.md`, `scanner-down.md` and
+      `redis-loss.md`, rehearsed in `docs/evidence/e1-failure-drills.md`.
 
 ---
 

@@ -73,8 +73,10 @@ just before the mistake.
 
 ## What is not covered, deliberately
 
-- **Redis** holds BullMQ queues. The outbox lives in Postgres, so the relay republishes anything
-  unconfirmed — losing Redis costs in-flight jobs, not records. It is not in the recovery point.
+- **Redis** holds BullMQ queues. The outbox lives in Postgres, so losing Redis costs in-flight
+  jobs, not records. It is not in the recovery point. Events already handed to Redis are not
+  re-sent, though, and a lost scan job leaves its file at `PENDING`. **After every restore, run the
+  stranded-scans check in [`redis-loss.md`](redis-loss.md).**
 - **ClamAV's volume** is virus signatures. They re-download on start.
 - **Deletions are not propagated to the object mirror.** `cp -au` adds and updates, never removes,
   so an object deleted from the store stays in the mirror. For an append-only record system that

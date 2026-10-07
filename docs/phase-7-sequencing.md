@@ -460,12 +460,26 @@ adds an index and `0012` adds the audit triggers.
 
 ~4 sessions.
 
-- [ ] **E1** (2h ×3) Three runbooks: incident response, scanner-down, Redis-loss. Match
+- [x] **E1** (2h ×3) Three runbooks: incident response, scanner-down, Redis-loss. Match
       `backup-restore.md`'s shape. _Done-when:_ each describes observed behaviour, not inferred.
 
   Write scanner-down _after_ B1 and Redis-loss _after_ watching the outbox relay recover. Scanner-down
   must carry the requeue one-liner the README already has — BullMQ parks a job after 5 attempts and
   nothing retries it on its own.
+
+  **Done 2026-10-07.** `runbooks/scanner-down.md`, `runbooks/redis-loss.md` and
+  `runbooks/incident-response.md`, each written from drills on a separate compose project
+  (`evidence/e1-failure-drills.md`). The drills found four things the docs had wrong or missing:
+
+  - Retries end with the file `PENDING`, not `SCAN_FAILED`. P-07's row is corrected.
+  - **A Redis data loss strands queued scans.** Their outbox rows are already published, so
+    neither the relay nor the README requeue reaches them. One SQL statement re-arms them (R-14).
+  - **The compose default `SESSION_SECRET` lets anyone forge a session, and production mode
+    accepts it** (R-21, new).
+  - **There is no password reset, and reactivating an account revives its old sessions** (R-22,
+    new).
+
+  R-21 and R-22 need code changes, which are not part of this box.
 
 - [x] **E0** (2h) Risk register (Slice 0.1). The project lead owns every risk until it is reassigned
       (decided 2026-10-06). That unblocks it. Seed it from `CONTEXT.md` and this document's open

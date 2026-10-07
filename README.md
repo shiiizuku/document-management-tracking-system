@@ -251,6 +251,10 @@ else **fails closed**. When every upload sits at "scan pending", one of these is
    worker runs outside Docker, run the same `node -e` from `apps/api` with `REDIS_URL` set to your
    `.env` value.
 
+   If files stay pending after this, the jobs were lost with Redis. The full procedure, including
+   that case, is in [`docs/runbooks/scanner-down.md`](docs/runbooks/scanner-down.md) and
+   [`docs/runbooks/redis-loss.md`](docs/runbooks/redis-loss.md).
+
 ### Development accounts
 
 `npm run db:seed` creates four users (`apps/api/src/database/seed.ts`):
