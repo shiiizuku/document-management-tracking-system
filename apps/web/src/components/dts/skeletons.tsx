@@ -41,10 +41,10 @@ export function CardsSkeleton({ count = 6 }: Readonly<{ count?: number }>) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-hidden>
       {Array.from({ length: count }, (_, index) => (
-        <div key={index} className="rounded-lg border border-border bg-card p-3">
+        <div key={index} className="rounded-2xl border border-border bg-card p-4">
           <Skeleton className="h-4 w-3/4" />
           <Skeleton className="mt-1.5 h-3 w-1/2" />
-          <div className="mt-2.5 flex gap-4 border-t border-border pt-2.5">
+          <div className="mt-3 flex gap-4 border-t border-border-subtle pt-3">
             <Skeleton className="h-3 w-14" />
             <Skeleton className="h-3 w-16" />
             <Skeleton className="h-3 w-12" />
@@ -58,7 +58,7 @@ export function CardsSkeleton({ count = 6 }: Readonly<{ count?: number }>) {
 /** Placeholder lines, shaped like {@link DocumentLines}: one row of varying width each. */
 export function LinesSkeleton({ rows = 10 }: Readonly<{ rows?: number }>) {
   return (
-    <div className="divide-y divide-border" aria-hidden>
+    <div className="divide-y divide-border-subtle" aria-hidden>
       {Array.from({ length: rows }, (_, index) => (
         <div key={index} className="flex items-center gap-3 px-3 py-2">
           <Skeleton className="h-3.5 flex-1" style={{ maxWidth: `${55 + (index % 4) * 8}%` }} />
@@ -98,9 +98,9 @@ export function DetailSkeleton() {
 /** Placeholder for a row of summary tiles. */
 export function TilesSkeleton({ count = 4 }: Readonly<{ count?: number }>) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-hidden>
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4" aria-hidden>
       {Array.from({ length: count }, (_, index) => (
-        <div key={index} className="space-y-3 rounded-lg border border-border bg-card p-4">
+        <div key={index} className="space-y-3 rounded-2xl border border-border bg-card p-5">
           <Skeleton className="h-3 w-24" />
           <Skeleton className="h-8 w-16" />
           <Skeleton className="h-3 w-32" />

@@ -1,7 +1,7 @@
 'use client';
 
 import type { KeyboardEvent, ReactNode } from 'react';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -144,7 +144,7 @@ export function DataTable<Row>({
                       <button
                         type="button"
                         onClick={() => toggleSort(column)}
-                        className="-mx-2 inline-flex items-center gap-1 rounded px-2 py-1 font-medium hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        className="-mx-2 inline-flex min-h-8 items-center gap-1 rounded-md px-2 font-bold tracking-[inherit] uppercase hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                       >
                         {column.header}
                         {active && sort ? (
@@ -153,7 +153,10 @@ export function DataTable<Row>({
                           ) : (
                             <ArrowDown className="size-3.5" aria-hidden />
                           )
-                        ) : null}
+                        ) : (
+                          // Unsorted but sortable: say so, so the header does not look like a label.
+                          <ArrowUpDown className="size-3.5 opacity-60" aria-hidden />
+                        )}
                       </button>
                     ) : (
                       column.header
@@ -187,7 +190,7 @@ export function DataTable<Row>({
                             onKeyDown: activateRow(row),
                             tabIndex: 0,
                             className:
-                              'cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                              'cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
                           }
                         : {})}
                     >

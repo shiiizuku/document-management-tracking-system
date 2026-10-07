@@ -87,7 +87,7 @@ describe('MyWorkScreen', () => {
     apiMock.mockResolvedValue([documentItem(), documentItem({ id: 'doc-2' })]);
     renderWithQuery(<MyWorkScreen />);
 
-    await waitFor(() => expect(screen.getByText('Showing 1-2 of 2')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Showing 1–2 of 2')).toBeInTheDocument());
     expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
   });

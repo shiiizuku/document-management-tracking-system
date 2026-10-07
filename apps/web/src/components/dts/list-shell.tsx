@@ -80,7 +80,7 @@ export function ListShell({
         data-slot={framed ? 'list-frame' : 'list-body'}
         className={cn(
           'transition-opacity',
-          framed && 'overflow-x-auto rounded-lg border border-border bg-card',
+          framed && 'overflow-x-auto rounded-2xl border border-border bg-card',
           // A refetch keeps the current page on screen and dims it rather than replacing it with
           // skeletons: flipping the whole list back to a loading state on every filter change
           // reads as a slower app than one showing briefly stale rows.
@@ -91,33 +91,40 @@ export function ListShell({
       </div>
 
       {/* Stays mounted while loading so the footer does not jump as rows arrive. */}
-      <nav className="flex items-center justify-between gap-4 text-sm" aria-label="Pagination">
+      <nav
+        className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm"
+        aria-label="Pagination"
+      >
         <p className="text-muted-foreground tabular-nums">
-          {total === 0 ? 'No results' : `Showing ${firstOnPage}-${lastOnPage} of ${total}`}
+          {total === 0
+            ? 'No results'
+            : `Showing ${firstOnPage.toLocaleString()}–${lastOnPage.toLocaleString()} of ${total.toLocaleString()}`}
         </p>
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground tabular-nums">
-            Page {page} of {pageCount}
-          </span>
           <Button
             type="button"
             variant="outline"
-            size="icon-sm"
+            size="sm"
             onClick={() => onPageChange(page - 1)}
             disabled={page <= 1}
             aria-label="Previous page"
           >
-            <ChevronLeft />
+            <ChevronLeft aria-hidden />
+            Previous
           </Button>
+          <span className="px-1 text-muted-foreground tabular-nums">
+            Page {page.toLocaleString()} of {pageCount.toLocaleString()}
+          </span>
           <Button
             type="button"
             variant="outline"
-            size="icon-sm"
+            size="sm"
             onClick={() => onPageChange(page + 1)}
             disabled={page >= pageCount}
             aria-label="Next page"
           >
-            <ChevronRight />
+            Next
+            <ChevronRight aria-hidden />
           </Button>
         </div>
       </nav>

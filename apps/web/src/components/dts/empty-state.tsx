@@ -27,16 +27,16 @@ export function EmptyState({
     <div
       data-slot="empty-state"
       className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card/60 px-6 py-14 text-center',
+        'flex flex-col items-center justify-center gap-3 rounded-2xl border-[1.5px] border-dashed border-border bg-card/60 px-6 py-14 text-center',
         className,
       )}
     >
       {Icon ? (
-        <span className="flex size-11 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+        <span className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <Icon className="size-5" aria-hidden />
         </span>
       ) : null}
-      <h3 className="text-lg text-foreground">{title}</h3>
+      <h3 className="font-display text-[22px] leading-tight text-foreground">{title}</h3>
       {description ? <p className="max-w-sm text-sm text-muted-foreground">{description}</p> : null}
       {action}
     </div>

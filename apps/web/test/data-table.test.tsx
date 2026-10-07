@@ -83,7 +83,7 @@ describe('DataTable', () => {
 
   it('counts the server total, not the rows on screen', () => {
     renderTable();
-    expect(screen.getByText('Showing 21-40 of 42')).toBeInTheDocument();
+    expect(screen.getByText('Showing 21–40 of 42')).toBeInTheDocument();
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
   });
 
