@@ -24,8 +24,8 @@ config — `COOKIE_SECURE`, `COOKIE_SAME_SITE`, `COOKIE_MAX_AGE_MS` — and
 `NODE_ENV=production` with `COOKIE_SECURE=false`, or when `SameSite=None` is combined
 with a non-secure cookie.
 
-**Credential: a JWT** signed with `SESSION_SECRET` (minimum 32 characters, enforced at
-boot), expiring at `COOKIE_MAX_AGE_MS`. Passwords are verified with bcrypt before the
+**Credential: a JWT** signed with `SESSION_SECRET` (minimum 32 characters, and never a value
+published in the repository; both enforced at boot), expiring at `COOKIE_MAX_AGE_MS`. Passwords are verified with bcrypt before the
 token is issued.
 
 Because the credential is ambient, **CORS is an allowlist** (`WEB_ORIGIN`, comma-separated

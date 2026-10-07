@@ -100,6 +100,17 @@ const parseUrl = (
 export const DEFAULT_WEB_ORIGIN = 'http://localhost:3001';
 
 /**
+ * Session secrets printed in this repository: the `docker-compose.yml` fallback and the
+ * `.env.example` placeholder. Each is long enough to pass the length rule, and a session signed
+ * with one can be forged by anyone who has read the repository. `environment.test.ts` fails if
+ * either file ships a value missing from this list.
+ */
+export const PUBLIC_SESSION_SECRETS: readonly string[] = [
+  'local-development-session-secret-change-before-pilot',
+  'replace-with-at-least-32-random-characters',
+];
+
+/**
  * The browser origins the API answers cross-origin, for both CORS and the Socket.IO handshake.
  *
  * Each entry must be a bare origin — scheme, host and optional port. A browser sends exactly that
@@ -314,11 +325,18 @@ export const validateEnvironment = (
   const clamavHost = requiredString(environment, 'CLAMAV_HOST');
   const clamavPort = parsePositiveInteger(environment.CLAMAV_PORT, 'CLAMAV_PORT', 3310);
 
-  const sessionSecret = requiredString(environment, 'SESSION_SECRET');
-  if (sessionSecret.length < 32) throw new Error('SESSION_SECRET must be at least 32 characters');
-
   const nodeEnvironment =
     typeof environment.NODE_ENV === 'string' ? environment.NODE_ENV : undefined;
+
+  const sessionSecret = requiredString(environment, 'SESSION_SECRET');
+  if (sessionSecret.length < 32) throw new Error('SESSION_SECRET must be at least 32 characters');
+  // Refused in development too: the local stack publishes the API on every interface, so a
+  // published secret is forgeable from anywhere on the network (risk register R-21).
+  if (nodeEnvironment !== 'test' && PUBLIC_SESSION_SECRETS.includes(sessionSecret))
+    throw new Error(
+      'SESSION_SECRET is published in this repository, so anyone can forge a session with it. ' +
+        `Set your own in .env: node -e "console.log(require('crypto').randomBytes(36).toString('base64'))"`,
+    );
   const cookieSecure = parseBoolean(
     environment.COOKIE_SECURE,
     'COOKIE_SECURE',
