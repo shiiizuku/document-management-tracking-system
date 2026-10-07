@@ -84,29 +84,46 @@ the oklch conversion.
 
 ### Dark mode
 
-Dark mode stays an independent toggle (`.dark` on `<html>`), as today. Only one dark palette was designed (boards
-`CL-Today-Dark`, `CL-Journey-Dark`). Use it for every theme. Override `--primary` and `--sidebar-primary` per theme
-with a lightened version of that theme's accent, keeping ≥ 4.5:1 against `--background`.
+Dark mode stays an independent toggle (`.dark` on `<html>`), as today. **Each theme has its own dark palette**:
+implement `:root.dark[data-theme='<id>']` blocks. In dark mode `--primary` is a *light* tone with *dark* text on
+it, the same pattern as shadcn's dark primary. The status signal's dark values are shared by all themes. Canvas
+boards: `CL-Today-Dark`, `CL-Journey-Dark` (each has the palette popover), and the dark row of `CL-Themes`.
 
-| Token | Dark value |
-|---|---|
-| `--background` | #0E1A14 |
-| `--card`, `--popover` | #16251D |
-| `--muted`, `--secondary` | #1B2C23 |
-| `--border-subtle` | #253A2F |
-| `--border` | #2B4236 |
-| `--input` | #4A6355 |
-| `--foreground` | #E6EDE8 |
-| `--foreground-secondary` | #B3C4B9 |
-| `--muted-foreground` | #9DB1A5 |
-| `--primary` (Civic) | #2E8A5A buttons; links use #8FD1A8 |
-| `--seal`, `--seal-foreground` | #C9A052, #D9B56A |
-| `--sidebar` | #0A140F, with a 1px #22352B right border |
-| `--sidebar-accent` | #17271F |
-| "Your move" bar | #1A2E24 with a 2px #C9A052 top rule |
+| Token | Neutral dark | Sage dark | Blush dark | Civic dark |
+|---|---|---|---|---|
+| `--background` | #191816 | #131A16 | #1C1718 | #0E1A14 |
+| `--card`, `--popover` | #22201D | #1B241F | #252021 | #16251D |
+| `--muted`, `--secondary` | #2A2825 | #212C26 | #2D2728 | #1B2C23 |
+| `--accent` (hover fill) | #2D2A26 | #24302A | #312A2B | #1E3127 |
+| `--border` | #3B3732 | #33433A | #403637 | #2B4236 |
+| `--border-subtle` | #312E2A | #2A3830 | #362E2F | #253A2F |
+| `--input` | #5C564E | #536459 | #615456 | #4A6355 |
+| `--foreground` | #EDE9E3 | #E7EEEA | #F0E8E9 | #E6EDE8 |
+| `--foreground-secondary` | #CBC4BA | #BFCCC4 | #D0C2C4 | #B3C4B9 |
+| `--muted-foreground` | #ABA398 | #A0B0A6 | #B1A1A4 | #9DB1A5 |
+| `--primary`, `--ring` | #A9C4B5 | #9CCDB2 | #D9AAB2 | #8FD1A8 |
+| `--primary-hover` | #C4D9CD | #BCE0CB | #E8C6CB | #B5E3C6 |
+| `--primary-foreground` | #191816 | #131A16 | #1C1718 | #0E1A14 |
+| `--seal` | #BFA06B | #BFA06B | #C4A57A | #C9A052 |
+| `--seal-foreground` | #D8BE8E | #D6BC88 | #DCC296 | #D9B56A |
+| `--seal-tint` | #2F2A1F | #2C2A1D | #302921 | #2E2715 |
+| `--sidebar` | #141311 | #0F1512 | #161213 | #0A140F |
+| `--sidebar-foreground` | #EDE9E3 | #E7EEEA | #F0E8E9 | #E6EDE8 |
+| `--sidebar-muted-foreground` | #ABA398 | #A0B0A6 | #B1A1A4 | #9DB1A5 |
+| `--sidebar-accent` | #25231F | #1D2822 | #282223 | #17271F |
+| `--sidebar-border` | #45403A | #3D4F44 | #4A3F41 | #3A5246 |
+| `--sidebar-avatar` | #302D29 | #28352D | #342C2D | #22352B |
+| `--sidebar-primary` | #A9C4B5 | #9CCDB2 | #D9AAB2 | #D9B56A |
+| `--sidebar-seal` | #D8BE8E | #D6BC88 | #DCC296 | #D9B56A |
+| `--move-action` | #D8C3A0 | #D4BC8A | #D9C29A | #D9B56A |
+| `--move-action-foreground` | #191816 | #131A16 | #1C1718 | #13291F |
 
-> **Decision needed:** whether the pastel themes get their own tinted dark palettes. Until decided, ship the
-> single dark palette above.
+In every dark theme:
+- The sidebar gets a 1px `--sidebar-avatar` right border.
+- The "Your move" bar is a raised `--card` panel with a 2px `--seal` top rule, not the sidebar colour.
+- Text fields use `--card` as their fill instead of white.
+- Signal pills use the existing dark `--signal-*` values: wait #3B3114 / #F0D58C, move #1C3350 / #AFCBEC,
+  done #17392A / #9FD6B4, closed #2A302C / #C3CAC5. Urgent is #4A1C17 / #F4B4AC.
 
 ### Status signal (fixed in every theme)
 
@@ -228,8 +245,7 @@ Keep the structure: sticky `w-64` sidebar at `lg+` with the collapse toggle, and
 - Four tiles in `grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4`. **Every tile is a link**, including
   Overdue (today it has no `href`):
   Awaiting acceptance → `/documents?status=PENDING`, In progress → `/documents?status=IN_PROCESS`,
-  Overdue → `/documents?overdue=true` (**needs** registry and API support for an overdue filter: confirm before
-  building, or leave it unlinked), All documents → `/documents`.
+  Overdue → `/documents?overdue=true` (see "Overdue filter" below), All documents → `/documents`.
 - Tile layout: an uppercase 13px/700 label with a status pill or icon on the right, then the number in Newsreader
   48px, then the hint, then "View list →" in `--primary`. Overdue has a 1.5px #7D1D17 border, and its label and
   number are #7D1D17 when the count is above 0.
@@ -250,8 +266,16 @@ Keep the structure: sticky `w-64` sidebar at `lg+` with the collapse toggle, and
      then the Cards / Table / Lines segmented control.
 - **Advanced search panel**: rendered under row 1 when open, with a 1px top border and pt-3.5. It holds Status,
   Priority, Type, Direction and Currently with as filter-size selects (`flex: 1 1 180px`, wrapping). An active
-  select gets a `--seal` border and a `--seal-tint` fill. Footer, right-aligned: "Reset filters" (link) and
-  "Show results" (primary, closes the panel).
+  select gets a `--seal` border and a `--seal-tint` fill. After the selects comes an **"Overdue only"**
+  checkbox (20px box, row min-h-11, label 15px). When it's checked it shows as an "Overdue ×" chip and counts
+  toward the badge. Footer, right-aligned: "Reset filters" (link) and "Show results" (primary, closes the panel).
+- **Overdue filter** (new, needs API and contracts work):
+  - Add an optional boolean `overdue` to the document list query in `packages/contracts`, and to
+    `DocumentFilters` and the URL state in `apps/web/src/features/documents`.
+  - In `apps/api/src/modules/documents/documents.repository.ts`, extract the predicate `summary()` already uses
+    for the dashboard's Overdue count: status not in (RELEASED, ARCHIVED), `dueAt` is set, and `dueAt < now()`.
+    Make it one shared expression and apply it to the list when `overdue=true`, so the tile and the list can
+    never disagree.
 - Filters still apply as they change (URL state, as today). "Show results" only closes the panel. The panel opens
   automatically if the page loads with no active filter chips but an empty result; otherwise it starts closed.
 - Table columns: Document (title as a link, then the tracking number and type in a 12px tabular line, plus a
@@ -383,8 +407,13 @@ admin sub-tab row from the boards; the sidebar covers it. Other per-screen detai
 
 ## Open questions
 
-1. Overdue filter: the registry and API have no `overdue` filter. Should one be added, or should the Overdue tile
-   stay unlinked?
-2. Should the pastel themes get their own dark palettes, or keep the single dark palette (the current plan)?
-3. Does the "Your move" strip on Today need a new field on the dashboard summary, or should it reuse the My work
-   query?
+1. The overdue predicate excludes RELEASED and ARCHIVED but not COMPLIED, so a complied incoming document with a
+   past due date counts as overdue. Should COMPLIED be excluded? This would change the dashboard count as well
+   as the new filter.
+2. Does the "Your move" strip on Today need a new field on the dashboard summary, or should it reuse the My work
+   query? Current plan: reuse My work's total.
+
+## Decisions log
+
+- 2026-10-07: add an `overdue` list filter, and link the dashboard's Overdue tile to it.
+- 2026-10-07: each theme gets its own dark palette, replacing the single shared dark palette.
