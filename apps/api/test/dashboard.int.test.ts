@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { hashSync } from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { DATABASE } from '../src/database/database.constants.js';
 import type { Database } from '../src/database/client.js';
-import { divisions, sections } from '../src/database/schema.js';
+import { divisions, documents, sections } from '../src/database/schema.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -270,5 +270,64 @@ describe('scoped dashboard summary against real Postgres', () => {
   it('caps the feed rather than returning an unbounded log', async () => {
     const summary = await summaryFor(records);
     expect(summary.recentActivity.length).toBeLessThanOrEqual(10);
+  });
+
+  /*
+   * The Overdue tile is a link to `/documents?overdue=true`, so the two must count the same rows.
+   * Both compose `documentIsOverdue`; this proves it end to end, as two differently scoped users,
+   * with an overdue document in each division, one with a future due date, and one past due but
+   * archived (which is closed, so not overdue).
+   *
+   * Due dates and the archived status are written straight to the row, so the test needs neither a
+   * clock nor a walk through the whole workflow to reach ARCHIVED; what is under test is the read
+   * side. Declared last, so the extra documents cannot disturb the counts above.
+   */
+  it('reconciles the Overdue tile with the overdue-filtered registry list', async () => {
+    const database = app.get<Database>(DATABASE);
+    const past = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const alphaLate = await createDoc(DIV_A, SEC_A, 'Alpha late');
+    const alphaOnTime = await createDoc(DIV_A, SEC_A, 'Alpha on time');
+    const betaLate = await createDoc(DIV_B, undefined, 'Beta late');
+    const betaClosed = await createDoc(DIV_B, undefined, 'Beta closed');
+    await database.update(documents).set({ dueAt: past }).where(eq(documents.id, alphaLate.id));
+    await database.update(documents).set({ dueAt: future }).where(eq(documents.id, alphaOnTime.id));
+    await database.update(documents).set({ dueAt: past }).where(eq(documents.id, betaLate.id));
+    await database
+      .update(documents)
+      .set({ dueAt: past, status: 'ARCHIVED' })
+      .where(eq(documents.id, betaClosed.id));
+
+    const listedOverdue = async (session: Session) =>
+      dataOf<{ total: number; items: { id: string }[] }>(
+        await request(server())
+          .get('/api/v1/documents?overdue=true')
+          .set('Cookie', session.cookies)
+          .expect(200),
+      );
+
+    const forRecords = await listedOverdue(records);
+    expect(forRecords.items.map((item) => item.id).sort()).toEqual(
+      [alphaLate.id, betaLate.id].sort(),
+    );
+    expect((await summaryFor(records)).overdue).toBe(forRecords.total);
+
+    // Scope still applies on top: the Alpha staff member sees only Alpha's late document.
+    const forStaff = await listedOverdue(staff);
+    expect(forStaff.items.map((item) => item.id)).toEqual([alphaLate.id]);
+    expect((await summaryFor(staff)).overdue).toBe(forStaff.total);
+
+    // `overdue=false` is no filter at all, and a value that is not a boolean is refused.
+    const unfiltered = dataOf<{ total: number }>(
+      await request(server())
+        .get('/api/v1/documents?overdue=false&pageSize=1')
+        .set('Cookie', records.cookies)
+        .expect(200),
+    );
+    expect(unfiltered.total).toBe((await summaryFor(records)).total);
+    await request(server())
+      .get('/api/v1/documents?overdue=soon')
+      .set('Cookie', records.cookies)
+      .expect(400);
   });
 });

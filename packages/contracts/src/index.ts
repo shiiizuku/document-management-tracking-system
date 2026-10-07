@@ -329,6 +329,18 @@ export const listUsersQuerySchema = z.object({
   active: z.stringbool().optional(),
 });
 
+/*
+ * The registry's list query. Loose on purpose: the other filters (search, status, priority, type,
+ * direction, divisionId, sectionId, sort, order, page, pageSize) are still read by hand in the
+ * documents controller and pass through untouched. `overdue` is the first one parsed here, as a
+ * query-string boolean the same way `listUsersQuerySchema.active` is: "true"/"false" (and the
+ * other spellings `z.stringbool` accepts) become a boolean, anything else is a 400.
+ */
+export const listDocumentsQuerySchema = z.looseObject({
+  overdue: z.stringbool().optional(),
+});
+export type ListDocumentsQuery = z.infer<typeof listDocumentsQuerySchema>;
+
 export const createDocumentSchema = z
   .object({
     title: z.string().trim().min(1).max(240),

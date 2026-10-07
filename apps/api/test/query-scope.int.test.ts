@@ -13,6 +13,7 @@ import { DocumentsRepository } from '../src/modules/documents/documents.reposito
 import {
   custodyDivisionId,
   custodySectionId,
+  documentIsOverdue,
   documentIsPending,
   documentScopeFor,
 } from '../src/modules/authorization/query-scope.js';
@@ -269,6 +270,76 @@ describe('documentScopeFor / scopeToActor against a real database', () => {
         db.select({ id: documents.id }).from(documents),
       ]);
       expect([...pending, ...settled].sort()).toEqual(all.map((row) => row.id).sort());
+    });
+  });
+
+  /**
+   * `documentIsOverdue` is the one definition behind the dashboard's Overdue tile and the
+   * registry's `overdue=true` filter. This pins what it means against real Postgres: open past its
+   * due date, where "open" is every status but RELEASED and ARCHIVED — so a COMPLIED document past
+   * its due date still counts, which is the rule as it stands, recorded rather than endorsed.
+   *
+   * Nested here for the fixtures; it puts every row it touches back as it found it, so the exact-id
+   * suites around it are unaffected.
+   */
+  describe('documentIsOverdue', () => {
+    const past = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const future = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+    const overdueIds = async (): Promise<string[]> => {
+      const rows = await db.select({ id: documents.id }).from(documents).where(documentIsOverdue());
+      return rows.map((row) => row.id).sort();
+    };
+
+    beforeAll(async () => {
+      await db.update(documents).set({ dueAt: past }).where(eq(documents.id, DOC_A_SECTION));
+      await db.update(documents).set({ dueAt: future }).where(eq(documents.id, DOC_A_DIVISION));
+      await db
+        .update(documents)
+        .set({ dueAt: past, status: 'RELEASED' })
+        .where(eq(documents.id, DOC_B));
+      await db
+        .update(documents)
+        .set({ dueAt: past, status: 'ARCHIVED' })
+        .where(eq(documents.id, DOC_ASSIGNED));
+      await db
+        .update(documents)
+        .set({ dueAt: past, status: 'COMPLIED' })
+        .where(eq(documents.id, DOC_SHARED));
+    });
+
+    afterAll(async () => {
+      await db
+        .update(documents)
+        .set({ dueAt: null, status: 'IN_PROCESS' })
+        .where(
+          inArray(documents.id, [DOC_A_SECTION, DOC_A_DIVISION, DOC_B, DOC_ASSIGNED, DOC_SHARED]),
+        );
+    });
+
+    it('counts an open document past its due date, and a complied one too', async () => {
+      expect(await overdueIds()).toEqual([DOC_A_SECTION, DOC_SHARED].sort());
+    });
+
+    it('ignores a future due date, no due date, and the two closed statuses', async () => {
+      const ids = await overdueIds();
+      for (const id of [DOC_A_DIVISION, DOC_A_CONFIDENTIAL, DOC_B, DOC_ASSIGNED]) {
+        expect(ids).not.toContain(id);
+      }
+    });
+
+    it('composes with scope, as the registry filter does', async () => {
+      const rows = await db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(
+          and(
+            documentIsOverdue(),
+            documentScopeFor(actor({ role: 'DIVISION_HEAD', divisionId: DIV_B })),
+          ),
+        );
+      // DOC_B is in Division B but released; nothing overdue is left there.
+      expect(rows).toEqual([]);
     });
   });
 

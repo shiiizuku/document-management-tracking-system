@@ -56,6 +56,11 @@ export interface DocumentFilters {
   direction: string;
   /** A division id, as the dashboard's chart links through with. '' means every division. */
   divisionId: string;
+  /**
+   * Only documents still open past their due date. The server owns the definition (one predicate
+   * shared with the dashboard's Overdue tile), so this is a flag, not a date range.
+   */
+  overdue: boolean;
   sort: DocumentSortField;
   order: 'asc' | 'desc';
 }
@@ -67,6 +72,7 @@ export const DEFAULT_DOCUMENT_FILTERS: DocumentFilters = {
   type: '',
   direction: '',
   divisionId: '',
+  overdue: false,
   sort: 'createdAt',
   order: 'desc',
 };
@@ -265,6 +271,7 @@ export const documentsQueryString = (
   if (filters.type) params.set('type', filters.type);
   if (filters.direction) params.set('direction', filters.direction);
   if (filters.divisionId) params.set('divisionId', filters.divisionId);
+  if (filters.overdue) params.set('overdue', 'true');
   params.set('sort', filters.sort);
   params.set('order', filters.order);
   params.set('page', String(page));
