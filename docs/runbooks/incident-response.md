@@ -27,16 +27,21 @@ is audited as `user.deactivated`, and the refused sign-in as `auth.login` / `FAI
 Deactivation keeps everything the person did. Their documents, routes and audit trail stay
 intact.
 
-**Reactivating brings old sessions back.** Sessions are stateless JWTs (ADR-0002), and
-deactivation only refuses them while the account is inactive. In the drill, the session that was
-refused after deactivation answered `200` again as soon as the account was reactivated. A
-password reset doesn't end sessions either. So for a compromised account, in this order:
+**Deactivation also ends the sessions for good.** In the E1 drill, a session refused after
+deactivation answered `200` again once the account was reactivated (R-22). Since migration 0014,
+every user row carries a session version. Deactivating, reactivating, changing or resetting a
+password bumps it, and the API refuses any session issued under an older one. Reactivating no
+longer revives anything. `apps/api/test/passwords.int.test.ts` covers this. It has not yet been
+drilled on a live stack.
 
-1. Deactivate it.
-2. Wait 30 minutes, the inactivity expiry (P-10). Every refused request fails without renewing
-   the session. If you can't wait, rotate `SESSION_SECRET` (below), which signs everyone out.
-3. Reset the password (below).
-4. Reactivate it. Reactivating also clears any lockout.
+For a compromised account, in this order:
+
+1. Deactivate it. Their sessions end at once and can't come back.
+2. Reset the password (below).
+3. Reactivate it. Reactivating also clears any lockout.
+
+If the person can still sign in and only their password leaked, step 2 alone is enough. A reset
+signs them out everywhere.
 
 ### Every session at once: rotate `SESSION_SECRET`
 
@@ -81,23 +86,31 @@ and API back with `docker compose up -d web api` once the cause is contained.
 | Secret | Where it is used | Rotate by |
 | --- | --- | --- |
 | `SESSION_SECRET` | Signs every session | Above. Signs everyone out |
-| A user's password | That user | **There is no change-password or reset feature.** Use the reset below, in the order above |
+| A user's password | That user | They change it under their name → **Change password**. Otherwise an administrator resets it (below). Either way every other session of theirs ends |
 | `POSTGRES_PASSWORD` | Database | `ALTER USER` in Postgres, then the same value in `.env`, then `docker compose up -d` |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | Object store | MinIO console or `mc admin`, then `.env`, then `docker compose up -d` |
 | `DIRECTOR_PASSWORD`, `SEED_ADMIN_PASSWORD` | Only read by the seed | Change the account's password in the app. The variables don't reset existing accounts |
 
-**Resetting a password.** DTS has no screen for it: nobody can change a password in the app,
-and administrators can't reset one. Set it from the API container, which holds the hashing
-library and the same password rule the app enforces:
+**Resetting a password.** **Administration → Users → Reset password**, or
+`POST /api/v1/users/:id/password` with `{ "password": "..." }` as an administrator. The new
+password must meet the same rule as every other password. The reset ends every session the person
+holds, clears any lockout, and is audited as `user.password-reset` (actor and target, never the
+password). An administrator can't reset their own password this way. They use **Change password**,
+which asks for the current one. Give the person the new password in person, not by email, and ask
+them to change it.
+
+**When no administrator can sign in**, for example the only administrator's password is lost, set
+it from the API container instead. It holds the hashing library and the same password rule:
 
 ```bash
-docker compose exec -T api node --input-type=module -e 'import bcrypt from "bcryptjs"; import { strongPasswordSchema } from "@dts/contracts"; import pg from "pg"; const [email, pw] = process.argv.slice(1); const s = strongPasswordSchema.safeParse(pw); if (!s.success) { console.error("weak password:", s.error.issues.map((i) => i.message).join("; ")); process.exit(1); } const c = new pg.Client({ connectionString: process.env.DATABASE_URL }); await c.connect(); const r = await c.query("update users set password_hash = $1, failed_login_attempts = 0, locked_until = null, updated_at = now() where email = $2", [await bcrypt.hash(pw, 12), email]); console.log("updated", r.rowCount); await c.end();' someone@example.gov.ph 'New-Passw0rd-Here!'
+docker compose exec -T api node --input-type=module -e 'import bcrypt from "bcryptjs"; import { strongPasswordSchema } from "@dts/contracts"; import pg from "pg"; const [email, pw] = process.argv.slice(1); const s = strongPasswordSchema.safeParse(pw); if (!s.success) { console.error("weak password:", s.error.issues.map((i) => i.message).join("; ")); process.exit(1); } const c = new pg.Client({ connectionString: process.env.DATABASE_URL }); await c.connect(); const r = await c.query("update users set password_hash = $1, failed_login_attempts = 0, locked_until = null, session_version = session_version + 1, password_changed_at = now(), updated_at = now() where email = $2", [await bcrypt.hash(pw, 12), email]); console.log("updated", r.rowCount); await c.end();' someone@example.gov.ph 'New-Passw0rd-Here!'
 ```
 
-In the drill a weak password was refused and listed the rule it broke. A strong one printed
+In the E1 drill a weak password was refused and listed the rule it broke. A strong one printed
 `updated 1`, after which the old password got `401` and the new one `201`. `updated 0` means no
-account has that email. The reset writes no audit event, so record it yourself. Give the person
-the new password in person, not by email.
+account has that email. The command now also bumps `session_version`, which ends the account's
+sessions like the in-app reset. That part was added after the drill and hasn't been run on a live
+stack. This path writes no audit event, so record it yourself.
 
 The `POSTGRES_PASSWORD` and MinIO steps weren't drilled. Rehearse them before relying on them. A
 Postgres password in `.env` that no longer matches the database stops `migrate`, `api` and
@@ -161,8 +174,9 @@ Two separate controls protect sign-in. Users see them differently:
   audit recorded `ACCOUNT_LOCKED`, and the administrator's user list showed `"locked": true`.
 
 **Unlock early:** an administrator presses **Reactivate** on the account. It works on an account
-that is still active. In the drill the next sign-in succeeded. The password reset above clears a
-lockout too. If the lockout came from someone
+that is still active. In the drill the next sign-in succeeded. Since migration 0014 it also signs
+the person out everywhere, as every reactivation does. The password reset above clears a lockout
+too. If the lockout came from someone
 else guessing, deactivate the account instead and talk to its owner first.
 
 ## Infected uploads

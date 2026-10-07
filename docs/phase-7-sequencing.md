@@ -479,7 +479,8 @@ adds an index and `0012` adds the audit triggers.
   - **There is no password reset, and reactivating an account revives its old sessions** (R-22,
     new).
 
-  R-21 and R-22 need code changes, which are not part of this box.
+  R-21 and R-22 need code changes, which are not part of this box. Both closed the same day: R-21
+  in #125, R-22 with the password change and reset.
 
 - [x] **E0** (2h) Risk register (Slice 0.1). The project lead owns every risk until it is reassigned
       (decided 2026-10-06). That unblocks it. Seed it from `CONTEXT.md` and this document's open

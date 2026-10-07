@@ -1,6 +1,7 @@
 # Traceability matrix
 
-_Written 2026-10-07 (box E2, Slice 0.1), against `main` at `8b28b8e`._
+_Written 2026-10-07 (box E2, Slice 0.1), against `main` at `8b28b8e`. Rows 4 and 5 updated the
+same day, when R-22 closed._
 
 Each source user story is traced to the decisions that govern it, a scope verdict, the code that
 implements it, and the tests that prove it. Where a story has no test, the matrix names the
@@ -52,8 +53,8 @@ body. A file is listed only if a test in it exercises the behaviour. Paths are s
 | 1   | Access begins with an account request from the sign-in screen            | D-1, D-69, P-11       | MVP   | `identity` (`account-requests.controller.ts`); web `features/admin/request-account-form.tsx`          | `api/identity.account-requests.test.ts`, `api/identity.int.test.ts`, `web/request-account-form.test.tsx`, `e2e/accessibility.spec.ts`               | Covered |                                                                                                                                                                             |
 | 2   | Administrators approve or reject requests before access                  | D-2, D-89, P-11       | MVP   | `identity` (`identity.service.ts`); web `features/admin/account-requests-screen.tsx`                  | `api/identity.account-requests.test.ts`, `api/identity.int.test.ts`, `web/account-requests-screen.test.tsx`                                          | Covered |                                                                                                                                                                             |
 | 3   | Approval assigns role, division and section                              | D-3, D-48, D-175      | MVP   | `identity`, `organization` (`resolvePlacement`); web `features/admin/role-field.tsx`                  | `api/identity.int.test.ts`, `api/organization.service.test.ts`, `api/role-grants.test.ts`, `web/account-requests-screen.test.tsx`                    | Covered |                                                                                                                                                                             |
-| 4   | Administrators deactivate accounts without deleting the identity         | D-4, D-93, D-123      | MVP   | `identity` (`users.controller.ts` deactivate/reactivate), `auth.service.ts` `getUser`                 | `api/identity.int.test.ts`, `api/auth.service.test.ts`, `api/authorization.service.test.ts`, `web/users-screen.test.tsx`                             | Partial | Deactivation refuses a session at once. **Reactivating revives the old sessions** (R-22). No API test of reactivation.                                                       |
-| 5   | Users sign in with email and password                                    | D-5, D-67, D-96–97    | MVP   | `auth` (`auth.service.ts`, `session.service.ts`); web `features/session/login-form.tsx`               | `api/auth.service.test.ts`, `api/identity.int.test.ts`, `web/login-form.test.tsx`, `web/session.test.tsx`, `e2e/auth.setup.ts`                       | Partial | Sign-in is covered. **There is no password change or administrator reset**, so D-96 has no code (R-22).                                                                       |
+| 4   | Administrators deactivate accounts without deleting the identity         | D-4, D-93, D-123      | MVP   | `identity` (`users.controller.ts` deactivate/reactivate), `auth.service.ts` `getUser` (session version) | `api/identity.int.test.ts`, `api/passwords.int.test.ts`, `api/auth.service.test.ts`, `api/authorization.service.test.ts`, `web/users-screen.test.tsx` | Covered | Deactivation ends every session, and reactivating no longer revives them (R-22, closed 2026-10-07).                                                                          |
+| 5   | Users sign in with email and password                                    | D-5, D-67, D-96–97    | MVP   | `auth` (`auth.service.ts`, `session.service.ts`); `identity` (`POST /me/password`, `POST /users/:id/password`); web `features/session/login-form.tsx`, `change-password-dialog.tsx` | `api/auth.service.test.ts`, `api/session.service.test.ts`, `api/identity.int.test.ts`, `api/passwords.int.test.ts`, `web/login-form.test.tsx`, `web/session.test.tsx`, `web/change-password-dialog.test.tsx`, `web/users-screen.test.tsx`, `e2e/auth.setup.ts` | Covered | Users change their own password, and administrators reset others'. Either ends the user's other sessions (D-96; R-22, closed 2026-10-07). |
 | 6   | Users may upload a profile photo shown in identity-bearing UI            | D-6, D-107–108        | MVP   | `identity` (`me.controller.ts` `POST/GET /me/photo`, `users.controller.ts` `GET :id/photo`, `profile-photos.repository.ts`) | none                                                                                                                       | Gap     | The API exists, but no screen uploads or shows a photo, and no test calls the endpoints (R-24).                                                                             |
 | 7   | Inactive sessions expire after a set period                              | D-7, D-94, P-10       | MVP   | `auth/session.service.ts` (30 min sliding, absolute cap); web `lib/query-client.ts`                   | `api/session.service.test.ts`, `api/environment.test.ts`, `web/query-client.test.ts`, `web/login-form.test.tsx`                                     | Covered |                                                                                                                                                                             |
 | 8   | Administrators may create accounts directly                              | D-8, P-11             | MVP   | `identity` (`users.controller.ts` `POST /users`); web `features/admin/users-screen.tsx`               | `web/users-screen.test.tsx`                                                                                                                        | Partial | The screen is tested against a mock. **No API test calls `POST /users`** (R-24).                                                                                             |
@@ -164,8 +165,8 @@ body. A file is listed only if a test in it exercises the behaviour. Paths are s
 
 | Status   | Stories                                         | Count |
 | -------- | ----------------------------------------------- | ----- |
-| Covered  | the other 60                                    | 60    |
-| Partial  | 4, 5, 8, 11, 14, 20, 22, 35, 36, 71             | 10    |
+| Covered  | the other 62                                    | 62    |
+| Partial  | 8, 11, 14, 20, 22, 35, 36, 71                   | 8     |
 | Gap      | 6, 64, 72, 73                                   | 4     |
 | Deferred | 74                                              | 1     |
 
@@ -204,9 +205,9 @@ needs either the code or an amendment to the decision, which is the project lead
 
 **Already tracked.**
 
-- **D-4, D-5 and D-96 (R-22).** There is no password change or reset, and reactivating an account
-  revives its old sessions. D-96 ("password changes revoke other refresh sessions") has no code,
-  because nothing changes a password.
+- **D-4, D-5 and D-96 (R-22, closed 2026-10-07).** E2 found no password change or reset, and
+  found that reactivating an account revived its old sessions. Both are fixed, and rows 4 and 5
+  are now covered.
 - **D-71 (R-19).** The load target is unproven on pilot hardware.
 - **D-74 (R-03).** The responsive and browser matrix waits on the UAT contingency.
 
@@ -215,7 +216,7 @@ architecture decision, but four came up:
 
 - D-93 and D-95 (refresh tokens) are superseded by
   [ADR-0002](adr/0002-session-transport.md). Sessions are one stateless JWT with no refresh token.
-- D-96 is above, under R-22.
+- D-96 had no code when E2 ran. It is built now (R-22, above).
 - D-134's ARTA working-day targets are not built. P-04 counts calendar days instead (R-06,
   `ACCEPTED`).
 - D-150's evidence hold is deliberately unbuilt (R-05).
