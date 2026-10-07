@@ -181,8 +181,8 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
 /**
  * The sticky rail: where the document stands, what can be done to it, and how it got here.
  *
- * `top-20` is `3.5rem` for the shell's `sticky top-0 h-14` header plus the `py-6` the main region
- * gives every page. The shell scrolls the window — there is no inner overflow container — so
+ * `top-8` is the `py-8` the main region gives every page: at `lg`, where the rail is sticky, the shell
+ * has no topbar (Civic Ledger moved everything into the sidebar), so there is nothing above it. The shell scrolls the window — there is no inner overflow container — so
  * getting this wrong produces a rail that slides under a header it is supposed to sit below, which
  * is the usual failure of this pattern.
  *
@@ -193,7 +193,7 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
  */
 function DetailRail({ document }: Readonly<{ document: DocumentDetail }>) {
   return (
-    <aside className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-3.5rem-3rem)]">
+    <aside className="flex flex-col gap-4 lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)]">
       <Panel className="shrink-0">
         <LocationBlock document={document} />
 

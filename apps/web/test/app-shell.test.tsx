@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Capability } from '@dts/contracts';
@@ -37,7 +37,11 @@ const sessionUser = (capabilities: Capability[]): SessionUser => ({
 
 const renderShell = (capabilities: Capability[]) => {
   const user = sessionUser(capabilities);
-  apiMock.mockResolvedValue(user);
+  apiMock.mockImplementation((path: string) =>
+    Promise.resolve(
+      path === '/divisions' ? [{ id: 'div-1', name: 'Records Division', code: 'RD' }] : user,
+    ),
+  );
   return renderWithQuery(
     <AppShell user={user}>
       <p>Route content</p>
@@ -89,7 +93,7 @@ describe('AppShell', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Ana Dela Cruz/ }));
     expect(screen.getByText('staff@dts.local')).toBeInTheDocument();
-    expect(screen.getByText('Staff member')).toBeInTheDocument();
+    expect(within(screen.getByRole('menu')).getByText('Staff member')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('menuitem', { name: /Sign out/ }));
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/login'));
@@ -102,5 +106,32 @@ describe('AppShell', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: /Change password/ }));
 
     expect(await screen.findByRole('dialog', { name: 'Change password' })).toBeVisible();
+  });
+
+  // The footer names the person and where they sit, with the division resolved from its id.
+  it('shows the role and division under the name in the sidebar footer', async () => {
+    renderShell([]);
+    expect(await screen.findByText('Staff member · Records Division')).toBeInTheDocument();
+  });
+
+  // Two Search buttons (sidebar and narrow topbar) but one palette, so ⌘K opens one dialog.
+  it('opens the one command palette from the sidebar Search button', async () => {
+    renderShell([]);
+    const [search] = screen.getAllByRole('button', { name: /Open the command palette/ });
+    if (search === undefined) throw new Error('no Search button');
+    await userEvent.click(search);
+    expect(await screen.findByRole('dialog', { name: 'Command palette' })).toBeInTheDocument();
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  });
+
+  it('puts the theme picker and the bell in the sidebar footer', async () => {
+    renderShell([]);
+    const footer = await waitFor(() => {
+      const element = document.querySelector('[data-slot="sidebar-footer"]');
+      if (!(element instanceof HTMLElement)) throw new Error('no footer');
+      return element;
+    });
+    expect(within(footer).getByRole('button', { name: /^Theme: / })).toBeInTheDocument();
+    expect(within(footer).getByRole('button', { name: /^Notifications/ })).toBeInTheDocument();
   });
 });
