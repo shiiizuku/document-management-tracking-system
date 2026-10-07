@@ -60,7 +60,7 @@ questions still open on 2026-10-07:
 | R-13 | ClamAV down parks scans that never retry on their own   | Infrastructure | Medium | Medium | Project lead | `OPEN`       |
 | R-14 | Redis lost; recovery not yet written down               | Infrastructure | Low    | Medium | Project lead | `OPEN`       |
 | R-15 | Weak repository controls on the free plan               | Security       | Medium | Medium | Project lead | `ACCEPTED`   |
-| R-16 | Two moderate advisories are accepted                    | Security       | Low    | Low    | Project lead | `ACCEPTED`   |
+| R-16 | Five moderate advisories are accepted                   | Security       | Low    | Low    | Project lead | `ACCEPTED`   |
 | R-17 | No MFA or SSO; tokens are revoked only by expiry        | Security       | Low    | Medium | Project lead | `ACCEPTED`   |
 | R-18 | Secrets sit in the host `.env`                          | Security       | Low    | High   | Project lead | `MONITORING` |
 | R-19 | Registry counts grow until reads miss their target      | Performance    | Medium | Medium | Project lead | `MONITORING` |
@@ -206,8 +206,11 @@ The community `minio/minio` image no longer exists. `docker-compose.yml` compile
 (`RELEASE.2025-10-15T17-29-55Z`) from `./minio`. Its vendored server carried 4 critical and 54
 high findings before D6 bumped its modules. A full 43-module bump (#114) did not compile.
 
-- **Mitigation:** Trivy fails CI on a critical. Dependabot security updates for the Go modules
-  were enabled on 2026-10-07. Version-update PRs stay off because they don't compile.
+- **Mitigation:** Trivy fails CI on a critical. Dependabot alerts and security updates were
+  enabled on 2026-10-07. Version-update PRs stay off because they don't compile. The first scan
+  raised 19 alerts on `minio/go.mod` (6 high, all in `nats-server`). None was in the built binary:
+  `nats-server` is imported only by tests, and Trivy found 0 highs in `usr/bin/minio`. PR #123
+  bumps only the flagged modules, and the result builds.
 - **Revisit when:** a Dependabot security PR for `./minio` fails to build, or a critical finding
   has no fixed module.
 
@@ -242,14 +245,19 @@ no code scanning. A red CI run does not block a merge, and CodeQL does not run.
   tags were hijacked in March 2026.
 - **Revisit when:** a second person gets write access, or the plan changes.
 
-### R-16 Two moderate advisories are accepted
+### R-16 Five moderate advisories are accepted
 
-D6 accepted the `minio` npm client's moderates (8.0.7 is the newest release, and it parses only our
-own server's responses). It also accepted the `esbuild` dev-server advisory via `drizzle-kit`
-(nothing runs `esbuild serve`, and the package is pruned from the image).
+D6 accepted the `minio` npm client's moderates. On 2026-10-07 Dependabot counted four:
+`decode-uri-component` (#21) and three in `stream-json` (#22–#24, one of them prototype pollution).
+8.0.7 is still the newest client, and it pins `stream-json ^1` and `query-string ^7`, so no fixed
+version can be installed. The code parses only our own MinIO server's responses. D6 also
+accepted the `esbuild` dev-server advisory via `drizzle-kit` (#20). Nothing runs `esbuild serve`,
+and the package is pruned from the image. The alerts stay open on purpose, so a fix shows up when
+one is released.
 
 - **Accepted because:** see `evidence/d6-security-pass.md`.
-- **Revisit when:** Dependabot raises a fixed `minio` client.
+- **Revisit when:** a `minio` client release after 8.0.7 appears, or a Dependabot PR for one of
+  these alerts.
 
 ### R-17 No MFA or SSO; tokens are revoked only by expiry
 
