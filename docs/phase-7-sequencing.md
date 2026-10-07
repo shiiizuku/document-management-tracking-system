@@ -491,10 +491,20 @@ adds an index and `0012` adds the audit triggers.
   2031 audit archive host. Each maps to a risk. The largest is R-09: development-mode defaults
   (shared Director password, `dts`/`dts` Postgres) must be replaced before real records go in.
 
-- [ ] **E2** (2h) Traceability matrix (Slice 0.1): 75 stories → D-1–D-151 → MVP or deferred →
+- [x] **E2** (2h) Traceability matrix (Slice 0.1): 75 stories → D-1–D-151 → MVP or deferred →
       implementation area → test. _Done-when:_ every story has a decision, a scope verdict, and either
       a test or an explicit deferral. Last, because the "test" column should name real files and C3/C4
       change what those are.
+
+  **Done 2026-10-07.** [`traceability-matrix.md`](traceability-matrix.md). The brief's stories are
+  not in the repo, so decisions 1–75 stand in for them (agreed with the project lead). 60 stories
+  are covered, 10 partial, 4 have no test, and one (responsive widths) is deferred to the UAT
+  contingency. What it found:
+
+  - **Six stories are built short of their decision** (R-23). The largest is D-22: lists still
+    page by offset, and the amended keyset pages with continuous scroll were never built.
+  - **Five stories have no test** (R-24). One of them, the profile photo, also has no screen.
+  - Password reset and session revival were already R-22.
 
 ## Blocked on people, not code
 

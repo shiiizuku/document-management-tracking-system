@@ -175,9 +175,11 @@ outside the repo). These are **documents, not code** — deliberately left unwri
 authored in a dedicated session. The decision register (D-1–D-151), MVP boundary, and policy gates
 they draw on already exist in `docs/CONTEXT.md` and `docs/policy-register.md`.
 
-- [ ] (2h) **Traceability matrix** — map all 75 user stories → decisions D-1–D-151 → MVP or deferred
+- [x] (2h) **Traceability matrix** — map all 75 user stories → decisions D-1–D-151 → MVP or deferred
       scope → implementation area → test. _Done-when:_ every story has a decision, a scope verdict,
-      and either a test or an explicit deferral.
+      and either a test or an explicit deferral. _Done in Phase 7 Wave E (E2), 2026-10-07:_
+      [`docs/traceability-matrix.md`](traceability-matrix.md). Decisions 1–75 stand in for the
+      stories, which are not in the repo. The gaps it found are R-23 and R-24 in the risk register.
 - [x] (2h) **Initial acceptance scenarios** — one representative incoming→archive journey plus the
       outgoing release path, written as given/when/then. _Done-when:_ both journeys are executable as
       written by someone who has not read the code. _Done in Phase 7 Wave C (C1):_
