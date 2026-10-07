@@ -1,6 +1,7 @@
 # Risk register
 
-_Raised 2026-10-07 (box E0, Slice 0.1). Last reviewed: 2026-10-07._
+_Raised 2026-10-07 (box E0, Slice 0.1). Last reviewed: 2026-10-07, after the E1 failure drills
+([`evidence/e1-failure-drills.md`](evidence/e1-failure-drills.md))._
 
 The delivery, policy, infrastructure, security and performance risks that remain once the build is
 done. It is seeded from the unresolved items in [`CONTEXT.md`](CONTEXT.md), the open items in
@@ -40,6 +41,7 @@ questions still open on 2026-10-07:
 | Who delivers the items deferred to the UAT contingency (monitoring, RC build, guides, UAT scripts, training data, browser matrix) | `phase-7-sequencing.md`, deferred list | R-03 |
 | Whether the registry shows a capped count ("1,000+"): the UX call behind F2                   | `d2-performance-fixes.md`                  | R-19 |
 | Which host receives audit events once they turn five                                          | P-08; deferred to 2031                     | R-08 |
+| Whether to close the two auth gaps E1 found: the default `SESSION_SECRET`, and password reset | E1 drills                                  | R-21, R-22 |
 
 ## Summary
 
@@ -57,14 +59,16 @@ questions still open on 2026-10-07:
 | R-10 | Single host, no failover                                | Infrastructure | Medium | High   | Project lead | `MONITORING` |
 | R-11 | The attachment mirror stops or falls behind unnoticed   | Infrastructure | Medium | High   | Project lead | `MONITORING` |
 | R-12 | MinIO is built from source with no upstream image       | Infrastructure | Medium | Medium | Project lead | `MONITORING` |
-| R-13 | ClamAV down parks scans that never retry on their own   | Infrastructure | Medium | Medium | Project lead | `OPEN`       |
-| R-14 | Redis lost; recovery not yet written down               | Infrastructure | Low    | Medium | Project lead | `OPEN`       |
+| R-13 | ClamAV down parks scans that never retry on their own   | Infrastructure | Medium | Medium | Project lead | `MONITORING` |
+| R-14 | Redis data loss strands queued scans                    | Infrastructure | Low    | Medium | Project lead | `MONITORING` |
 | R-15 | Weak repository controls on the free plan               | Security       | Medium | Medium | Project lead | `ACCEPTED`   |
 | R-16 | Five moderate advisories are accepted                   | Security       | Low    | Low    | Project lead | `ACCEPTED`   |
 | R-17 | No MFA or SSO; tokens are revoked only by expiry        | Security       | Low    | Medium | Project lead | `ACCEPTED`   |
 | R-18 | Secrets sit in the host `.env`                          | Security       | Low    | High   | Project lead | `MONITORING` |
 | R-19 | Registry counts grow until reads miss their target      | Performance    | Medium | Medium | Project lead | `MONITORING` |
 | R-20 | A sign-in rush stalls every other request               | Performance    | High   | Low    | Project lead | `OPEN`       |
+| R-21 | The default `SESSION_SECRET` lets anyone forge a session | Security      | High   | High   | Project lead | `OPEN`       |
+| R-22 | No password reset; reactivation revives old sessions    | Security       | Medium | Medium | Project lead | `OPEN`       |
 
 ## Delivery
 
@@ -170,9 +174,12 @@ The consequences:
 - In development mode the seed plants the shared development password for the Director
   (`director@dts.local`), and Postgres defaults to `dts`/`dts`. Anyone who reads the repo knows
   both. Real records must never be stored under those defaults.
+- Worst of all, `SESSION_SECRET` falls back to a value printed in `docker-compose.yml`. With it,
+  anyone can sign a session as any user without a password. The E1 drill did exactly that (R-21).
 
-- **Mitigation:** none yet. If it stays localhost, set `SEED_ADMIN_PASSWORD`, `DIRECTOR_EMAIL`,
-  `DIRECTOR_PASSWORD` and `POSTGRES_PASSWORD` before the first real record. Set `API_DOCS=false`.
+- **Mitigation:** none yet. If it stays localhost, set `SESSION_SECRET`, `SEED_ADMIN_PASSWORD`,
+  `DIRECTOR_EMAIL`, `DIRECTOR_PASSWORD` and `POSTGRES_PASSWORD` before the first real record. Set
+  `API_DOCS=false`.
 - **Open question:** how pilot users on other computers reach the system. If they need to, the
   next step is an HTTPS reverse proxy on an `mgb.gov.ph` subdomain and `NODE_ENV=production`.
 
@@ -216,22 +223,31 @@ high findings before D6 bumped its modules. A full 43-module bump (#114) did not
 
 ### R-13 ClamAV down parks scans that never retry on their own
 
-P-07 fails closed: a file that is not `CLEAN` is never downloadable. BullMQ parks a scan job after
-5 attempts, and nothing requeues it. Once ClamAV recovers, the file still stays pending until
-someone runs the requeue command in the README. ClamAV also needs about 2 GB of RAM for its
-definitions on the shared host.
+P-07 fails closed: a file that is not `CLEAN` is never downloadable. Observed in E1: BullMQ parks
+a scan job after 5 attempts (about 36 s), and the file stays `PENDING`. It never becomes
+`SCAN_FAILED`, which P-07's row had claimed. Nothing retries it when ClamAV recovers. Every health
+check stays green throughout, so nothing reports the outage. ClamAV also needs about 2 GB of RAM
+for its definitions on the shared host.
 
-- **Mitigation:** the requeue one-liner is in the README. The scanner-down runbook (E1) is not
-  written yet.
-- **Closes when:** E1's scanner-down runbook is written from observed behaviour.
+- **Mitigation:** [`runbooks/scanner-down.md`](runbooks/scanner-down.md), drilled 2026-10-07. The
+  requeue takes under a second and is safe to repeat. Detection still depends on someone noticing
+  pending files, because monitoring is deferred (R-03).
+- **Revisit when:** monitoring lands. An alert on parked jobs or on a growing `PENDING` count
+  would close this.
 
-### R-14 Redis lost; recovery not yet written down
+### R-14 Redis data loss strands queued scans
 
-Redis is treated as reconstructible (`Document-management-tracking-system.md` §2.11). The outbox relay re-sends what was
-committed. The behaviour is tested, but the recovery steps have not been written down.
+Redis is treated as reconstructible (`Document-management-tracking-system.md` §2.11). E1 showed
+two cases. An **outage** loses nothing: the relay published the waiting events 7 s after Redis
+came back. A **data loss** drops every job already in Redis. The outbox rows behind those jobs are
+already marked published, so the relay never re-sends them. A scan lost this way leaves its file at
+`PENDING` permanently, and the README requeue can't reach it. The same thing happens after every
+host restore, because Redis is not backed up.
 
-- **Mitigation:** the outbox design means a committed notification is not lost when Redis is.
-- **Closes when:** E1's Redis-loss runbook is written after watching the relay recover.
+- **Mitigation:** [`runbooks/redis-loss.md`](runbooks/redis-loss.md), drilled 2026-10-07. One SQL
+  statement marks the stranded uploads unpublished, and the relay re-sends them within a second.
+  It is safe to repeat.
+- **Revisit when:** monitoring lands (R-03), or the relay learns to re-send stranded scans itself.
 
 ## Security
 
@@ -262,7 +278,8 @@ one is released.
 ### R-17 No MFA or SSO; tokens are revoked only by expiry
 
 MFA, organization SSO and instant token revocation are later-phase items in `CONTEXT.md`. A stolen
-password works until it is changed, and a stolen session works until it expires.
+password works until it is reset (there is no in-app way to do that; R-22). A stolen session works
+until it expires, or until `SESSION_SECRET` is rotated.
 
 - **Accepted because:** they are out of MVP scope by decision. The 30-minute inactivity timeout
   (P-10), the 5-per-minute sign-in limit and administrator-only provisioning (P-11) limit the
@@ -276,6 +293,33 @@ ADR-0004 keeps secrets in the host's `.env`. Anyone with shell access to the hos
 - **Mitigation:** file permissions and restricted shell access (ADR-0004). A secrets manager is a
   later-phase item.
 - **Revisit when:** anyone besides the project lead gets access to the host.
+
+### R-21 The default `SESSION_SECRET` lets anyone forge a session
+
+`docker-compose.yml` falls back to `local-development-session-secret-change-before-pilot` when
+`.env` doesn't set `SESSION_SECRET`. `validateEnvironment` checks only that it is 32+ characters,
+so the API accepts it in every mode, `NODE_ENV=production` included. In the E1 drill, an HS256
+token for `admin@dts.local` signed with that string got `200` from `GET /me`. No password was
+needed. D6 did not catch it.
+
+- **Mitigation:** none in code. Setting `SESSION_SECRET` in `.env` closes it for a given
+  deployment. `runbooks/incident-response.md` says to check for the default, and how to rotate
+  away from it (drilled: everyone is signed out, and the API is back in 9 s).
+- **Fix:** refuse the compose default, at least when `NODE_ENV=production`, the way
+  `parseWebOrigins` refuses `http:`. Under R-09's localhost decision the stack never runs in
+  production mode, so also warn loudly, or refuse, outside it.
+
+### R-22 No password reset; reactivation revives old sessions
+
+Nobody can change a password in the app, and administrators can't reset one. Sessions are
+stateless JWTs (ADR-0002). Deactivation refuses a session at once, but in the E1 drill
+reactivating the account made the same session valid again.
+
+- **Mitigation:** `runbooks/incident-response.md` resets a password from the API container
+  (drilled), and orders the steps: deactivate, let sessions expire or rotate the secret, reset,
+  reactivate.
+- **Fix:** a change-password screen, an administrator reset, and a per-user session version (a
+  claim checked against the user row) so a reset or reactivation invalidates older sessions.
 
 ## Performance
 
