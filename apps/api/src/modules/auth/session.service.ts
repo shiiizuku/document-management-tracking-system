@@ -16,6 +16,12 @@ export interface SessionClaims {
   csrf: string;
   /** Session start, epoch seconds. Anchors the absolute cap across renewals. */
   sst: number;
+  /**
+   * The user's `session_version` when the session was issued. `AuthService.getUser` refuses the
+   * session once the row has moved on (risk R-22). Absent on sessions issued before migration
+   * 0014, which read as 0.
+   */
+  sv?: number;
   /** Set by `jsonwebtoken` from the module's `expiresIn`; the inactivity deadline. */
   exp: number;
 }
@@ -25,9 +31,10 @@ export interface SessionClaims {
  * renewal inside `AuthGuard` and logout all go through here so the three can never disagree
  * about cookie flags, claim shape or lifetimes.
  *
- * Sessions remain stateless JWTs (ADR-0002). Two claims make that survivable: `csrf` binds a
- * required request header to the session, and `sst` pins the original sign-in time so sliding
- * renewal cannot extend a session indefinitely.
+ * Sessions remain stateless JWTs (ADR-0002). Three claims make that survivable: `csrf` binds a
+ * required request header to the session, `sst` pins the original sign-in time so sliding
+ * renewal cannot extend a session indefinitely, and `sv` lets one write to the user row end
+ * every session the user holds.
  */
 @Injectable()
 export class SessionService {
@@ -57,11 +64,12 @@ export class SessionService {
   }
 
   /** Starts a new session: fresh CSRF token, absolute-cap clock reset to now. */
-  issue(response: Response, userId: string): void {
+  issue(response: Response, userId: string, sessionVersion: number): void {
     this.write(response, {
       sub: userId,
       csrf: randomBytes(32).toString('base64url'),
       sst: Math.floor(Date.now() / 1000),
+      sv: sessionVersion,
     });
   }
 
@@ -71,7 +79,12 @@ export class SessionService {
    * lands when it was always going to.
    */
   renew(response: Response, claims: SessionClaims): void {
-    this.write(response, { sub: claims.sub, csrf: claims.csrf, sst: claims.sst });
+    this.write(response, {
+      sub: claims.sub,
+      csrf: claims.csrf,
+      sst: claims.sst,
+      ...(claims.sv === undefined ? {} : { sv: claims.sv }),
+    });
   }
 
   clear(response: Response): void {

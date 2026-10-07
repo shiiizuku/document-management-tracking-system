@@ -31,8 +31,12 @@ export class AuthController {
     @Ip() sourceIp: string,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const user = await this.auth.authenticate(body.email, body.password, sourceIp);
-    this.sessions.issue(response, user.id);
+    const { user, sessionVersion } = await this.auth.authenticate(
+      body.email,
+      body.password,
+      sourceIp,
+    );
+    this.sessions.issue(response, user.id, sessionVersion);
     return { data: user };
   }
 

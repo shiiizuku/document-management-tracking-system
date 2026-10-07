@@ -41,9 +41,17 @@ CSRF protection (Phase 1).
   explicit CSRF token on mutations. That cost is accepted deliberately.
 - The JWT is **stateless**, so logout clears the cookie but cannot invalidate an
   already-issued token before it expires. `COOKIE_MAX_AGE_MS` defaults to 30 minutes to
-  bound that window. If immediate revocation (or forced logout on deactivation) becomes a
-  requirement, a `session` table must be introduced and this ADR superseded — the schema
-  already anticipates that in Phase 1's endpoint list.
+  bound that window. If revoking a single session becomes a requirement, a `session` table
+  must be introduced and this ADR superseded — the schema already anticipates that in
+  Phase 1's endpoint list.
+- **Revoking every session of one user does not need that table** (added 2026-10-07, risk
+  R-22). `AuthGuard` already re-reads the user on every request. Since migration 0014 the row
+  also carries `session_version`, and each session carries the value it was issued under as
+  its `sv` claim. A mismatch is refused like an expired session. A password change, an
+  administrator reset, deactivation and reactivation each bump the counter, so one write ends
+  all of that user's sessions. A token from before 0014 has no `sv` and reads as 0, which
+  still matches until the first bump. It costs no extra query: the version is compared on the
+  row the guard was already loading.
 - Rotating `SESSION_SECRET` invalidates every live session. That is the intended break-glass
   control.
 

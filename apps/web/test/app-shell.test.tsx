@@ -94,4 +94,13 @@ describe('AppShell', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: /Sign out/ }));
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/login'));
   });
+
+  it('lets anyone change their own password from the account menu', async () => {
+    renderShell([]);
+
+    await userEvent.click(screen.getByRole('button', { name: /Ana Dela Cruz/ }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /Change password/ }));
+
+    expect(await screen.findByRole('dialog', { name: 'Change password' })).toBeVisible();
+  });
 });

@@ -3,14 +3,16 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertCircle, Loader2, Plus, UserCog, Users } from 'lucide-react';
+import { AlertCircle, KeyRound, Loader2, Plus, UserCog, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import type { z } from 'zod';
 import {
   createUserSchema,
+  resetPasswordSchema,
   roleSchema,
   updateUserSchema,
   type CreateUserInput,
+  type ResetPasswordInput,
   type UpdateUserInput,
 } from '@dts/contracts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -54,6 +56,7 @@ import { enumLabel } from '@/lib/utils';
 import {
   DEFAULT_USER_FILTERS,
   useCreateUser,
+  useResetPassword,
   useSetUserActive,
   useUpdateUser,
   useUsers,
@@ -85,6 +88,7 @@ export function UsersScreen() {
   const [filters, setFilters] = useState<UserFilters>(DEFAULT_USER_FILTERS);
   const [searchDraft, setSearchDraft] = useState('');
   const [editing, setEditing] = useState<AdminUser | null>(null);
+  const [resetting, setResetting] = useState<AdminUser | null>(null);
 
   const { user: signedIn } = useSession();
   const users = useUsers(filters);
@@ -166,6 +170,14 @@ export function UsersScreen() {
             <UserCog />
             Edit
           </Button>
+          {/* Not on one's own row: a reset skips the current-password check, so the API refuses
+              it there. The account menu's Change password is the way to change your own. */}
+          {row.id === signedIn?.id ? null : (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setResetting(row)}>
+              <KeyRound />
+              Reset password
+            </Button>
+          )}
           <ActiveToggle user={row} isSelf={row.id === signedIn?.id} />
         </div>
       ),
@@ -255,6 +267,9 @@ export function UsersScreen() {
       />
 
       {editing === null ? null : <EditUserDialog user={editing} onClose={() => setEditing(null)} />}
+      {resetting === null ? null : (
+        <ResetPasswordDialog user={resetting} onClose={() => setResetting(null)} />
+      )}
     </>
   );
 }
@@ -741,6 +756,93 @@ function EditUserDialog({ user, onClose }: Readonly<{ user: AdminUser; onClose: 
               <Button type="submit" disabled={update.isPending}>
                 {update.isPending ? <Loader2 className="animate-spin" /> : null}
                 Save changes
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * An administrator sets a new password for someone who has forgotten theirs, or whose account may
+ * be compromised (risk R-22). The person is signed out everywhere and any lockout is cleared, and
+ * the dialog says so before the administrator commits to it.
+ */
+function ResetPasswordDialog({
+  user,
+  onClose,
+}: Readonly<{ user: AdminUser; onClose: () => void }>) {
+  const [formError, setFormError] = useState<string | null>(null);
+  const reset = useResetPassword();
+  const form = useForm<ResetPasswordInput>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: { password: '' },
+  });
+
+  const onSubmit = (input: ResetPasswordInput) => {
+    setFormError(null);
+    reset.mutate(
+      { id: user.id, input },
+      {
+        onSuccess: () => {
+          onClose();
+          toast.success(`Reset the password for ${user.displayName}`, {
+            description: 'Give them the new password, and ask them to change it after signing in.',
+          });
+        },
+        onError: (error) => setFormError(applyServerErrors(form, error)),
+      },
+    );
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => (open ? null : onClose())}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <p className="eyebrow">Reset password</p>
+          <DialogTitle>{user.displayName}</DialogTitle>
+          <DialogDescription>
+            {user.email} · They will be signed out everywhere, and any lockout is cleared.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
+            {formError === null ? null : (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertTitle>Could not reset this password</AlertTitle>
+                <AlertDescription>{formError}</AlertDescription>
+              </Alert>
+            )}
+
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>New password</FormLabel>
+                  <FormControl>
+                    <Input type="password" autoComplete="new-password" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    At least 12 characters, with an upper- and lowercase letter, a digit and a
+                    symbol.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={reset.isPending}>
+                {reset.isPending ? <Loader2 className="animate-spin" /> : null}
+                Reset password
               </Button>
             </DialogFooter>
           </form>

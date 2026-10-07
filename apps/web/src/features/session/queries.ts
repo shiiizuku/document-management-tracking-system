@@ -3,7 +3,7 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import type { Capability, LoginInput, Role } from '@dts/contracts';
+import type { Capability, ChangePasswordInput, LoginInput, Role } from '@dts/contracts';
 import { api } from '@/lib/api';
 
 /**
@@ -130,5 +130,19 @@ export function useLogout() {
       client.clear();
       router.replace('/login');
     },
+  });
+}
+
+/**
+ * Changes the signed-in user's own password.
+ *
+ * The server ends every session the user holds and answers this request with a fresh session
+ * cookie, so the caller stays signed in with nothing to refetch. The new CSRF cookie arrives with
+ * it, and `api()` reads that cookie on every request.
+ */
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (input: ChangePasswordInput) =>
+      api<void>('/me/password', { method: 'POST', body: JSON.stringify(input) }),
   });
 }

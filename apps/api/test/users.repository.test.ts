@@ -15,6 +15,7 @@ const persistedUser: UserRow = {
   active: true,
   failedLoginAttempts: 0,
   lockedUntil: null,
+  sessionVersion: 0,
   passwordChangedAt: new Date('2026-09-28T00:00:00.000Z'),
   lastLoginAt: null,
   createdAt: new Date('2026-09-28T00:00:00.000Z'),

@@ -25,8 +25,9 @@ export class AuthGuard implements CanActivate {
     const claims = this.sessions.verify(token);
     // Re-read the user on every request rather than trusting the token's copy, so a
     // deactivation or a role change takes effect immediately even though the session itself
-    // is stateless and cannot be revoked (decision register 93).
-    const user = await this.auth.getUser(claims.sub);
+    // is stateless (decision register 93). The row's session version also ends sessions older
+    // than the last password change, reset, deactivation or reactivation (risk R-22).
+    const user = await this.auth.getUser(claims.sub, claims.sv);
     request.user = user;
     request.session = claims;
 

@@ -1,11 +1,24 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import {
   createUserSchema,
   listUsersQuerySchema,
+  resetPasswordSchema,
   updateUserSchema,
   type CreateUserInput,
   type ListUsersQuery,
+  type ResetPasswordInput,
   type UpdateUserInput,
 } from '@dts/contracts';
 import { AuthGuard } from '../../common/auth.guard.js';
@@ -69,6 +82,17 @@ export class UsersController {
   @Post(':id/reactivate')
   async reactivate(@CurrentUser() actor: RequestUser, @Param('id') id: string) {
     return { data: await this.identity.reactivateUser(actor, id) };
+  }
+
+  /** An administrator's password reset. Ends the user's sessions and answers with no body. */
+  @Post(':id/password')
+  @HttpCode(204)
+  async resetPassword(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(resetPasswordSchema)) input: ResetPasswordInput,
+  ): Promise<void> {
+    await this.identity.resetPassword(actor, id, input);
   }
 
   @Get(':id/photo')

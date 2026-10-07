@@ -1,7 +1,7 @@
 # Risk register
 
-_Raised 2026-10-07 (box E0, Slice 0.1). Last reviewed: 2026-10-07, after the E2 traceability
-matrix ([`traceability-matrix.md`](traceability-matrix.md))._
+_Raised 2026-10-07 (box E0, Slice 0.1). Last reviewed: 2026-10-07, when R-22 closed with the
+password change and reset._
 
 The delivery, policy, infrastructure, security and performance risks that remain once the build is
 done. It is seeded from the unresolved items in [`CONTEXT.md`](CONTEXT.md), the open items in
@@ -41,7 +41,6 @@ questions still open on 2026-10-07:
 | Who delivers the items deferred to the UAT contingency (monitoring, RC build, guides, UAT scripts, training data, browser matrix) | `phase-7-sequencing.md`, deferred list | R-03 |
 | Whether the registry shows a capped count ("1,000+"): the UX call behind F2                   | `d2-performance-fixes.md`                  | R-19 |
 | Which host receives audit events once they turn five                                          | P-08; deferred to 2031                     | R-08 |
-| Whether to close the second auth gap E1 found: password reset and session revival             | E1 drills                                  | R-22 |
 | Whether to build the six stories E2 found short of their decision, or amend the decisions      | E2 traceability matrix                     | R-23 |
 
 ## Summary
@@ -69,7 +68,7 @@ questions still open on 2026-10-07:
 | R-19 | Registry counts grow until reads miss their target      | Performance    | Medium | Medium | Project lead | `MONITORING` |
 | R-20 | A sign-in rush stalls every other request               | Performance    | High   | Low    | Project lead | `OPEN`       |
 | R-21 | The default `SESSION_SECRET` lets anyone forge a session | Security      | High   | High   | Project lead | `CLOSED`     |
-| R-22 | No password reset; reactivation revives old sessions    | Security       | Medium | Medium | Project lead | `OPEN`       |
+| R-22 | No password reset; reactivation revives old sessions    | Security       | Medium | Medium | Project lead | `CLOSED`     |
 | R-23 | Six stories are built short of their decision           | Delivery       | Medium | Medium | Project lead | `OPEN`       |
 | R-24 | Five stories have no test                               | Delivery       | Medium | Low    | Project lead | `OPEN`       |
 
@@ -320,7 +319,7 @@ one is released.
 ### R-17 No MFA or SSO; tokens are revoked only by expiry
 
 MFA, organization SSO and instant token revocation are later-phase items in `CONTEXT.md`. A stolen
-password works until it is reset (there is no in-app way to do that; R-22). A stolen session works
+password works until it is changed or reset, which ends that user's sessions too (R-22). A stolen session works
 until it expires, or until `SESSION_SECRET` is rotated.
 
 - **Accepted because:** they are out of MVP scope by decision. The 30-minute inactivity timeout
@@ -364,6 +363,15 @@ reactivating the account made the same session valid again.
   reactivate.
 - **Fix:** a change-password screen, an administrator reset, and a per-user session version (a
   claim checked against the user row) so a reset or reactivation invalidates older sessions.
+- **Closed 2026-10-07.** Migration 0014 adds `users.session_version`. Sessions carry it as an `sv`
+  claim, and the API refuses one that no longer matches the row. A password change
+  (`POST /me/password`, **Change password** in the account menu), an administrator reset
+  (`POST /users/:id/password`, **Reset password** under Administration → Users), deactivation and
+  reactivation each bump it. Both password routes are audited without the password.
+  `apps/api/test/passwords.int.test.ts` proves that a reactivated account's old session stays
+  refused, which is the E1 drill's finding. It has not been re-drilled on a live stack.
+  `runbooks/incident-response.md` now uses the in-app reset and keeps the container command for
+  when no administrator can sign in.
 
 ## Performance
 

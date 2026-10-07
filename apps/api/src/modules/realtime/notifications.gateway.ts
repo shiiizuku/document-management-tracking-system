@@ -60,7 +60,7 @@ export class NotificationsGateway implements OnGatewayConnection {
       const claims = this.sessions.verify(token);
       // Re-read the user so a deactivated account cannot hold a live socket, matching the
       // REST guard's "trust the database, not the token copy" rule.
-      const user = await this.auth.getUser(claims.sub);
+      const user = await this.auth.getUser(claims.sub, claims.sv);
       await client.join(roomForUser(user.id));
     } catch {
       // Never leak why: an unauthenticated socket is simply closed.

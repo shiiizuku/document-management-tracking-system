@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ApproveAccountRequestInput,
   CreateUserInput,
+  ResetPasswordInput,
   Role,
   SubmitAccountRequestInput,
   UpdateUserInput,
@@ -158,6 +159,19 @@ export function useSetUserActive() {
   return useMutation({
     mutationFn: ({ id, active }: { id: string; active: boolean }) =>
       api<AdminUser>(`/users/${id}/${active ? 'reactivate' : 'deactivate'}`, { method: 'POST' }),
+    onSuccess: () => invalidateUsers(client),
+  });
+}
+
+/**
+ * An administrator sets a new password for someone else. The server ends every session that
+ * person holds and clears any lockout, so the list is settled for the "Locked out" badge.
+ */
+export function useResetPassword() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: ResetPasswordInput }) =>
+      api<void>(`/users/${id}/password`, { method: 'POST', body: JSON.stringify(input) }),
     onSuccess: () => invalidateUsers(client),
   });
 }

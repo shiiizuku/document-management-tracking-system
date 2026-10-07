@@ -43,6 +43,7 @@ const serve = (
     if (path.startsWith('/sections')) return Promise.resolve([section()]);
     if (path.endsWith('/deactivate')) return Promise.resolve(adminUser({ active: false }));
     if (path.endsWith('/reactivate')) return Promise.resolve(adminUser({ active: true }));
+    if (path.endsWith('/password')) return Promise.resolve(undefined);
     if (path === '/users' && init?.method === 'POST')
       return Promise.resolve(adminUser({ displayName: 'New Person' }));
     if (path.startsWith('/users'))
@@ -141,6 +142,42 @@ describe('UsersScreen', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Reactivate' }));
     await waitFor(() => expect(calledPaths(apiMock)).toContain('/users/user-2/reactivate'));
+  });
+
+  it("resets another person's password, checking the policy before asking the server", async () => {
+    serve();
+    renderWithQuery(<UsersScreen />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Reset password' })).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reset password' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('signed out everywhere');
+    await userEvent.type(within(dialog).getByLabelText('New password'), 'short');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reset password' }));
+    expect(
+      await within(dialog).findByText('Password must be at least 12 characters'),
+    ).toBeVisible();
+    expect(calledPaths(apiMock)).not.toContain('/users/user-2/password');
+
+    await userEvent.clear(within(dialog).getByLabelText('New password'));
+    await userEvent.type(within(dialog).getByLabelText('New password'), 'Fresh-Passw0rd-2026');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reset password' }));
+    await waitFor(() =>
+      expect(requestBody(apiMock, '/users/user-2/password', 'POST')).toEqual({
+        password: 'Fresh-Passw0rd-2026',
+      }),
+    );
+  });
+
+  // Their own password goes through the account menu, which asks for the current one.
+  it("offers no reset on the signed-in administrator's own row", async () => {
+    serve({ users: [adminUser({ id: 'user-1' })], signedInId: 'user-1' });
+    renderWithQuery(<UsersScreen />);
+    await waitFor(() => expect(screen.getByText('Ana Dela Cruz')).toBeInTheDocument());
+
+    expect(screen.queryByRole('button', { name: 'Reset password' })).not.toBeInTheDocument();
   });
 
   // The API would allow it. The result is a console that has locked out its only operator.

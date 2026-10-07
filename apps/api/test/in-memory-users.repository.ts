@@ -13,6 +13,7 @@ const seedUser = (overrides: Partial<UserRow> & Pick<UserRow, 'id' | 'email'>): 
   active: true,
   failedLoginAttempts: 0,
   lockedUntil: null,
+  sessionVersion: 0,
   passwordChangedAt: timestamp,
   lastLoginAt: null,
   createdAt: timestamp,

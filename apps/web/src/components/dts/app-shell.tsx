@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { LogOut, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { KeyRound, LogOut, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +21,7 @@ import { NotificationsSheet } from '@/features/notifications/notifications-sheet
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
+import { ChangePasswordDialog } from '@/features/session/change-password-dialog';
 import { useLogout, useSession, type SessionUser } from '@/features/session/queries';
 import { cn, enumLabel } from '@/lib/utils';
 import { activeNavHref, navSections, visibleNavItems } from './nav-items';
@@ -292,36 +293,44 @@ function SidebarNav({
 
 function AccountMenu({ user }: Readonly<{ user: SessionUser }>) {
   const logout = useLogout();
+  const [changingPassword, setChangingPassword] = useState(false);
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-9 gap-2 px-2">
-          <Avatar className="size-7">
-            <AvatarFallback className="bg-secondary text-xs text-secondary-foreground">
-              {initials(user.displayName)}
-            </AvatarFallback>
-          </Avatar>
-          <span className="hidden max-w-40 truncate text-sm sm:inline">{user.displayName}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="font-normal">
-          <span className="block truncate text-sm">{user.displayName}</span>
-          <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
-          <span className="mt-1 block text-xs text-muted-foreground">{enumLabel(user.role)}</span>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          disabled={logout.isPending}
-          onSelect={() => logout.mutate()}
-        >
-          <LogOut />
-          Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="h-9 gap-2 px-2">
+            <Avatar className="size-7">
+              <AvatarFallback className="bg-secondary text-xs text-secondary-foreground">
+                {initials(user.displayName)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="hidden max-w-40 truncate text-sm sm:inline">{user.displayName}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel className="font-normal">
+            <span className="block truncate text-sm">{user.displayName}</span>
+            <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
+            <span className="mt-1 block text-xs text-muted-foreground">{enumLabel(user.role)}</span>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => setChangingPassword(true)}>
+            <KeyRound />
+            Change password
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            disabled={logout.isPending}
+            onSelect={() => logout.mutate()}
+          >
+            <LogOut />
+            Sign out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ChangePasswordDialog open={changingPassword} onOpenChange={setChangingPassword} />
+    </>
   );
 }
 

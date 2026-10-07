@@ -99,6 +99,13 @@
       "when": 1791705600000,
       "tag": "0013_release_carriers",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791792000000,
+      "tag": "0014_user_session_version",
+      "breakpoints": true
     }
   ]
 }

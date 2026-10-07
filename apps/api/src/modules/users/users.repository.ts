@@ -37,6 +37,9 @@ export interface UserPatch {
   // `registerFailedLogin`, which has to do its arithmetic in SQL.
   failedLoginAttempts?: number;
   lockedUntil?: Date | null;
+  // Written only by `setPassword`, together with the session bump.
+  passwordHash?: string;
+  passwordChangedAt?: Date;
 }
 
 /** Addresses are compared and stored lowercased so `A@x` and `a@x` can never be two accounts. */
@@ -85,13 +88,42 @@ export class UsersRepository {
     return user;
   }
 
+  /**
+   * `endSessions` bumps `session_version`, which refuses every session the user already holds
+   * (risk R-22). It is an increment in SQL, so two writes racing cannot both land on one value.
+   */
   async update(
     id: string,
     patch: UserPatch,
     executor: DatabaseExecutor = this.database,
+    options: { endSessions?: boolean } = {},
   ): Promise<UserRow | null> {
-    const [user] = await executor.update(users).set(patch).where(eq(users.id, id)).returning();
+    const [user] = await executor
+      .update(users)
+      .set({
+        ...patch,
+        ...(options.endSessions ? { sessionVersion: sql`${users.sessionVersion} + 1` } : {}),
+      })
+      .where(eq(users.id, id))
+      .returning();
     return user ?? null;
+  }
+
+  /**
+   * Replaces the password hash and ends every session the user holds. Clears the lockout too:
+   * it was counting guesses at the password that no longer exists.
+   */
+  async setPassword(
+    id: string,
+    passwordHash: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<UserRow | null> {
+    return this.update(
+      id,
+      { passwordHash, passwordChangedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null },
+      executor,
+      { endSessions: true },
+    );
   }
 
   /** Active accounts holding a role, used to refuse removing the last administrator. */

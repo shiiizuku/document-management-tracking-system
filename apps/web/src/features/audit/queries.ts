@@ -166,6 +166,8 @@ export const AUDIT_ACTION_GROUPS: readonly { label: string; actions: readonly st
       'user.updated',
       'user.deactivated',
       'user.reactivated',
+      'user.password-changed',
+      'user.password-reset',
       'user.photo-updated',
       'division.created',
       'division.updated',
