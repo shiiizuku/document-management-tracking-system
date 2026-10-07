@@ -54,6 +54,7 @@ const CAPABILITY_MATRIX: { action: string; resource: unknown; allowed: Role[] }[
   { action: 'user:update', resource: targetUser, allowed: ['ADMINISTRATOR'] },
   { action: 'user:deactivate', resource: targetUser, allowed: ['ADMINISTRATOR'] },
   { action: 'user:reactivate', resource: targetUser, allowed: ['ADMINISTRATOR'] },
+  { action: 'user:reset-password', resource: targetUser, allowed: ['ADMINISTRATOR'] },
 ];
 
 describe('AuthorizationService matrix', () => {
@@ -98,6 +99,13 @@ describe('AuthorizationService matrix', () => {
   it('refuses to deactivate oneself even as an administrator', () => {
     const admin = actor('ADMINISTRATOR', { id: 'target-user' });
     expect(service.can(admin, 'user:deactivate', { ...targetUser, id: 'target-user' })).toBe(false);
+  });
+
+  it('refuses a password reset on oneself, which would skip the current-password check', () => {
+    const admin = actor('ADMINISTRATOR', { id: 'target-user' });
+    expect(service.can(admin, 'user:reset-password', { ...targetUser, id: 'target-user' })).toBe(
+      false,
+    );
   });
 
   it('denies by default an unknown action or unregistered resource type', () => {

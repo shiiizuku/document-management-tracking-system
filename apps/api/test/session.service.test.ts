@@ -57,13 +57,30 @@ describe('SessionService cookies', () => {
 
   it('issues a session that carries an inactivity max-age and stays server-only', () => {
     const response = fakeResponse();
-    service.issue(response as unknown as Response, 'user-1');
+    service.issue(response as unknown as Response, 'user-1', 0);
 
     const session = response.cookie.mock.calls.find((call) => call[0] === SESSION_COOKIE);
     expect(session?.[2]).toMatchObject({ httpOnly: true, maxAge: IDLE_MS, path: '/' });
     // The CSRF mirror must be readable by the SPA, so it is deliberately not http-only.
     const csrf = response.cookie.mock.calls.find((call) => call[0] === CSRF_COOKIE);
     expect(csrf?.[2]).toMatchObject({ httpOnly: false });
+  });
+
+  it('carries the session version it was issued under, and keeps it on renewal', () => {
+    const issued = fakeResponse();
+    service.issue(issued as unknown as Response, 'user-1', 5);
+    const token = issued.cookie.mock.calls.find(
+      (call) => call[0] === SESSION_COOKIE,
+    )?.[1] as string;
+    const claims = service.verify(token);
+    expect(claims.sv).toBe(5);
+
+    const renewed = fakeResponse();
+    service.renew(renewed as unknown as Response, claims);
+    const renewedToken = renewed.cookie.mock.calls.find(
+      (call) => call[0] === SESSION_COOKIE,
+    )?.[1] as string;
+    expect(service.verify(renewedToken)).toMatchObject({ sub: 'user-1', sv: 5, csrf: claims.csrf });
   });
 
   it('clears both cookies on logout with flags that match how they were set', () => {

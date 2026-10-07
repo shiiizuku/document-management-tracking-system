@@ -18,6 +18,7 @@ const userRow = async (overrides: Partial<UserRow> = {}): Promise<UserRow> => ({
   active: true,
   failedLoginAttempts: 0,
   lockedUntil: null,
+  sessionVersion: 0,
   passwordChangedAt: new Date('2026-09-28T00:00:00.000Z'),
   lastLoginAt: null,
   createdAt: new Date('2026-09-28T00:00:00.000Z'),
@@ -56,7 +57,11 @@ describe('AuthService', () => {
     const row = await userRow();
     const { service, findByEmail } = serviceWith(row);
 
-    const authenticated = await service.authenticate(' RECORDS@DTS.LOCAL ', 'Records@1234!');
+    const { user: authenticated, sessionVersion } = await service.authenticate(
+      ' RECORDS@DTS.LOCAL ',
+      'Records@1234!',
+    );
+    expect(sessionVersion).toBe(0);
     expect(authenticated).toMatchObject({
       id: row.id,
       email: row.email,
@@ -86,9 +91,46 @@ describe('AuthService', () => {
   it('rejects inactive users during session lookup', async () => {
     const { service } = serviceWith(await userRow({ active: false }));
 
-    await expect(service.getUser('2f4e8aa8-2534-4f9d-98a4-ef2fc67f3904')).rejects.toThrow(
+    await expect(service.getUser('2f4e8aa8-2534-4f9d-98a4-ef2fc67f3904', 0)).rejects.toThrow(
       'Account is inactive',
     );
+  });
+
+  describe('session version (risk R-22)', () => {
+    const id = '2f4e8aa8-2534-4f9d-98a4-ef2fc67f3904';
+
+    it('accepts a session issued under the current version', async () => {
+      const { service } = serviceWith(await userRow({ sessionVersion: 3 }));
+
+      await expect(service.getUser(id, 3)).resolves.toMatchObject({ id });
+    });
+
+    it('refuses a session issued under an older version', async () => {
+      // What a password change, a reset, a deactivation or a reactivation leaves behind.
+      const { service } = serviceWith(await userRow({ sessionVersion: 4 }));
+
+      await expect(service.getUser(id, 3)).rejects.toThrow(
+        new UnauthorizedException('Session is invalid or expired'),
+      );
+    });
+
+    it('reads a session with no version claim as version 0', async () => {
+      // Sessions issued before migration 0014 carry no `sv`. They stay good until the first bump.
+      const { service } = serviceWith(await userRow({ sessionVersion: 0 }));
+      await expect(service.getUser(id, undefined)).resolves.toMatchObject({ id });
+
+      const bumped = serviceWith(await userRow({ sessionVersion: 1 }));
+      await expect(bumped.service.getUser(id, undefined)).rejects.toThrow(
+        new UnauthorizedException('Session is invalid or expired'),
+      );
+    });
+
+    it('signs in under the version on the row', async () => {
+      const { service } = serviceWith(await userRow({ sessionVersion: 7 }));
+
+      const { sessionVersion } = await service.authenticate('records@dts.local', 'Records@1234!');
+      expect(sessionVersion).toBe(7);
+    });
   });
 
   it('refuses a locked account even when the password is correct', async () => {

@@ -280,6 +280,23 @@ export const updateUserSchema = z
     'At least one field must be supplied',
   );
 
+/**
+ * `POST /me/password`. The current password is checked against the stored hash, so it takes
+ * only the sign-in length bound: it may predate the current strength rule.
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(128),
+    newPassword: strongPasswordSchema,
+  })
+  .refine((value) => value.newPassword !== value.currentPassword, {
+    message: 'The new password must differ from the current one',
+    path: ['newPassword'],
+  });
+
+/** `POST /users/:id/password`: an administrator sets a new password for someone else. */
+export const resetPasswordSchema = z.object({ password: strongPasswordSchema });
+
 export const createDivisionSchema = z.object({
   code: z
     .string()
@@ -536,6 +553,8 @@ export type ApproveAccountRequestInput = z.infer<typeof approveAccountRequestSch
 export type RejectAccountRequestInput = z.infer<typeof rejectAccountRequestSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type CreateDivisionInput = z.infer<typeof createDivisionSchema>;
 export type UpdateDivisionInput = z.infer<typeof updateDivisionSchema>;
 export type CreateSectionInput = z.infer<typeof createSectionSchema>;

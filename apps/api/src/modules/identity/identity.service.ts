@@ -8,13 +8,15 @@ import {
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
-import { hash } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
 import { fileTypeFromBuffer } from 'file-type';
 import type {
   AccountRequestStatus,
   ApproveAccountRequestInput,
+  ChangePasswordInput,
   CreateUserInput,
   RejectAccountRequestInput,
+  ResetPasswordInput,
   Role,
   SubmitAccountRequestInput,
   UpdateUserInput,
@@ -523,9 +525,10 @@ export class IdentityService {
 
   /**
    * Soft deactivation (decision register 3): the row stays so every document, assignment and
-   * audit entry the person touched keeps a resolvable author. Their existing session dies on
-   * its next request because `AuthGuard` re-reads the row, and they cannot start a new one
-   * (decision register 93).
+   * audit entry the person touched keeps a resolvable author. Their sessions die on their next
+   * request because `AuthGuard` re-reads the row, and they cannot start a new one (decision
+   * register 93). The session version is bumped too, so reactivating the account later does
+   * not bring those sessions back (risk R-22).
    */
   async deactivateUser(actor: RequestUser, id: string): Promise<PublicUser> {
     const existing = await this.users.findById(id);
@@ -540,7 +543,7 @@ export class IdentityService {
     if (existing.role === 'ADMINISTRATOR') await this.assertNotLastAdministrator(existing);
 
     return this.database.transaction(async (tx) => {
-      const updated = await this.users.update(id, { active: false }, tx);
+      const updated = await this.users.update(id, { active: false }, tx, { endSessions: true });
       if (updated === null) throw new NotFoundException('User not found');
       await this.audit.write(
         {
@@ -577,11 +580,14 @@ export class IdentityService {
     });
     return this.database.transaction(async (tx) => {
       // Reactivation also clears the lockout counters: an administrator turning an account
-      // back on expects the person to be able to sign in, not to hit a stale lock.
+      // back on expects the person to be able to sign in, not to hit a stale lock. It bumps the
+      // session version as well. Deactivation already did, but an account deactivated before
+      // migration 0014 was not bumped, and its old sessions must not come back either (R-22).
       const updated = await this.users.update(
         id,
         { active: true, failedLoginAttempts: 0, lockedUntil: null },
         tx,
+        { endSessions: true },
       );
       if (updated === null) throw new NotFoundException('User not found');
       await this.audit.write(
@@ -595,6 +601,90 @@ export class IdentityService {
         tx,
       );
       return toPublicUser(updated);
+    });
+  }
+
+  // ----------------------------------------------------------------- passwords
+
+  /**
+   * The signed-in user changes their own password (risk R-22). Every session they hold ends,
+   * this one included. The controller issues a fresh one under the returned version, so the
+   * caller stays signed in. A wrong current password is audited as a failure and changes nothing.
+   */
+  async changeOwnPassword(
+    actor: RequestUser,
+    input: ChangePasswordInput,
+    sourceIp?: string,
+  ): Promise<{ sessionVersion: number }> {
+    const existing = await this.users.findById(actor.id);
+    if (existing === null) throw new NotFoundException('User not found');
+    if (!(await compare(input.currentPassword, existing.passwordHash))) {
+      await this.audit.write({
+        actorId: actor.id,
+        action: 'user.password-changed',
+        targetType: 'user',
+        targetId: actor.id,
+        outcome: 'FAILURE',
+        sourceIp: sourceIp ?? null,
+        summary: { reason: 'CURRENT_PASSWORD_INCORRECT' },
+      });
+      // Shaped like a validation failure, so a form puts the message on the field that caused it.
+      throw new BadRequestException({
+        code: 'CURRENT_PASSWORD_INCORRECT',
+        message: 'The current password is incorrect',
+        details: {
+          formErrors: [],
+          fieldErrors: { currentPassword: ['The current password is incorrect'] },
+        },
+      });
+    }
+    const passwordHash = await hash(input.newPassword, BCRYPT_ROUNDS);
+    return this.database.transaction(async (tx) => {
+      const updated = await this.users.setPassword(actor.id, passwordHash, tx);
+      if (updated === null) throw new NotFoundException('User not found');
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'user.password-changed',
+          targetType: 'user',
+          targetId: actor.id,
+          outcome: 'SUCCESS',
+          sourceIp: sourceIp ?? null,
+        },
+        tx,
+      );
+      return { sessionVersion: updated.sessionVersion };
+    });
+  }
+
+  /**
+   * An administrator sets a new password for someone who has forgotten theirs, or whose account
+   * may be compromised (risk R-22). Ends every session the user holds and clears any lockout.
+   * Never for the actor's own account, because this path skips the current-password check.
+   */
+  async resetPassword(actor: RequestUser, id: string, input: ResetPasswordInput): Promise<void> {
+    const existing = await this.users.findById(id);
+    if (existing === null) throw new NotFoundException('User not found');
+    this.authorization.assert(actor, 'user:reset-password', {
+      id: existing.id,
+      role: existing.role,
+      divisionId: existing.divisionId,
+      sectionId: existing.sectionId,
+    });
+    const passwordHash = await hash(input.password, BCRYPT_ROUNDS);
+    await this.database.transaction(async (tx) => {
+      const updated = await this.users.setPassword(id, passwordHash, tx);
+      if (updated === null) throw new NotFoundException('User not found');
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'user.password-reset',
+          targetType: 'user',
+          targetId: id,
+          outcome: 'SUCCESS',
+        },
+        tx,
+      );
     });
   }
 

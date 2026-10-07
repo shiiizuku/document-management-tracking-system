@@ -16,7 +16,13 @@ export interface UserResource {
 }
 
 export type UserAction =
-  'user:list' | 'user:read' | 'user:create' | 'user:update' | 'user:deactivate' | 'user:reactivate';
+  | 'user:list'
+  | 'user:read'
+  | 'user:create'
+  | 'user:update'
+  | 'user:deactivate'
+  | 'user:reactivate'
+  | 'user:reset-password';
 
 export class UserPolicy implements Policy<UserResource> {
   readonly resourceType = 'user';
@@ -46,6 +52,10 @@ export class UserPolicy implements Policy<UserResource> {
         // Deactivating yourself would lock the last administrator out of their own console
         // and is never a legitimate admin action, so it is denied at the policy layer where
         // the matrix test can see it.
+        return manages && resource !== null && resource.id !== actor.id;
+      case 'reset-password':
+        // A reset needs no current password, so it is for someone else's account only. An
+        // administrator changes their own through `POST /me/password`, which asks for it.
         return manages && resource !== null && resource.id !== actor.id;
       default:
         return false;

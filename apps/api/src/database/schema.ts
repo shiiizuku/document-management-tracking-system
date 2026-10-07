@@ -143,6 +143,8 @@ export const users = pgTable('users', {
   // Both columns are cleared on a successful login; `lockedUntil` in the future is the lock.
   failedLoginAttempts: integer('failed_login_attempts').notNull().default(0),
   lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  // Sessions carry the value they were issued under; bumping it ends them all (risk R-22).
+  sessionVersion: integer('session_version').notNull().default(0),
   passwordChangedAt: timestamp('password_changed_at', { withTimezone: true }),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   ...timestampColumns(),

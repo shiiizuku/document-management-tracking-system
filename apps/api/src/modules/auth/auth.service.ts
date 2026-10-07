@@ -15,6 +15,14 @@ const DUMMY_PASSWORD_HASH = '$2b$12$oMsRoE0SMBoLdJCuWFrKuOosX2xBsOEyKVW/yzvBL2e3
 // locked account. Anything more specific tells an attacker which half of a guess was right.
 const INVALID_CREDENTIALS = 'Invalid email or password';
 
+const INVALID_SESSION = 'Session is invalid or expired';
+
+/** A verified sign-in, with the session version the new session must carry. */
+export interface Authenticated {
+  user: RequestUser;
+  sessionVersion: number;
+}
+
 type FailureReason = 'UNKNOWN_ACCOUNT' | 'INVALID_PASSWORD' | 'ACCOUNT_INACTIVE' | 'ACCOUNT_LOCKED';
 
 @Injectable()
@@ -25,7 +33,7 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  async authenticate(email: string, password: string, sourceIp?: string): Promise<RequestUser> {
+  async authenticate(email: string, password: string, sourceIp?: string): Promise<Authenticated> {
     const user = await this.users.findByEmail(email);
     const locked = user !== null && user.lockedUntil !== null && user.lockedUntil > new Date();
 
@@ -70,13 +78,21 @@ export class AuthService {
       outcome: 'SUCCESS',
       sourceIp: sourceIp ?? null,
     });
-    return this.toRequestUser(user);
+    return { user: this.toRequestUser(user), sessionVersion: user.sessionVersion };
   }
 
-  async getUser(id: string): Promise<RequestUser> {
+  /**
+   * Resolves a session's user. `sessionVersion` is the session's `sv` claim: once the row's
+   * counter has moved past it (a password change, a reset, a deactivation or a reactivation),
+   * the session is refused like an expired one (risk R-22). A session with no claim predates
+   * migration 0014 and reads as 0.
+   */
+  async getUser(id: string, sessionVersion: number | undefined): Promise<RequestUser> {
     const user = await this.users.findById(id);
     if (user === null) throw new UnauthorizedException('User no longer exists');
     if (!user.active) throw new UnauthorizedException('Account is inactive');
+    if (user.sessionVersion !== (sessionVersion ?? 0))
+      throw new UnauthorizedException(INVALID_SESSION);
     return this.toRequestUser(user);
   }
 
