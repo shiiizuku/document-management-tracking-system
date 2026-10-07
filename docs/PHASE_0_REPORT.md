@@ -30,7 +30,7 @@ _"Slice 0.1 · Source-alignment documents"_.
 | ---------------------------- | ---------- | ------------------------------------------------------------ |
 | Traceability matrix          | ⬜ Not written | 75 user stories → D-1–D-151 → MVP/deferred → area → test  |
 | Initial acceptance scenarios | ⬜ Not written | Incoming→archive journey + outgoing release path, given/when/then |
-| Risk register                | ⬜ Not written | Delivery, policy, and infrastructure risks with owners     |
+| Risk register                | ✅ Written 2026-10-07 | [`risk-register.md`](risk-register.md); every risk owned by the project lead |
 
 **What already exists to build them from:** the decision register D-1–D-151, the MVP boundary, and
 the policy gates in [`CONTEXT.md`](CONTEXT.md), plus [`policy-register.md`](policy-register.md).

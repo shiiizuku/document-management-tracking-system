@@ -182,9 +182,11 @@ they draw on already exist in `docs/CONTEXT.md` and `docs/policy-register.md`.
       outgoing release path, written as given/when/then. _Done-when:_ both journeys are executable as
       written by someone who has not read the code. _Done in Phase 7 Wave C (C1):_
       `docs/acceptance-scenarios.md`, transcribed by the E2E specs in `apps/e2e/tests/`.
-- [ ] (2h) **Risk register** — delivery, policy, and infrastructure risks with likelihood, impact,
+- [x] (2h) **Risk register** — delivery, policy, and infrastructure risks with likelihood, impact,
       owner, and mitigation. Seed it from the unresolved items in `docs/CONTEXT.md`. _Done-when:_
-      every unresolved policy question appears as a risk with a named owner.
+      every unresolved policy question appears as a risk with a named owner. _Done in Phase 7
+      Wave E (E0), 2026-10-07:_ [`docs/risk-register.md`](risk-register.md), 20 risks, every one
+      owned by the project lead until reassigned.
 
 > **Gate (blocked, not deferred):** Phase 0 of the assignment treats these three documents as a
 > sign-off gate for the whole programme. It cannot be signed off from the repository alone — the
