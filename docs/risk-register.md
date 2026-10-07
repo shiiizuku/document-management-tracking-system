@@ -1,7 +1,7 @@
 # Risk register
 
-_Raised 2026-10-07 (box E0, Slice 0.1). Last reviewed: 2026-10-07, after the E1 failure drills
-([`evidence/e1-failure-drills.md`](evidence/e1-failure-drills.md))._
+_Raised 2026-10-07 (box E0, Slice 0.1). Last reviewed: 2026-10-07, after the E2 traceability
+matrix ([`traceability-matrix.md`](traceability-matrix.md))._
 
 The delivery, policy, infrastructure, security and performance risks that remain once the build is
 done. It is seeded from the unresolved items in [`CONTEXT.md`](CONTEXT.md), the open items in
@@ -42,6 +42,7 @@ questions still open on 2026-10-07:
 | Whether the registry shows a capped count ("1,000+"): the UX call behind F2                   | `d2-performance-fixes.md`                  | R-19 |
 | Which host receives audit events once they turn five                                          | P-08; deferred to 2031                     | R-08 |
 | Whether to close the second auth gap E1 found: password reset and session revival             | E1 drills                                  | R-22 |
+| Whether to build the six stories E2 found short of their decision, or amend the decisions      | E2 traceability matrix                     | R-23 |
 
 ## Summary
 
@@ -50,7 +51,7 @@ questions still open on 2026-10-07:
 | R-01 | One developer carries the whole system                  | Delivery       | Medium | High   | Project lead | `MONITORING` |
 | R-02 | UAT and sign-off have not been scheduled                | Delivery       | Medium | High   | Project lead | `OPEN`       |
 | R-03 | Pilot-readiness work deferred to the contingency        | Delivery       | High   | Medium | Project lead | `OPEN`       |
-| R-04 | The traceability matrix may surface gaps late           | Delivery       | Medium | Medium | Project lead | `OPEN`       |
+| R-04 | The traceability matrix may surface gaps late           | Delivery       | Medium | Medium | Project lead | `CLOSED`     |
 | R-05 | No emergency evidence hold                              | Policy         | Low    | High   | Project lead | `OPEN`       |
 | R-06 | Overdue counts cannot back a working-day compliance claim | Policy       | Medium | Low    | Project lead | `ACCEPTED`   |
 | R-07 | The signature record is mistaken for a legal signature  | Policy         | Medium | Medium | Project lead | `MONITORING` |
@@ -69,6 +70,8 @@ questions still open on 2026-10-07:
 | R-20 | A sign-in rush stalls every other request               | Performance    | High   | Low    | Project lead | `OPEN`       |
 | R-21 | The default `SESSION_SECRET` lets anyone forge a session | Security      | High   | High   | Project lead | `CLOSED`     |
 | R-22 | No password reset; reactivation revives old sessions    | Security       | Medium | Medium | Project lead | `OPEN`       |
+| R-23 | Six stories are built short of their decision           | Delivery       | Medium | Medium | Project lead | `OPEN`       |
+| R-24 | Five stories have no test                               | Delivery       | Medium | Low    | Project lead | `OPEN`       |
 
 ## Delivery
 
@@ -112,7 +115,45 @@ hardening work.
 
 - **Mitigation:** the policy register and the Wave A–D reconciliations already checked the
   decisions against the code. Gaps E2 finds go into the backlog and into this register.
-- **Revisit when:** E2 is done.
+- **Closed 2026-10-07.** E2 is done ([`traceability-matrix.md`](traceability-matrix.md)). It
+  found gaps, and they are now R-23 and R-24. R-22, R-19 and R-03 already tracked the rest.
+
+### R-23 Six stories are built short of their decision
+
+The E2 matrix found six stories that work but don't do everything their decision says. UAT may
+reject them, or users may work around them without saying so.
+
+- **D-22 (amended 2026-10-02):** lists still page by `offset` with numbered pages. Keyset pages
+  and continuous scroll for the registry and my-work were never built. The amendment's reason
+  still holds: offset pages repeat or skip rows when documents change state between pages.
+- **D-11:** overdue is visible but not actionable. The dashboard tile has no link, and the
+  registry can't filter or mark overdue rows.
+- **D-14:** accept and assign happen on the record, not from the dashboard.
+- **D-20:** the web filter bar has no section filter, although the API takes one.
+- **D-35, D-36:** there is no dedicated incoming view and no division-grouped outgoing view.
+  Each is the registry with a filter.
+
+- **Mitigation:** none yet. Each needs either the code or an amendment to the decision in
+  `CONTEXT.md`, recorded the way the 2026-10-02 revision was.
+- **Open question:** which to build before UAT, and which to amend. D-22 matters most, because
+  the registry is the busiest screen.
+
+### R-24 Five stories have no test
+
+The E2 matrix found five MVP stories with no test that exercises them, so a regression would go
+unnoticed.
+
+- **D-6:** the profile photo API (`POST/GET /me/photo`, `GET /users/:id/photo`) exists, but no
+  screen uses it and no test calls it.
+- **D-8:** no API test creates a user through `POST /users`. Only the screen is tested, against a
+  mock.
+- **D-64:** no test checks that the approved seal is on the routing slip PDF.
+- **D-72, D-73:** no test covers the motion rules in `apps/web/app/theme.css`, including the
+  reduced-motion override.
+
+- **Mitigation:** none yet. Each is a small test, except D-6, which also needs a screen or a
+  decision to drop the story.
+- **Closes when:** each story names a test in `traceability-matrix.md`, or D-6 is amended out.
 
 ## Policy
 

@@ -28,7 +28,7 @@ _"Slice 0.1 · Source-alignment documents"_.
 
 | Deliverable                  | State      | Notes                                                        |
 | ---------------------------- | ---------- | ------------------------------------------------------------ |
-| Traceability matrix          | ⬜ Not written | 75 user stories → D-1–D-151 → MVP/deferred → area → test  |
+| Traceability matrix          | ✅ Written 2026-10-07 | [`traceability-matrix.md`](traceability-matrix.md); decisions 1–75 stand in for the stories; gaps are R-23, R-24 |
 | Initial acceptance scenarios | ⬜ Not written | Incoming→archive journey + outgoing release path, given/when/then |
 | Risk register                | ✅ Written 2026-10-07 | [`risk-register.md`](risk-register.md); every risk owned by the project lead |
 
