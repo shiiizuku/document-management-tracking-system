@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import './theme.css';
 import { AppProviders } from '@/components/app-providers';
-const themeBootScript = `(function(){var root=document.documentElement;try{var t=localStorage.getItem('dts.theme');if(!t){var old=JSON.parse(localStorage.getItem('dts.appearance')||'null');t=old&&old.mode;}var dark=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);root.classList.toggle('dark',dark);var a=localStorage.getItem('dts.accent.v1');root.dataset.accent=['blue','green','violet','rose'].includes(a)?a:'default';}catch(e){root.dataset.accent='default';}})();`;
+import { themeBootScript } from '@/components/theme-storage';
 
 /*
  * Inter, from two files committed under `app/fonts` (see the README beside them).
@@ -56,10 +56,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     /*
-     * `suppressHydrationWarning` is required, not cosmetic: the boot script below writes
-     * a dark class onto this element before React hydrates, so the client's <html> attributes
-     * can differ from the server's. The warning is scoped to
-     * this element only and does not reach anything inside it.
+     * `suppressHydrationWarning` is required, not cosmetic: the boot script below writes a dark
+     * class and `data-theme` onto this element before React hydrates, so the client's <html>
+     * attributes can differ from the server's. The warning is scoped to this element only and does
+     * not reach anything inside it.
      */
     <html
       lang="en"
@@ -71,7 +71,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           Inlined and blocking, on purpose. It is the only way to have the user's theme on the
           first paint rather than one frame after it: the choice lives in localStorage, which the
           server cannot read, so anything that waits for React has already shown the wrong colours.
-          It is a fixed string we author here — no user input reaches it.
+          It is a fixed string we author (in `theme-storage.ts`, beside the provider that shares
+          its keys) — no user input reaches it.
         */}
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>

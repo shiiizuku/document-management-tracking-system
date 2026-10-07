@@ -1,33 +1,31 @@
 'use client';
 
 import * as React from 'react';
+import {
+  COLOR_MODE_STORAGE_KEY,
+  DEFAULT_THEME,
+  THEME_STORAGE_KEY,
+  readStoredTheme,
+  type Theme,
+} from './theme-storage';
 
-type Theme = 'light' | 'dark' | 'system';
-export const ACCENTS = ['default', 'blue', 'green', 'violet', 'rose'] as const;
-export type Accent = (typeof ACCENTS)[number];
+export { THEMES, THEME_NAMES, THEME_STORAGE_KEY, type Theme } from './theme-storage';
+
+type ColorMode = 'light' | 'dark' | 'system';
 type ThemeContext = {
+  /** Light, dark, or following the system. Independent of the theme. */
+  colorMode: ColorMode;
+  resolvedColorMode: 'light' | 'dark';
+  setColorMode: (mode: ColorMode) => void;
+  /** The Civic Ledger palette: neutral, sage, blush or civic. */
   theme: Theme;
-  resolvedTheme: 'light' | 'dark';
   setTheme: (theme: Theme) => void;
-  accent: Accent;
-  setAccent: (accent: Accent) => void;
 };
 const ThemeContext = React.createContext<ThemeContext | null>(null);
-const STORAGE_KEY = 'dts.theme';
-export const ACCENT_STORAGE_KEY = 'dts.accent.v1';
 
-function storedAccent(): Accent {
+function storedColorMode(): ColorMode {
   try {
-    const value = window.localStorage.getItem(ACCENT_STORAGE_KEY);
-    return ACCENTS.find((accent) => accent === value) ?? 'default';
-  } catch {
-    return 'default';
-  }
-}
-
-function storedTheme(): Theme {
-  try {
-    const value = window.localStorage.getItem(STORAGE_KEY);
+    const value = window.localStorage.getItem(COLOR_MODE_STORAGE_KEY);
     if (value === 'light' || value === 'dark' || value === 'system') return value;
     // Keep the user's mode when upgrading from the older appearance preference.
     const previous = JSON.parse(window.localStorage.getItem('dts.appearance') ?? 'null') as {
@@ -40,15 +38,32 @@ function storedTheme(): Theme {
   return 'system';
 }
 
+function storedTheme(): Theme {
+  try {
+    return readStoredTheme(window.localStorage);
+  } catch {
+    return DEFAULT_THEME;
+  }
+}
+
+/*
+ * Holds both appearance choices and mirrors them onto <html>.
+ *
+ * The boot script in `app/layout.tsx` has already put both on the element before first paint;
+ * this takes over once React is up, so it seeds from defaults and corrects on mount (reading
+ * storage during render would make the server and client disagree). Nothing below the provider
+ * is keyed on either value, so switching theme repaints through CSS variables and does not
+ * remount a form someone is halfway through.
+ */
 export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
-  const [theme, setThemeState] = React.useState<Theme>('system');
-  const [accent, setAccentState] = React.useState<Accent>('default');
+  const [colorMode, setColorModeState] = React.useState<ColorMode>('system');
+  const [theme, setThemeState] = React.useState<Theme>(DEFAULT_THEME);
   const [systemDark, setSystemDark] = React.useState(false);
   const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
+    setColorModeState(storedColorMode());
     setThemeState(storedTheme());
-    setAccentState(storedAccent());
     const media = window.matchMedia?.('(prefers-color-scheme: dark)');
     if (!media) {
       setReady(true);
@@ -61,41 +76,40 @@ export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode
     return () => media.removeEventListener('change', onChange);
   }, []);
 
-  const resolvedTheme = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
+  const resolvedColorMode = colorMode === 'system' ? (systemDark ? 'dark' : 'light') : colorMode;
   React.useEffect(() => {
     if (!ready) return;
-    document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
-  }, [ready, resolvedTheme]);
+    document.documentElement.classList.toggle('dark', resolvedColorMode === 'dark');
+  }, [ready, resolvedColorMode]);
 
   React.useEffect(() => {
     if (!ready) return;
-    document.documentElement.dataset.accent = accent;
-    delete document.documentElement.dataset.designSystem;
-  }, [ready, accent]);
+    document.documentElement.dataset.theme = theme;
+  }, [ready, theme]);
+
+  const setColorMode = React.useCallback((next: ColorMode) => {
+    setColorModeState(next);
+    try {
+      window.localStorage.setItem(COLOR_MODE_STORAGE_KEY, next);
+    } catch {
+      /* Keep this session's choice. */
+    }
+  }, []);
 
   const setTheme = React.useCallback((next: Theme) => {
     setThemeState(next);
     try {
-      window.localStorage.setItem(STORAGE_KEY, next);
+      window.localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {
       /* Keep this session's choice. */
     }
   }, []);
 
-  const setAccent = React.useCallback((next: Accent) => {
-    setAccentState(next);
-    try {
-      window.localStorage.setItem(ACCENT_STORAGE_KEY, next);
-    } catch {
-      /* Keep this session's choice. */
-    }
-  }, []);
-
-  return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, accent, setAccent }}>
-      {children}
-    </ThemeContext.Provider>
+  const value = React.useMemo(
+    () => ({ colorMode, resolvedColorMode, setColorMode, theme, setTheme }),
+    [colorMode, resolvedColorMode, setColorMode, theme, setTheme],
   );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

@@ -18,7 +18,7 @@ import {
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { CommandPalette } from '@/features/command-palette/command-palette';
 import { NotificationsSheet } from '@/features/notifications/notifications-sheet';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { ColorModeButton, ThemePicker, ThemeToggle } from '@/components/theme-toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
 import { ChangePasswordDialog } from '@/features/session/change-password-dialog';
@@ -92,7 +92,10 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
         <Brand collapsed={collapsed} />
         <SidebarNav collapsed={collapsed} />
         {/* Keep the theme control with other persistent sidebar preferences. */}
-        <ThemeToggle collapsed={collapsed} />
+        <div className={cn('flex gap-1 border-t p-2', collapsed && 'flex-col items-center')}>
+          <ThemePicker collapsed={collapsed} />
+          <ColorModeButton tooltipSide={collapsed ? 'right' : 'top'} />
+        </div>
         <div className={cn('border-t border-border p-2', collapsed && 'flex justify-center')}>
           <Tooltip>
             <TooltipTrigger asChild>
