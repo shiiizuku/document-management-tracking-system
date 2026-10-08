@@ -57,15 +57,21 @@ export class OrganizationService {
 
   async setHeadOfBureau(actor: RequestUser, input: HeadOfBureau): Promise<HeadOfBureau> {
     this.authorization.assert(actor, 'organization:update');
-    const saved = await this.repository.setHeadOfBureau(input, actor.id);
-    await this.audit.write({
-      actorId: actor.id,
-      action: 'office.head-of-bureau-updated',
-      targetType: 'office',
-      targetId: 'office',
-      outcome: 'SUCCESS',
-      summary: { name: saved.name, title: saved.title },
-    });
+    // The name is a person's and does not belong in the audit trail (`AuditWriter`): it stays in
+    // `office_settings`, and the event records only that it changed and who changed it.
+    const saved = await this.repository.setHeadOfBureau(input, actor.id, (tx) =>
+      this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'office.head-of-bureau-updated',
+          targetType: 'office',
+          targetId: 'office',
+          outcome: 'SUCCESS',
+          summary: { fields: ['name', 'title'] },
+        },
+        tx,
+      ),
+    );
     return saved;
   }
 

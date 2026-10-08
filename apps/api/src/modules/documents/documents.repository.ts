@@ -51,7 +51,7 @@ import {
 import { workflowStatuses } from '../workflow/workflow.service.js';
 // The presented vocabulary, which includes the derived `PENDING` — what a filter accepts and a
 // timeline row may carry. The engine's narrower stored set is a different type on purpose.
-import type { WorkflowStatus } from '@dts/contracts';
+import type { DocumentRecipient, WorkflowStatus } from '@dts/contracts';
 import { ORD_DIVISION_CODE } from '../organization/organization.constants.js';
 
 export type DocumentRow = typeof documents.$inferSelect;
@@ -163,6 +163,7 @@ export interface DocumentMetadataPatch {
   company?: string | null;
   referenceNumber?: string | null;
   email?: string | null;
+  recipients?: DocumentRecipient[];
   confidential?: boolean;
   dueAt?: Date | null;
 }
@@ -421,6 +422,8 @@ export class DocumentsRepository {
         ilike(documents.referenceNumber, pattern),
         ilike(documents.sender, pattern),
         ilike(documents.company, pattern),
+        // An outgoing document's addressees: its sender is the same Head on every one.
+        sql`exists (select 1 from jsonb_array_elements(${documents.recipients}) as r(value) where r.value ->> 'name' ilike ${pattern})`,
       );
       if (matches) conditions.push(matches);
     }

@@ -297,6 +297,15 @@ describe('document registry REST against a real database', () => {
       .expect(200);
     expect(dataOf<string[]>(suggestions)).toEqual(['Provincial Governor of Pampanga']);
 
+    // The registry search reaches an outgoing document through its recipients, in real SQL.
+    const found = await request(server())
+      .get('/api/v1/documents?search=pampanga')
+      .set('Cookie', records.cookies)
+      .expect(200);
+    expect(dataOf<{ items: Array<{ id: string }> }>(found).items.map((item) => item.id)).toContain(
+      outgoing.id,
+    );
+
     // A confidential document's addressees are never offered, and a wildcard is not a pattern.
     await registerDocument(records, {
       title: 'Confidential letter',

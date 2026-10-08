@@ -129,13 +129,14 @@ export class ReportExportService {
       ['All documents', report.totals.total],
     ];
     const detailRows: Array<Array<string | number>> = [
-      ['Title', 'Reference', 'Direction', 'Type', 'Sender', 'Company', 'Registered'],
+      ['Title', 'Reference', 'Direction', 'Type', 'Sender', 'Recipients', 'Company', 'Registered'],
       ...report.documents.map((row) => [
         sanitizeSpreadsheetCell(row.title),
         sanitizeSpreadsheetCell(row.referenceNumber ?? ''),
         row.direction,
         sanitizeSpreadsheetCell(row.type),
         sanitizeSpreadsheetCell(row.sender ?? ''),
+        sanitizeSpreadsheetCell(row.recipients.join('; ')),
         sanitizeSpreadsheetCell(row.company ?? ''),
         row.createdAt.toISOString(),
       ]),
@@ -195,6 +196,11 @@ export class ReportExportService {
           .fontSize(8)
           .fillColor('#68756f')
           .text(`${row.direction} · ${row.type} · ${row.referenceNumber ?? 'No reference'}`);
+        if (row.recipients.length > 0)
+          pdf
+            .fontSize(8)
+            .fillColor('#68756f')
+            .text(`To: ${row.recipients.join('; ')}`);
       }
     });
   }

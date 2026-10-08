@@ -135,7 +135,15 @@ describe('OrganizationService authorization', () => {
 
 describe('OrganizationService head of bureau', () => {
   it('lets an administrator name the Head of the Bureau and audits it', async () => {
-    const setHeadOfBureau = vi.fn().mockImplementation((value: unknown) => Promise.resolve(value));
+    // Runs the audit callback the way the repository does, inside its transaction.
+    const setHeadOfBureau = vi
+      .fn()
+      .mockImplementation(
+        async (value: unknown, _by: string, audit: (tx: never) => Promise<void>) => {
+          await audit({} as never);
+          return value;
+        },
+      );
     const { service, write } = serviceWith({ setHeadOfBureau });
 
     const saved = await service.setHeadOfBureau(actor('ADMINISTRATOR'), {
@@ -144,9 +152,15 @@ describe('OrganizationService head of bureau', () => {
     });
 
     expect(saved).toEqual({ name: 'Engr. Maria Santos', title: 'Regional Director' });
-    expect(setHeadOfBureau).toHaveBeenCalledWith(saved, 'actor-1');
+    expect(setHeadOfBureau).toHaveBeenCalledWith(saved, 'actor-1', expect.any(Function));
+    // Recorded without the personal name, and inside the same transaction as the change.
     expect(write).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'office.head-of-bureau-updated', outcome: 'SUCCESS' }),
+      expect.objectContaining({
+        action: 'office.head-of-bureau-updated',
+        outcome: 'SUCCESS',
+        summary: { fields: ['name', 'title'] },
+      }),
+      {},
     );
   });
 

@@ -29,9 +29,14 @@ export class OrganizationRepository {
     };
   }
 
+  /**
+   * Saves the Head of the Bureau and runs `audit` in the same transaction, so a change cannot
+   * commit without its audit event or the reverse.
+   */
   async setHeadOfBureau(
     value: { name: string; title: string },
     updatedById: string,
+    audit: (executor: DatabaseExecutor) => Promise<void>,
   ): Promise<{ name: string; title: string }> {
     const set = {
       headOfBureauName: value.name,
@@ -39,10 +44,13 @@ export class OrganizationRepository {
       updatedById,
       updatedAt: new Date(),
     };
-    await this.database
-      .insert(officeSettings)
-      .values({ id: 1, ...set })
-      .onConflictDoUpdate({ target: officeSettings.id, set });
+    await this.database.transaction(async (tx) => {
+      await tx
+        .insert(officeSettings)
+        .values({ id: 1, ...set })
+        .onConflictDoUpdate({ target: officeSettings.id, set });
+      await audit(tx);
+    });
     return value;
   }
 

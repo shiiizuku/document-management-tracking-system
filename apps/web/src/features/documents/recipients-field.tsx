@@ -6,7 +6,7 @@ import { Mail, Plus, X } from 'lucide-react';
 import {
   DOCUMENT_RECIPIENT_LIMIT,
   RECIPIENT_EMAIL_LIMIT,
-  type CreateDocumentInput,
+  type DocumentRecipient,
 } from '@dts/contracts';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -38,7 +38,9 @@ export function SuggestInput({
   const listId = useId();
   const suggestions = useNameSuggestions(kind, useDebounced(value, 250));
   // Offering a name the field already holds exactly is noise.
-  const options = (suggestions.data ?? []).filter((name) => name !== value);
+  const options = (Array.isArray(suggestions.data) ? suggestions.data : []).filter(
+    (name) => name !== value,
+  );
 
   return (
     <>
@@ -58,6 +60,11 @@ export function SuggestInput({
   );
 }
 
+/** The one field this component needs of whichever form it sits in: the register form or the edit one. */
+export interface RecipientsFormValues {
+  recipients: DocumentRecipient[];
+}
+
 /**
  * The addressees of an outgoing document: one or more recipients, each a name and any number of
  * optional email addresses.
@@ -67,7 +74,7 @@ export function SuggestInput({
  * hold (it needs objects), so they are read and written by path instead.
  */
 export function RecipientsField({ disabled = false }: Readonly<{ disabled?: boolean }>) {
-  const form = useFormContext<CreateDocumentInput>();
+  const form = useFormContext<RecipientsFormValues>();
   const recipients = useFieldArray({ control: form.control, name: 'recipients' });
   const rootError = form.formState.errors.recipients?.root?.message;
   const listError = form.formState.errors.recipients?.message;
@@ -116,7 +123,7 @@ function RecipientRow({
   onRemove,
   disabled,
 }: Readonly<{ index: number; canRemove: boolean; onRemove: () => void; disabled: boolean }>) {
-  const form = useFormContext<CreateDocumentInput>();
+  const form = useFormContext<RecipientsFormValues>();
   const nameError = form.formState.errors.recipients?.[index]?.name?.message;
   const emailErrors = form.formState.errors.recipients?.[index]?.emails;
   const name = form.watch(`recipients.${index}.name`) ?? '';

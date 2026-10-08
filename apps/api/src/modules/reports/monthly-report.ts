@@ -20,6 +20,8 @@ export interface ReportDocument {
   title: string;
   referenceNumber: string | null;
   sender: string | null;
+  /** Names of an outgoing document's addressees, in the order entered. */
+  recipients: string[];
   company: string | null;
   type: string;
   direction: 'INCOMING' | 'OUTGOING';

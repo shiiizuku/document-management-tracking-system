@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { toast } from 'sonner';
 import { HeadOfBureauCard } from '../src/features/org/head-of-bureau-card';
 import type * as ApiModule from '../src/lib/api';
 import { calledPaths, requestBody } from './mock-api';
@@ -70,5 +71,31 @@ describe('HeadOfBureauCard', () => {
       expect(screen.queryByRole('heading', { name: 'Change the Head of the Bureau?' })).toBeNull(),
     );
     expect(requestBody(apiMock, '/office/head-of-bureau', 'PUT')).toEqual({});
+  });
+
+  it('tells the administrator when the change could not be saved', async () => {
+    apiMock.mockImplementation((path: string, init?: { method?: string }) =>
+      init?.method === 'PUT'
+        ? Promise.reject(new Error('Network down'))
+        : Promise.resolve({ name: '', title: 'Regional Director' }),
+    );
+    renderWithQuery(<HeadOfBureauCard />);
+    await waitFor(() => expect(screen.getByLabelText('Title')).toHaveValue('Regional Director'));
+
+    await userEvent.type(screen.getByLabelText('Name'), 'Someone');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const heading = await screen.findByRole('heading', { name: 'Change the Head of the Bureau?' });
+    await userEvent.click(
+      within(heading.closest('[role="dialog"]') as HTMLElement).getByRole('button', {
+        name: 'Change',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Could not update the Head of the Bureau',
+        expect.anything(),
+      ),
+    );
   });
 });

@@ -4,7 +4,11 @@ import { useState } from 'react';
 import { useForm, type FieldErrors, type Resolver } from 'react-hook-form';
 import { AlertCircle, History, Loader2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
-import { documentPrioritySchema, updateDocumentMetadataSchema } from '@dts/contracts';
+import {
+  documentPrioritySchema,
+  updateDocumentMetadataSchema,
+  type DocumentRecipient,
+} from '@dts/contracts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -39,6 +43,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { documentTypeLabel } from '@/components/dts/status-badge';
 import { ApiError } from '@/lib/api';
 import { applyServerErrors } from '@/lib/forms';
+import { RecipientsField } from './recipients-field';
 import {
   DOCUMENT_TYPES,
   useMetadataRevisions,
@@ -64,6 +69,8 @@ type MetadataFormValues = {
   company: string;
   referenceNumber: string;
   email: string;
+  /** Outgoing documents only; an incoming one holds an empty list that is never sent. */
+  recipients: DocumentRecipient[];
   confidential: boolean;
   /** `YYYY-MM-DD` as the date input holds it, or `''` for no target date. */
   dueAt: string;
@@ -126,6 +133,10 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
       company: document.company ?? '',
       referenceNumber: document.referenceNumber ?? '',
       email: document.email ?? '',
+      recipients: document.recipients.map((recipient) => ({
+        name: recipient.name,
+        emails: [...recipient.emails],
+      })),
       confidential: document.confidential,
       dueAt: isoToDueDate(document.dueAt),
     },
@@ -249,19 +260,25 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="sender"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Sender</FormLabel>
-                  <FormControl>
-                    <Input maxLength={240} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {outgoing ? (
+              <div className="sm:col-span-2">
+                <RecipientsField disabled={update.isPending} />
+              </div>
+            ) : (
+              <FormField
+                control={form.control}
+                name="sender"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sender</FormLabel>
+                    <FormControl>
+                      <Input maxLength={240} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}
@@ -434,12 +451,24 @@ const toPatch = (values: MetadataFormValues, outgoing: boolean) => ({
   type: values.type,
   description: orNull(values.description),
   priority: values.priority,
-  sender: orNull(values.sender),
   company: orNull(values.company),
   // Omitted entirely on an outgoing document rather than sent back unchanged: the server refuses
   // the field there (decision 169), and an omitted field and a `null` one mean different things to
   // the patch schema — sending the current value would make every outgoing edit a 400.
   ...(outgoing ? {} : { referenceNumber: orNull(values.referenceNumber) }),
+  // The sender of an outgoing document is the Head of the Bureau and is refused by the server
+  // (like the reference above); an incoming one has no recipients. Each side sends only its own.
+  ...(outgoing
+    ? {
+        recipients: values.recipients.map((recipient) => ({
+          name: recipient.name.trim(),
+          // An email row left empty means none.
+          emails: recipient.emails
+            .map((address) => address.trim())
+            .filter((address) => address !== ''),
+        })),
+      }
+    : { sender: orNull(values.sender) }),
   email: orNull(values.email),
   confidential: values.confidential,
   // `null` clears the target date; an omitted field would leave the old one in place, and the

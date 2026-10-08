@@ -47,7 +47,11 @@ export function HeadOfBureauCard() {
       await update.mutateAsync(values);
       toast.success('Head of the Bureau updated');
     } catch (error) {
-      applyServerErrors(form, error);
+      // A field-level error lands on its input; anything else (offline, 5xx, no permission) comes
+      // back as a message and must not vanish with the closing dialog.
+      const message = applyServerErrors(form, error);
+      if (message !== null)
+        toast.error('Could not update the Head of the Bureau', { description: message });
     }
     setPending(null);
   };

@@ -20,6 +20,8 @@ export interface SearchableDocument extends AuthorizationResource {
   trackingNumber: string;
   referenceNumber: string | null;
   sender: string | null;
+  /** Names only; an incoming document has none. */
+  recipients: string[];
   company: string | null;
   description: string | null;
   status: WorkflowStatus;
@@ -97,6 +99,7 @@ export class DocumentSearchService {
             document.referenceNumber,
             document.sender,
             document.company,
+            ...document.recipients,
           ];
           if (
             !searchableFields.some((field) => field?.toLocaleLowerCase().includes(normalizedSearch))

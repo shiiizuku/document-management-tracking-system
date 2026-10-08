@@ -175,4 +175,55 @@ describe('REST outgoing sender and recipients', () => {
       .expect(200);
     expect((response.body as { data: string[] }).data).toEqual([]);
   });
+
+  describe('editing metadata', () => {
+    const patch = (cookie: string[], id: string, body: Record<string, unknown>) =>
+      request(server())
+        .patch(`/api/v1/documents/${id}/metadata`)
+        .set('Cookie', cookie)
+        .send({ expectedVersion: 1, ...body });
+
+    const outgoingId = async (cookie: string[]): Promise<string> => {
+      const created = await create(cookie, {
+        direction: 'OUTGOING',
+        recipients: [{ name: 'DENR Region III' }],
+      }).expect(201);
+      return (created.body as { data: { id: string } }).data.id;
+    };
+
+    it('refuses a new sender on an outgoing document', async () => {
+      const cookie = await asRecords();
+      const id = await outgoingId(cookie);
+
+      const response = await patch(cookie, id, { sender: 'Somebody Else' }).expect(400);
+      expect(JSON.stringify(response.body)).toContain('SENDER_READ_ONLY');
+    });
+
+    it('lets the recipients of an outgoing document be corrected', async () => {
+      const cookie = await asRecords();
+      const id = await outgoingId(cookie);
+
+      const response = await patch(cookie, id, {
+        recipients: [{ name: 'DENR Region III', emails: ['ord@denr.gov.ph'] }, { name: 'DILG' }],
+      }).expect(200);
+
+      expect((response.body as { data: { recipients: unknown } }).data.recipients).toEqual([
+        { name: 'DENR Region III', emails: ['ord@denr.gov.ph'] },
+        { name: 'DILG', emails: [] },
+      ]);
+    });
+
+    it('refuses an empty recipient list, and recipients on an incoming document', async () => {
+      const cookie = await asRecords();
+      const id = await outgoingId(cookie);
+      await patch(cookie, id, { recipients: [] }).expect(400);
+
+      const incoming = await create(cookie, {
+        direction: 'INCOMING',
+        sender: 'A Correspondent',
+      }).expect(201);
+      const incomingId = (incoming.body as { data: { id: string } }).data.id;
+      await patch(cookie, incomingId, { recipients: [{ name: 'Nobody' }] }).expect(400);
+    });
+  });
 });

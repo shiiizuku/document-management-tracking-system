@@ -732,6 +732,7 @@ export class InMemoryDocumentsRepository {
       trackingNumber: row.trackingNumber,
       referenceNumber: row.referenceNumber,
       sender: row.sender,
+      recipients: row.recipients.map((recipient) => recipient.name),
       company: row.company,
       description: row.description,
       status: row.status,

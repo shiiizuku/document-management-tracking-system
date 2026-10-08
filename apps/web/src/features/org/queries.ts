@@ -61,7 +61,9 @@ export function useHeadOfBureau() {
   return useQuery({
     queryKey: orgKeys.headOfBureau,
     queryFn: () => api<HeadOfBureau>('/office/head-of-bureau'),
-    staleTime: ORG_STALE_TIME,
+    // Short, unlike the rest of the tree: the server stamps whatever it holds *now* on every
+    // outgoing document, so a registrar must not confirm a sender an administrator has since changed.
+    staleTime: 30_000,
   });
 }
 

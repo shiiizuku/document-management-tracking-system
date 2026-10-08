@@ -12,6 +12,7 @@ const documents: SearchableDocument[] = [
     trackingNumber: 'DTS-2026-0001',
     referenceNumber: 'EXT-ALPHA',
     sender: 'Alice Reyes',
+    recipients: [],
     company: 'Alpha Agency',
     description: 'The hidden phrase exists only in body content.',
     status: 'IN_PROCESS',
@@ -34,6 +35,7 @@ const documents: SearchableDocument[] = [
     trackingNumber: 'DTS-2026-0002',
     referenceNumber: 'OUT-BETA',
     sender: 'Records Office',
+    recipients: ['Provincial Governor of Pampanga'],
     company: 'Beta Bureau',
     description: 'ordinary description',
     status: 'RELEASED',
@@ -72,6 +74,16 @@ describe('DocumentSearchService public seam', () => {
       ).toEqual(['a']);
     },
   );
+
+  it('finds an outgoing document by the name of its recipient', () => {
+    expect(
+      search
+        .execute({ ...sameSectionActor, role: 'RECORDS_STAFF' as const }, documents, {
+          search: 'pampanga',
+        })
+        .items.map((item) => item.id),
+    ).toEqual(['b']);
+  });
 
   it('does not search description or attachment content', () => {
     expect(search.execute(sameSectionActor, documents, { search: 'hidden phrase' }).total).toBe(0);
