@@ -8,12 +8,26 @@ import { cleanPdfUpload } from './pdf';
  * `docs/acceptance-scenarios.md` is written that way and the specs are meant to be a
  * transcription of it. Where a locator needs scoping, it is scoped to a landmark or a heading
  * rather than to a class name: `main aside` is the detail rail by construction (the shell's
- * sidebar is the page's other `<aside>`, and it is outside `<main>`), and the attachments panel is
- * found by its own heading.
+ * sidebar is the page's other `<aside>`, and it is outside `<main>`), the record's own `<header>`
+ * is the one holding the `h1`, the "Your move" bar is a region named for itself, and the
+ * attachments panel is found by its own heading.
  */
 
-/** The detail page's right-hand rail: status, where the document is, and the action buttons. */
+/** The detail page's right-hand rail: where the document is, and its timeline. */
 export const rail = (page: Page): Locator => page.locator('main aside');
+
+/** The record's header: its tracking number, title and status pill. */
+const recordHeader = (page: Page): Locator =>
+  page
+    .getByRole('main')
+    .locator('header')
+    .filter({ has: page.getByRole('heading', { level: 1 }) });
+
+/**
+ * The "Your move" bar, which holds every server-offered action. It is not rendered when there is
+ * nothing to do, so a missing action is still an absence rather than a timeout.
+ */
+const yourMove = (page: Page): Locator => page.getByRole('region', { name: 'Your move' });
 
 /**
  * Every label `StatusBadge` can print. Listed so the badge can be found by what it says rather
@@ -41,7 +55,7 @@ const STATUS_LABELS = [
  * `Archived` the status are different strings, deliberately.
  */
 export const status = (page: Page): Locator =>
-  rail(page).getByText(new RegExp(`^(${STATUS_LABELS.join('|')})$`));
+  recordHeader(page).getByText(new RegExp(`^(${STATUS_LABELS.join('|')})$`));
 
 /**
  * Where the document is now — the most recent lead hop (decision 177), not `documents.division_id`.
@@ -55,7 +69,7 @@ export const currentlyWith = (page: Page): Locator =>
 
 /** One of the server-offered workflow actions. Absent means unreachable, which is an assertion. */
 export const action = (page: Page, label: string): Locator =>
-  rail(page).getByRole('button', { name: label, exact: true });
+  yourMove(page).getByRole('button', { name: label, exact: true });
 
 export const timeline = (page: Page): Locator => rail(page).getByRole('list');
 

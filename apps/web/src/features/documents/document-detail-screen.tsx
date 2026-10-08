@@ -75,7 +75,9 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
           </Button>
 
           <Panel>
-            <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+            {/* A `<header>` so the record's identity and status have an element of their own: the
+                e2e screens find the status pill here rather than by position or class. */}
+            <header className="flex flex-wrap items-start gap-x-4 gap-y-2">
               <div className="min-w-0 flex-1">
                 <p className="eyebrow">
                   {detail.trackingNumber} · {documentTypeLabel(detail.type)} ·{' '}
@@ -95,7 +97,7 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
                 <StatusBadge status={presentedStatus(detail)} />
                 {detail.priority === 'URGENT' ? <PriorityLabel priority="URGENT" /> : null}
               </div>
-            </div>
+            </header>
 
             <div className="flex flex-wrap items-center gap-2">
               {/*
