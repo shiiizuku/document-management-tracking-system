@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { KeyRound, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
@@ -15,7 +15,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { CommandPalette, PaletteTrigger } from '@/features/command-palette/command-palette';
+import {
+  CommandPalette,
+  PaletteTrigger,
+  useChordLabel,
+} from '@/features/command-palette/command-palette';
 import { NotificationsSheet } from '@/features/notifications/notifications-sheet';
 import { ColorModeButton, ThemePicker } from '@/components/theme-toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -31,10 +35,15 @@ import { activeNavHref, navSections, visibleNavItems } from './nav-items';
  * account, theme and notification controls in the sidebar footer. Mounted once by the `(app)`
  * layout, so a route is only ever its own content.
  *
- * Civic Ledger moves everything into the sidebar. On a wide screen there is no topbar at all; below
- * `lg` the sidebar becomes the sheet behind a slim topbar's menu button, and that topbar carries
- * the two things a phone user needs without opening it — search and the bell. The account menu is
- * in the sheet's footer there, so it is never mounted twice.
+ * Civic Ledger moves everything into the sidebar. On a wide screen with the sidebar expanded there
+ * is no topbar at all; below `lg` the sidebar becomes the sheet behind a slim topbar's menu button,
+ * and that topbar carries the two things a phone user needs without opening it — search and the
+ * bell. The account menu is in the sheet's footer there, so it is never mounted twice.
+ *
+ * Collapsing the wide-screen sidebar (its toggle, or Ctrl/⌘B) leaves no room for a search field in
+ * a 64px rail, so search moves out of it into a top bar across the content column. There is only
+ * ever one search entry point on screen: the sidebar's while expanded, the top bar's while
+ * collapsed.
  *
  * The same nav renders twice — in the permanent sidebar and inside the sheet — from one
  * `SidebarNav` below, so the two cannot drift apart.
@@ -80,10 +89,67 @@ function useSidebarCollapsed(): readonly [boolean, () => void] {
   return [collapsed, toggle] as const;
 }
 
+/** Tailwind's `lg` breakpoint, the width from which the permanent sidebar is shown. */
+const DESKTOP_QUERY = '(min-width: 64rem)';
+
+const subscribeDesktop = (onChange: () => void) => {
+  const media = typeof window.matchMedia === 'function' ? window.matchMedia(DESKTOP_QUERY) : null;
+  media?.addEventListener('change', onChange);
+  return () => media?.removeEventListener('change', onChange);
+};
+const desktopNow = () =>
+  typeof window.matchMedia === 'function' && window.matchMedia(DESKTOP_QUERY).matches;
+
+/**
+ * Whether the viewport is at `lg` or wider, where the permanent sidebar (and so its collapsed
+ * state) exists. False on the server and in a browser without `matchMedia`: the sidebar then keeps
+ * its own Search button, which is the safe side — search is never missing, at worst it is in the
+ * rail.
+ */
+function useDesktopViewport(): boolean {
+  return useSyncExternalStore(subscribeDesktop, desktopNow, () => false);
+}
+
+/**
+ * Whether a key press is someone typing — in a field, a select, or an editable region — where
+ * Ctrl/⌘B belongs to the text (bold, in a rich editor) and not to the shell.
+ */
+const isTextEntry = (target: EventTarget | null): boolean =>
+  target instanceof Element &&
+  ((target instanceof HTMLElement && target.isContentEditable) ||
+    target.closest(
+      'input, textarea, select, [role="textbox"], [contenteditable]:not([contenteditable="false"])',
+    ) !== null);
+
+/**
+ * Ctrl/⌘B toggles the sidebar — the chord most sidebar apps use. Only at `lg` and up, where there
+ * is a sidebar to collapse; below that the chord is left to the browser. Shift and Alt variants
+ * are left alone, and it never touches K, so the palette's chord is unaffected.
+ */
+function useSidebarShortcut(toggle: () => void): void {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'b' || !(event.metaKey || event.ctrlKey)) return;
+      if (event.altKey || event.shiftKey || event.repeat || event.isComposing) return;
+      if (event.defaultPrevented || isTextEntry(event.target) || !desktopNow()) return;
+      event.preventDefault();
+      toggle();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggle]);
+}
+
 export function AppShell({ user, children }: Readonly<{ user: SessionUser; children: ReactNode }>) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
+  useSidebarShortcut(toggleCollapsed);
+  const desktop = useDesktopViewport();
+  // Collapsed on a wide screen, search lives in the top bar instead of the rail.
+  const searchInTopbar = collapsed && desktop;
+  const toggleChord = useChordLabel('B');
+  const toggleLabel = collapsed ? 'Expand the sidebar' : 'Collapse the sidebar';
   const realtime = useRealtimeSync();
   const openPalette = () => setPaletteOpen(true);
 
@@ -93,13 +159,13 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
         data-slot="app-sidebar"
         className={cn(
           'sticky top-0 hidden h-screen shrink-0 flex-col border-r border-sidebar-edge bg-sidebar text-sidebar-foreground lg:flex',
-          'transition-[width] duration-200 ease-in-out',
+          'transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
           collapsed ? 'w-16' : 'w-64',
         )}
       >
         {/* Focus order follows the handoff: brand, Search, nav, then the footer controls. */}
         <Brand collapsed={collapsed} />
-        <SidebarSearch collapsed={collapsed} onOpen={openPalette} />
+        {searchInTopbar ? null : <SidebarSearch collapsed={collapsed} onOpen={openPalette} />}
         <SidebarNav collapsed={collapsed} />
         <SidebarFooter user={user} collapsed={collapsed} live={realtime.connected} />
         <div
@@ -114,21 +180,42 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
                 variant="ghost"
                 size="icon"
                 onClick={toggleCollapsed}
-                aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+                aria-label={toggleLabel}
                 aria-expanded={!collapsed}
+                aria-keyshortcuts="Control+B Meta+B"
                 className="text-sidebar-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
               >
                 {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right">
-              {collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+              {toggleLabel}
+              <kbd className="ml-2 rounded border border-background/30 px-1 font-sans text-[10px] font-semibold">
+                {toggleChord}
+              </kbd>
             </TooltipContent>
           </Tooltip>
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {/*
+          Wide screen, sidebar collapsed: the search the rail has no room for, as a field across
+          the top of the content column, aligned with the page content beneath it. Gated on the
+          viewport in script and also hidden below `lg` in CSS, so it can never sit beside the
+          narrow topbar.
+        */}
+        {searchInTopbar ? (
+          <header
+            data-slot="app-desktop-topbar"
+            className="sticky top-0 z-20 hidden h-14 shrink-0 border-b border-border bg-card lg:block"
+          >
+            <div className="mx-auto flex h-full w-full max-w-[1280px] items-center px-4 sm:px-6">
+              <PaletteTrigger placement="field" onClick={openPalette} />
+            </div>
+          </header>
+        ) : null}
+
         <header
           data-slot="app-topbar"
           className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b border-border bg-card/95 px-2 backdrop-blur sm:px-4 lg:hidden"

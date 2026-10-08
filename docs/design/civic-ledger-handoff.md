@@ -216,6 +216,18 @@ Keep the structure: sticky `w-64` sidebar at `lg+` with the collapse toggle, and
   (truncate with an ellipsis), then the **palette button**, then the notifications bell (unread dot
   `--sidebar-seal` with a 2px `--sidebar` ring). The colour-mode (sun/moon) toggle stays next to these.
 - Collapsed (`w-16`): icons only, tooltips on hover, palette button and bell stacked.
+- Collapse toggle: keeps `aria-expanded`, adds `aria-keyshortcuts="Control+B Meta+B"`, and its tooltip shows the
+  `Ctrl B` (`⌘B` on a Mac) hint. Ctrl/⌘B toggles the sidebar at `lg+`, except while focus is in an input, textarea,
+  select or contenteditable. It never touches Ctrl/⌘K. The state is still remembered per device. The width
+  transition is off under `prefers-reduced-motion`.
+- **Collapsed-sidebar top bar (`lg+` only).** While the sidebar is collapsed, a top bar spans the content column:
+  sticky, `h-14`, `--card` fill, 1px bottom `--border`, matching the below-`lg` bar. It holds one search bar, a
+  button drawn as a filter-size field (44px, rounded-[10px], 1.5px `--input` border, `max-w-md`), with a search icon,
+  the placeholder "Search documents, actions and screens…" and a `Ctrl K` hint. It opens the same command palette as
+  every other Search button, with `aria-label="Search documents, actions and screens"` and
+  `aria-keyshortcuts="Control+K Meta+K"`. The collapsed rail then drops its own Search button, so there is one search
+  entry point on screen. Expanded, there is no top bar at `lg+` and search stays in the sidebar. Below `lg`
+  nothing changes.
 
 ### Theme picker (replaces the accent popover)
 
@@ -416,6 +428,8 @@ admin sub-tab row from the boards; the sidebar covers it. Other per-screen detai
 
 ## Decisions log
 
+- 2026-10-08: collapsing the sidebar at `lg+` moves search into a top bar over the content column, and the collapsed
+  rail drops its Search button. Ctrl/⌘B toggles the sidebar when focus is not in a text field.
 - 2026-10-08: contrast fix. In the light pastels, primary, sidebar-seal and input are darkened; input is adjusted in
   all eight theme and mode blocks so field borders reach 3:1. Each change moves lightness only, so hues are unchanged.
 
