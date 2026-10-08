@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { CornerDownLeft, Loader2, Search } from 'lucide-react';
 import type { WorkflowAction } from '@dts/contracts';
 import { Button } from '@/components/ui/button';
+import { fieldClasses } from '@/components/ui/field-styles';
 import {
   CommandDialog,
   CommandEmpty,
@@ -253,8 +254,44 @@ export function PaletteTrigger({
   onClick,
   placement = 'topbar',
   className,
-}: Readonly<{ onClick: () => void; placement?: 'topbar' | 'sidebar'; className?: string }>) {
+}: Readonly<{
+  onClick: () => void;
+  placement?: 'topbar' | 'sidebar' | 'field';
+  className?: string;
+}>) {
   const chord = useChordLabel();
+
+  /*
+   * In the wide-screen top bar that appears when the sidebar is collapsed, it is drawn as the
+   * filter-size search field it stands in for — same height, radius, border and fill as the search
+   * box above a list — so the one place to search reads as a field, not as another button.
+   */
+  if (placement === 'field') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label="Search documents, actions and screens"
+        aria-keyshortcuts="Control+K Meta+K"
+        className={fieldClasses(
+          'filter',
+          cn(
+            'flex max-w-md cursor-text items-center gap-2.5 text-left text-muted-foreground hover:border-ring/60',
+            className,
+          ),
+        )}
+      >
+        <Search className="size-4 shrink-0" aria-hidden />
+        <span className="flex-1 truncate">Search documents, actions and screens…</span>
+        <kbd
+          className="shrink-0 rounded-md border border-border bg-muted px-1.5 py-0.5 font-sans text-[11px] font-semibold text-muted-foreground"
+          aria-hidden
+        >
+          {chord}
+        </kbd>
+      </button>
+    );
+  }
 
   // In the sidebar it is a full-width row above the nav, on the sidebar's own colours.
   if (placement === 'sidebar') {
@@ -311,20 +348,21 @@ export function PaletteTrigger({
 }
 
 /**
- * How the chord is written on this machine — `⌘K` on a Mac, `Ctrl K` elsewhere.
+ * How a chord is written on this machine — `⌘K` on a Mac, `Ctrl K` elsewhere. Exported for the
+ * shell's sidebar toggle, whose `Ctrl B` hint has to follow the same rule.
  *
  * Resolved after mount rather than during render because the server has no platform to read, and
  * a guess baked into the HTML would be a hydration mismatch. The non-Mac form is the first paint,
  * so what a Mac user sees is a label that corrects itself, not a label that is missing.
  */
-function useChordLabel(): string {
+export function useChordLabel(key = 'K'): string {
   const [onMac, setOnMac] = useState(false);
 
   useEffect(() => {
     setOnMac(/mac|iphone|ipad/i.test(window.navigator.userAgent));
   }, []);
 
-  return onMac ? '⌘K' : 'Ctrl K';
+  return onMac ? `⌘${key}` : `Ctrl ${key}`;
 }
 
 /**
