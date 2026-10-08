@@ -116,20 +116,22 @@ export function DocumentCards<Row>({
                         }
                       : {})}
                     className={cn(
-                      'h-full rounded-lg border border-border bg-card p-3',
-                      'data-[state=selected]:border-primary',
+                      'h-full rounded-2xl border border-border bg-card p-4',
+                      'data-[state=selected]:border-seal data-[state=selected]:bg-seal-tint',
                       onRowClick &&
-                        'cursor-pointer hover:border-border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                        'cursor-pointer hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
                     )}
                   >
                     {primary === undefined ? null : primary.cell(row)}
                     {rest.length === 0 ? null : (
                       // One hairline, not a nested card: the fields belong to the panel they are
                       // already inside.
-                      <dl className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border pt-2.5">
+                      <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-border-subtle pt-3">
                         {rest.map((column) => (
                           <div key={column.id} className="min-w-0">
-                            <dt className="text-xs text-muted-foreground">{column.header}</dt>
+                            <dt className="text-xs font-bold text-foreground-secondary">
+                              {column.header}
+                            </dt>
                             <dd className="mt-0.5">{column.cell(row)}</dd>
                           </div>
                         ))}
@@ -188,7 +190,11 @@ export function DocumentLines<Row>({
         if (state === 'loading') return <LinesSkeleton />;
         if (state === 'empty') return empty;
         return (
-          <ul aria-label={caption} className="divide-y divide-border" data-testid="document-lines">
+          <ul
+            aria-label={caption}
+            className="divide-y divide-border-subtle"
+            data-testid="document-lines"
+          >
             {rows.map((row) => {
               const key = rowKey(row);
               return (
@@ -205,10 +211,10 @@ export function DocumentLines<Row>({
                       }
                     : {})}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-1.5',
-                    'data-[state=selected]:bg-secondary/40',
+                    'flex min-h-11 items-center gap-3 px-4 py-2',
+                    'data-[state=selected]:bg-seal-tint',
                     onRowClick &&
-                      'cursor-pointer hover:bg-secondary/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset',
+                      'cursor-pointer hover:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
                   )}
                 >
                   <div className="min-w-0 flex-1">

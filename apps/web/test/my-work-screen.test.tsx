@@ -77,8 +77,29 @@ describe('MyWorkScreen', () => {
     renderWithQuery(<MyWorkScreen />);
     await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
 
-    await userEvent.click(screen.getByText('Incoming budget letter'));
+    // The title and the Open button are real links; the rest of the row opens it for a pointer.
+    expect(screen.getByRole('link', { name: 'Incoming budget letter' })).toHaveAttribute(
+      'href',
+      '/documents/doc-1',
+    );
+    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/documents/doc-1');
+    await userEvent.click(screen.getByText('Pending'));
     expect(pushMock).toHaveBeenCalledWith('/documents/doc-1');
+  });
+
+  it('marks an open document past its target date, and not a closed one', async () => {
+    const past = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    apiMock.mockResolvedValue([
+      documentItem({ dueAt: past }),
+      documentItem({ id: 'doc-2', title: 'Released late', status: 'RELEASED', dueAt: past }),
+    ]);
+    renderWithQuery(<MyWorkScreen />);
+
+    await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+    const [late, closed] = document.querySelectorAll('[data-slot="work-row"]');
+    expect(late).toHaveClass('border-destructive');
+    expect(late).toHaveTextContent('3 days overdue');
+    expect(closed).not.toHaveClass('border-destructive');
   });
 
   // The endpoint returns the whole queue, so the pager must say so rather than imply a window
@@ -87,7 +108,7 @@ describe('MyWorkScreen', () => {
     apiMock.mockResolvedValue([documentItem(), documentItem({ id: 'doc-2' })]);
     renderWithQuery(<MyWorkScreen />);
 
-    await waitFor(() => expect(screen.getByText('Showing 1-2 of 2')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Showing 1–2 of 2')).toBeInTheDocument());
     expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
   });

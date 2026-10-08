@@ -124,7 +124,7 @@ describe('RegistryScreen', () => {
 
     await openAdvanced();
     await userEvent.click(screen.getByLabelText('Status'));
-    await userEvent.click(screen.getByRole('option', { name: 'pending' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Pending' }));
 
     expect(pushMock).toHaveBeenCalledWith('/documents?status=PENDING', { scroll: false });
   });
@@ -137,7 +137,7 @@ describe('RegistryScreen', () => {
 
     await openAdvanced();
     await userEvent.click(screen.getByLabelText('Priority'));
-    await userEvent.click(screen.getByRole('option', { name: 'URGENT' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Urgent' }));
 
     expect(pushMock).toHaveBeenCalledWith('/documents?priority=URGENT', { scroll: false });
   });
@@ -147,12 +147,34 @@ describe('RegistryScreen', () => {
     renderWithQuery(<RegistryScreen />);
     await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
 
-    await openAdvanced();
     await userEvent.type(screen.getByLabelText('Search'), 'memo');
     expect(pushMock).not.toHaveBeenCalled();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await userEvent.type(screen.getByLabelText('Search'), '{Enter}');
     expect(pushMock).toHaveBeenCalledWith('/documents?search=memo', { scroll: false });
+  });
+
+  // The dashboard's Overdue tile links here; the filter has a checkbox, a chip and a badge count.
+  it('filters to overdue documents from the panel', async () => {
+    serve({ items: [documentItem()], total: 1 });
+    renderWithQuery(<RegistryScreen />);
+    await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+
+    await openAdvanced();
+    await userEvent.click(screen.getByLabelText('Overdue only'));
+    expect(pushMock).toHaveBeenCalledWith('/documents?overdue=true', { scroll: false });
+  });
+
+  it('shows an overdue link as a chip, counts it, and sends it to the API', async () => {
+    searchParams.value = new URLSearchParams('overdue=true&status=IN_PROCESS');
+    serve({ items: [documentItem()], total: 1 });
+    renderWithQuery(<RegistryScreen />);
+    await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+
+    expect(calledPath(apiMock, (path) => path.startsWith('/documents?'))).toContain('overdue=true');
+    expect(screen.getByRole('button', { name: /Advanced search, 2 filters active/ })).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Remove filter Overdue' }));
+    expect(pushMock).toHaveBeenCalledWith('/documents?status=IN_PROCESS', { scroll: false });
   });
 
   it('opens a document from its row', async () => {
@@ -160,7 +182,12 @@ describe('RegistryScreen', () => {
     renderWithQuery(<RegistryScreen />);
     await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
 
-    await userEvent.click(screen.getByText('Incoming budget letter'));
+    // The title is a real link (keyboard, middle-click), and the rest of the row opens it too.
+    expect(screen.getByRole('link', { name: 'Incoming budget letter' })).toHaveAttribute(
+      'href',
+      '/documents/doc-1',
+    );
+    await userEvent.click(screen.getByText('Pending'));
     expect(pushMock).toHaveBeenCalledWith('/documents/doc-1');
   });
 
@@ -172,7 +199,7 @@ describe('RegistryScreen', () => {
       expect(screen.getByText('No documents match these filters')).toBeInTheDocument(),
     );
 
-    await userEvent.click(screen.getByRole('button', { name: /Clear/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
     expect(pushMock).toHaveBeenCalledWith('/documents', { scroll: false });
   });
 

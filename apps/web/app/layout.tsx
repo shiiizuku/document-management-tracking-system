@@ -2,37 +2,35 @@ import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import './theme.css';
 import { AppProviders } from '@/components/app-providers';
-const themeBootScript = `(function(){var root=document.documentElement;try{var t=localStorage.getItem('dts.theme');if(!t){var old=JSON.parse(localStorage.getItem('dts.appearance')||'null');t=old&&old.mode;}var dark=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);root.classList.toggle('dark',dark);var a=localStorage.getItem('dts.accent.v1');root.dataset.accent=['blue','green','violet','rose'].includes(a)?a:'default';}catch(e){root.dataset.accent='default';}})();`;
+import { themeBootScript } from '@/components/theme-storage';
 
 /*
- * Inter, from two files committed under `app/fonts` (see the README beside them).
+ * Public Sans (UI and body) and Newsreader (display), each one variable woff2 committed under
+ * `app/fonts` (see the README beside them for where they came from and how they were subset).
  *
  * `next/font/local` rather than a hand-written `@font-face`, because it emits the preload link and
  * the `font-display` for us and hashes the file into the build output — there is no `public/fonts`
- * URL to keep in step with a deploy. Both faces are declared as a weight *range*: one variable file
- * covers 100–900, so no weight the design asks for needs a second request.
+ * URL to keep in step with a deploy. Both are declared as a weight *range*: one variable file
+ * covers every weight, so no weight the design asks for needs a second request.
  *
- * Two families rather than one, and composed as a fallback list in `theme.css`. `localFont` has no
- * per-file `unicode-range`, which is how a subsetted family is normally spelled, so the coverage is
- * expressed the other way round: the browser falls through to the next family per *glyph*, which
- * reaches the Latin Extended file only for text the Latin one cannot set. That file is therefore
- * `preload: false` — it is 85 kB against the Latin file's 48 kB, and almost nothing in a Philippine
- * records office needs it. Preloading both would double the font cost of first paint to buy glyphs
- * that are never drawn.
+ * One file per family, Latin and Latin Extended together. Inter needed two because its Latin
+ * Extended half doubled the download; here the whole subset of Public Sans is 34 kB. Newsreader is
+ * the heavier file (about 190 kB, most of it the optical-size axis that keeps 44px titles from
+ * looking like enlarged body text) and is still preloaded, because a page title is above the fold
+ * on every signed-in screen and swapping it late is the most visible flash the app could have.
  */
-const inter = localFont({
-  src: './fonts/inter-latin-variable.woff2',
+const publicSans = localFont({
+  src: './fonts/public-sans-variable.woff2',
   weight: '100 900',
-  variable: '--font-inter',
+  variable: '--font-public-sans',
   display: 'swap',
 });
 
-const interExtended = localFont({
-  src: './fonts/inter-latin-ext-variable.woff2',
-  weight: '100 900',
-  variable: '--font-inter-ext',
+const newsreader = localFont({
+  src: './fonts/newsreader-variable.woff2',
+  weight: '200 800',
+  variable: '--font-newsreader',
   display: 'swap',
-  preload: false,
 });
 
 /*
@@ -56,14 +54,14 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     /*
-     * `suppressHydrationWarning` is required, not cosmetic: the boot script below writes
-     * a dark class onto this element before React hydrates, so the client's <html> attributes
-     * can differ from the server's. The warning is scoped to
-     * this element only and does not reach anything inside it.
+     * `suppressHydrationWarning` is required, not cosmetic: the boot script below writes a dark
+     * class and `data-theme` onto this element before React hydrates, so the client's <html>
+     * attributes can differ from the server's. The warning is scoped to this element only and does
+     * not reach anything inside it.
      */
     <html
       lang="en"
-      className={`${inter.variable} ${interExtended.variable}`}
+      className={`${publicSans.variable} ${newsreader.variable}`}
       suppressHydrationWarning
     >
       <head>
@@ -71,7 +69,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           Inlined and blocking, on purpose. It is the only way to have the user's theme on the
           first paint rather than one frame after it: the choice lives in localStorage, which the
           server cannot read, so anything that waits for React has already shown the wrong colours.
-          It is a fixed string we author here — no user input reaches it.
+          It is a fixed string we author (in `theme-storage.ts`, beside the provider that shares
+          its keys) — no user input reaches it.
         */}
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>

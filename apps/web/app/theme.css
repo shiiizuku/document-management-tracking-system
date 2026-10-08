@@ -3,26 +3,67 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
-  --radius: 0.625rem;
-  --background: oklch(0.945 0.004 250);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(0.975 0.003 250);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(0.975 0.003 250);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.915 0.005 250);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.915 0.005 250);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.915 0.005 250);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.85 0.006 250);
-  --input: oklch(0.85 0.006 250);
-  --ring: oklch(0.708 0 0);
+/*
+ * Civic Ledger themes (docs/design/civic-ledger-handoff.md).
+ *
+ * A theme is a whole palette — ground, surfaces, borders, text, primary and sidebar — not an
+ * accent laid over one fixed neutral. That is why each block below restates every token rather
+ * than overriding three of them: the pastel themes differ from each other in their greys as much
+ * as in their greens and pinks, and a partial override would leave the previous theme's ground
+ * showing through.
+ *
+ * The id lives on `<html data-theme>`, written by the boot script in `app/layout.tsx` before
+ * first paint and kept by `ThemeProvider` afterwards. Neutral is also the bare `:root`, so a
+ * page that renders before either has run — or a storage-less browser — still gets a palette.
+ *
+ * Values are the design's hex converted to oklch, to match the rest of this file; the hex is kept
+ * beside each one because that is what the handoff and the contrast checks are written in.
+ */
+:root,
+:root[data-theme='neutral'] {
+  --radius: 0.75rem;
+  --background: oklch(0.965 0.006 84.6); /* #F5F3EF */
+  --foreground: oklch(0.287 0.008 75.2); /* #2D2A26 */
+  --card: oklch(0.991 0.003 84.6); /* #FDFCFA */
+  --card-foreground: oklch(0.287 0.008 75.2);
+  --popover: oklch(0.991 0.003 84.6);
+  --popover-foreground: oklch(0.287 0.008 75.2);
+  --primary: oklch(0.517 0.042 163); /* #527061 */
+  --primary-foreground: oklch(1 0 0);
+  --primary-hover: oklch(0.481 0.039 161.9); /* #4A6557 */
+  --secondary: oklch(0.941 0.009 84.6); /* #EEEBE5 */
+  --secondary-foreground: oklch(0.287 0.008 75.2);
+  --muted: oklch(0.941 0.009 84.6);
+  --muted-foreground: oklch(0.478 0.015 75.2); /* #625C54 */
+  --foreground-secondary: oklch(0.412 0.013 76.5); /* #4F4A43 */
+  --accent: oklch(0.953 0.009 84.6); /* #F2EFE9 */
+  --accent-foreground: oklch(0.287 0.008 75.2);
+  --border: oklch(0.884 0.013 82.4); /* #DDD8CF */
+  --border-subtle: oklch(0.923 0.01 81.8); /* #E9E5DE */
+  --input: oklch(0.641 0.019 81.3); /* #928C80 */
+  --ring: oklch(0.517 0.042 163);
+  --seal: oklch(0.739 0.068 75.5); /* #C4A57A */
+  --seal-foreground: oklch(0.52 0.061 74.8); /* #7E6440 */
+  --seal-tint: oklch(0.951 0.022 83.3); /* #F6EEDF */
+  --sidebar: oklch(0.911 0.013 82.4); /* #E6E1D8 */
+  --sidebar-foreground: oklch(0.287 0.008 75.2);
+  --sidebar-muted-foreground: oklch(0.463 0.016 78.2); /* #5E584F */
+  --sidebar-accent: oklch(0.962 0.009 84.6); /* #F5F2EC */
+  --sidebar-accent-foreground: oklch(0.287 0.008 75.2);
+  --sidebar-border: oklch(0.816 0.018 81.3); /* #C9C2B6 */
+  --sidebar-avatar: oklch(0.857 0.018 81.3); /* #D6CFC3 */
+  --sidebar-primary: oklch(0.517 0.042 163); /* #527061 */
+  --sidebar-seal: oklch(0.505 0.061 74.8); /* #79603C */
+  --move-action: oklch(0.826 0.053 80.5); /* #D8C3A0 */
+  --move-action-foreground: oklch(0.287 0.008 75.2);
+
+  /*
+   * Theme-independent: the status signal, priority, the destructive red and the active-filter
+   * chip's text. They mean the same thing in every theme, so they are declared once here and
+   * once under `.dark`, never per theme.
+   */
+  --seal-tint-foreground: oklch(0.412 0.076 84.6); /* #5E4710 */
+  --destructive: oklch(0.391 0.132 28.4); /* #7D1D17 */
   --signal-wait: oklch(0.95 0.055 85);
   --on-signal-wait: oklch(0.45 0.09 85);
   --signal-move: oklch(0.92 0.028 240);
@@ -31,31 +72,143 @@
   --on-signal-done: oklch(0.45 0.08 160);
   --signal-closed: oklch(0.92 0.004 85);
   --on-signal-closed: oklch(0.45 0.008 85);
-  --priority-urgent: oklch(0.45 0.16 27);
-  --priority-high: oklch(0.45 0.105 70);
-  --dts-gold: #c49a45;
+  --priority-urgent: oklch(0.391 0.132 28.4); /* #7D1D17 */
+  --priority-urgent-bg: oklch(0.895 0.04 25.6); /* #F6D3CF */
+  /* The "Your move" bar is the sidebar colour in every light theme; dark mode gives it its own. */
+  --move-bar: var(--sidebar);
+  --move-bar-foreground: var(--sidebar-foreground);
+  --move-bar-rule: transparent;
+  --sidebar-edge: transparent;
 }
 
-.dark {
+:root[data-theme='sage'] {
+  --background: oklch(0.964 0.005 145.5); /* #F1F4F1 */
+  --foreground: oklch(0.294 0.022 166.7); /* #22302A */
+  --card: oklch(0.99 0.002 145.6); /* #FBFCFB */
+  --card-foreground: oklch(0.294 0.022 166.7);
+  --popover: oklch(0.99 0.002 145.6);
+  --popover-foreground: oklch(0.294 0.022 166.7);
+  --primary: oklch(0.521 0.059 161.3); /* #49745E */
+  --primary-foreground: oklch(1 0 0);
+  --primary-hover: oklch(0.472 0.054 161.7); /* #3F6552 */
+  --secondary: oklch(0.943 0.009 150.7); /* #E8EEE9 */
+  --secondary-foreground: oklch(0.294 0.022 166.7);
+  --muted: oklch(0.943 0.009 150.7);
+  --muted-foreground: oklch(0.492 0.022 162.2); /* #56655D */
+  --foreground-secondary: oklch(0.423 0.023 162); /* #43524A */
+  --accent: oklch(0.957 0.007 145.5); /* #EEF2EE */
+  --accent-foreground: oklch(0.294 0.022 166.7);
+  --border: oklch(0.888 0.014 155.6); /* #D3DDD6 */
+  --border-subtle: oklch(0.93 0.01 155.1); /* #E3EAE5 */
+  --input: oklch(0.638 0.022 156.7); /* #819086 */
+  --ring: oklch(0.521 0.059 161.3);
+  --seal: oklch(0.721 0.079 80.4); /* #BFA06B */
+  --seal-foreground: oklch(0.51 0.066 80.4); /* #7A6238 */
+  --seal-tint: oklch(0.949 0.023 90.8); /* #F4EEDD */
+  --sidebar: oklch(0.915 0.014 155.6); /* #DCE6DF */
+  --sidebar-foreground: oklch(0.294 0.022 166.7);
+  --sidebar-muted-foreground: oklch(0.467 0.023 162.2); /* #4F5E56 */
+  --sidebar-accent: oklch(0.966 0.006 153.8); /* #F1F5F2 */
+  --sidebar-accent-foreground: oklch(0.294 0.022 166.7);
+  --sidebar-border: oklch(0.806 0.022 156.7); /* #B5C4BA */
+  --sidebar-avatar: oklch(0.864 0.019 155.8); /* #C9D6CD */
+  --sidebar-primary: oklch(0.521 0.059 161.3); /* #49745E */
+  --sidebar-seal: oklch(0.51 0.066 80.4); /* #7A6238 */
+  --move-action: oklch(0.804 0.071 85.2); /* #D4BC8A */
+  --move-action-foreground: oklch(0.294 0.022 166.7);
+}
+
+:root[data-theme='blush'] {
+  --background: oklch(0.964 0.005 34.3); /* #F6F2F1 */
+  --foreground: oklch(0.279 0.014 10.4); /* #2F2627 */
+  --card: oklch(0.99 0.002 17.2); /* #FDFBFB */
+  --card-foreground: oklch(0.279 0.014 10.4);
+  --popover: oklch(0.99 0.002 17.2);
+  --popover-foreground: oklch(0.279 0.014 10.4);
+  --primary: oklch(0.526 0.059 7.3); /* #895C64 */
+  --primary-foreground: oklch(1 0 0);
+  --primary-hover: oklch(0.458 0.053 5.6); /* #714B53 */
+  --secondary: oklch(0.936 0.008 27.2); /* #EFE8E7 */
+  --secondary-foreground: oklch(0.279 0.014 10.4);
+  --muted: oklch(0.936 0.008 27.2);
+  --muted-foreground: oklch(0.475 0.019 8.1); /* #66585A */
+  --foreground-secondary: oklch(0.404 0.018 12.7); /* #524546 */
+  --accent: oklch(0.95 0.007 28.8); /* #F3EDEC */
+  --accent-foreground: oklch(0.279 0.014 10.4);
+  --border: oklch(0.881 0.013 29.9); /* #E0D5D3 */
+  --border-subtle: oklch(0.925 0.009 34.3); /* #ECE4E2 */
+  --input: oklch(0.642 0.019 30.3); /* #988986 */
+  --ring: oklch(0.526 0.059 7.3);
+  --seal: oklch(0.739 0.068 75.5); /* #C4A57A */
+  --seal-foreground: oklch(0.52 0.061 74.8); /* #7E6440 */
+  --seal-tint: oklch(0.951 0.022 83.3); /* #F6EEDF */
+  --sidebar: oklch(0.913 0.012 11); /* #EADFE0 */
+  --sidebar-foreground: oklch(0.279 0.014 10.4);
+  --sidebar-muted-foreground: oklch(0.45 0.019 8.1); /* #5F5153 */
+  --sidebar-accent: oklch(0.968 0.005 17.2); /* #F8F3F3 */
+  --sidebar-accent-foreground: oklch(0.279 0.014 10.4);
+  --sidebar-border: oklch(0.812 0.018 13.2); /* #CDBDBE */
+  --sidebar-avatar: oklch(0.861 0.017 12.8); /* #DCCDCE */
+  --sidebar-primary: oklch(0.526 0.059 7.3); /* #895C64 */
+  --sidebar-seal: oklch(0.505 0.061 74.8); /* #79603C */
+  --move-action: oklch(0.823 0.059 81.4); /* #D9C29A */
+  --move-action-foreground: oklch(0.279 0.014 10.4);
+}
+
+:root[data-theme='civic'] {
+  --background: oklch(0.968 0.004 134.8); /* #F3F5F2 */
+  --foreground: oklch(0.259 0.034 163.1); /* #13291F */
+  --card: oklch(0.99 0.003 128.5); /* #FBFCFA */
+  --card-foreground: oklch(0.259 0.034 163.1);
+  --popover: oklch(0.99 0.003 128.5);
+  --popover-foreground: oklch(0.259 0.034 163.1);
+  --primary: oklch(0.471 0.096 157.3); /* #1F6B45 */
+  --primary-foreground: oklch(1 0 0);
+  --primary-hover: oklch(0.384 0.083 154.8); /* #14502F */
+  --secondary: oklch(0.957 0.007 145.5); /* #EEF2EE */
+  --secondary-foreground: oklch(0.259 0.034 163.1);
+  --muted: oklch(0.957 0.007 145.5);
+  --muted-foreground: oklch(0.48 0.029 163.4); /* #4F6359 */
+  --foreground-secondary: oklch(0.418 0.031 164.2); /* #3D5248 */
+  --accent: oklch(0.963 0.007 145.5); /* #F0F4F0 */
+  --accent-foreground: oklch(0.259 0.034 163.1);
+  --border: oklch(0.867 0.014 152.6); /* #CDD6CF */
+  --border-subtle: oklch(0.922 0.009 150.7); /* #E1E7E2 */
+  --input: oklch(0.64 0.027 158); /* #7F9186 */
+  --ring: oklch(0.471 0.096 157.3);
+  --seal: oklch(0.66 0.118 79.9); /* #B8892F */
+  --seal-foreground: oklch(0.53 0.096 78); /* #8A6420 */
+  --seal-tint: oklch(0.968 0.025 89.2); /* #FBF4E2 */
+  --sidebar: oklch(0.259 0.034 163.1); /* #13291F */
+  --sidebar-foreground: oklch(0.968 0.004 134.8); /* #F3F5F2 */
+  --sidebar-muted-foreground: oklch(0.816 0.02 157.8); /* #B9C7BE */
+  --sidebar-accent: oklch(0.318 0.034 161.9); /* #22382D */
+  --sidebar-accent-foreground: oklch(0.968 0.004 134.8);
+  --sidebar-border: oklch(0.48 0.029 163.4); /* #4F6359 */
+  --sidebar-avatar: oklch(0.383 0.041 161.1); /* #2F4A3C */
+  --sidebar-primary: oklch(0.789 0.103 84.4); /* #D9B56A */
+  --sidebar-seal: oklch(0.789 0.103 84.4); /* #D9B56A */
+  --move-action: oklch(0.789 0.103 84.4); /* #D9B56A */
+  --move-action-foreground: oklch(0.259 0.034 163.1);
+}
+
+/*
+ * Dark mode is still its own switch (`.dark` on <html>), independent of the theme, and every
+ * theme has its own dark palette below. As in shadcn's dark scheme, the primary turns into a light
+ * tone with dark ink on it, so the one variable serves as a button fill and as link text.
+ *
+ * Written `:root.dark` rather than `.dark`: the theme blocks above are `:root[data-theme]`, which
+ * outranks a bare class, and a dark mode that lost to the light palette it is meant to replace
+ * would be no dark mode at all.
+ *
+ * What is shared by every dark palette is declared once, here: the status signal and priority
+ * (fixed in every theme, as in light), the destructive red, and the "Your move" bar, which in dark
+ * mode is a raised card-coloured panel under a 2px seal rule rather than the sidebar colour — a
+ * near-black bar on a near-black page would not read as a bar.
+ */
+:root.dark {
   color-scheme: dark;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
   --signal-wait: oklch(0.32 0.05 85);
   --on-signal-wait: oklch(0.9 0.06 85);
   --signal-move: oklch(0.32 0.045 240);
@@ -64,24 +217,183 @@
   --on-signal-done: oklch(0.89 0.05 160);
   --signal-closed: oklch(0.3 0.004 85);
   --on-signal-closed: oklch(0.87 0.005 85);
-  --priority-urgent: oklch(0.78 0.13 27);
-  --priority-high: oklch(0.82 0.11 75);
+  --priority-urgent: oklch(0.833 0.069 27.6); /* #F2B8B0 */
+  --priority-urgent-bg: oklch(0.311 0.058 27.2); /* #4A2420 */
+  --move-bar: var(--card);
+  --move-bar-foreground: var(--foreground);
+  --move-bar-rule: var(--seal);
+  /* Light sidebars sit flush; a dark one needs an edge to separate it from the page. */
+  --sidebar-edge: var(--sidebar-avatar);
 }
 
-.dark [data-slot='public-story'] .text-gold {
-  color: #634500;
+:root.dark[data-theme='neutral'],
+:root.dark:not([data-theme]) {
+  --background: oklch(0.209 0.004 84.6); /* #191816 */
+  --foreground: oklch(0.935 0.009 78.3); /* #EDE9E3 */
+  --card: oklch(0.245 0.006 78.2); /* #22201D */
+  --card-foreground: oklch(0.935 0.009 78.3);
+  --popover: oklch(0.245 0.006 78.2);
+  --popover-foreground: oklch(0.935 0.009 78.3);
+  --primary: oklch(0.796 0.036 161.2); /* #A9C4B5 */
+  --primary-foreground: oklch(0.209 0.004 84.6);
+  --primary-hover: oklch(0.866 0.028 160.8); /* #C4D9CD */
+  --secondary: oklch(0.278 0.006 78.2); /* #2A2825 */
+  --secondary-foreground: oklch(0.935 0.009 78.3);
+  --muted: oklch(0.278 0.006 78.2);
+  --muted-foreground: oklch(0.719 0.018 76.1); /* #ABA398 */
+  --foreground-secondary: oklch(0.823 0.016 77.1); /* #CBC4BA */
+  --accent: oklch(0.287 0.008 75.2); /* #2D2A26 */
+  --accent-foreground: oklch(0.935 0.009 78.3);
+  --border: oklch(0.339 0.01 73.6); /* #3B3732 */
+  --border-subtle: oklch(0.303 0.008 75.3); /* #312E2A */
+  --input: oklch(0.526 0.015 75.2); /* #706A61 */
+  --ring: oklch(0.796 0.036 161.2);
+  --seal: oklch(0.721 0.079 80.4); /* #BFA06B */
+  --seal-foreground: oklch(0.812 0.07 82.6); /* #D8BE8E */
+  --seal-tint: oklch(0.287 0.02 86.4); /* #2F2A1F */
+  --seal-tint-foreground: oklch(0.812 0.07 82.6);
+  --sidebar: oklch(0.187 0.004 84.6); /* #141311 */
+  --sidebar-foreground: oklch(0.935 0.009 78.3);
+  --sidebar-muted-foreground: oklch(0.719 0.018 76.1);
+  --sidebar-accent: oklch(0.257 0.008 84.6); /* #25231F */
+  --sidebar-accent-foreground: oklch(0.935 0.009 78.3);
+  --sidebar-border: oklch(0.375 0.012 72.5); /* #45403A */
+  --sidebar-avatar: oklch(0.299 0.008 75.3); /* #302D29 */
+  --sidebar-primary: oklch(0.796 0.036 161.2); /* #A9C4B5 */
+  --sidebar-seal: oklch(0.812 0.07 82.6); /* #D8BE8E */
+  --move-action: oklch(0.826 0.053 80.5); /* #D8C3A0 */
+  --move-action-foreground: oklch(0.209 0.004 84.6);
+}
+:root.dark[data-theme='sage'] {
+  --background: oklch(0.209 0.013 160); /* #131A16 */
+  --foreground: oklch(0.943 0.009 161.3); /* #E7EEEA */
+  --card: oklch(0.25 0.016 160.7); /* #1B241F */
+  --card-foreground: oklch(0.943 0.009 161.3);
+  --popover: oklch(0.25 0.016 160.7);
+  --popover-foreground: oklch(0.943 0.009 161.3);
+  --primary: oklch(0.806 0.064 160.4); /* #9CCDB2 */
+  --primary-foreground: oklch(0.209 0.013 160);
+  --primary-hover: oklch(0.875 0.048 159.7); /* #BCE0CB */
+  --secondary: oklch(0.281 0.019 161.1); /* #212C26 */
+  --secondary-foreground: oklch(0.943 0.009 161.3);
+  --muted: oklch(0.281 0.019 161.1);
+  --muted-foreground: oklch(0.742 0.023 158.4); /* #A0B0A6 */
+  --foreground-secondary: oklch(0.833 0.018 159); /* #BFCCC4 */
+  --accent: oklch(0.296 0.02 163.3); /* #24302A */
+  --accent-foreground: oklch(0.943 0.009 161.3);
+  --border: oklch(0.366 0.026 160.2); /* #33433A */
+  --border-subtle: oklch(0.325 0.023 159.7); /* #2A3830 */
+  --input: oklch(0.53 0.027 156.9); /* #5F7166 */
+  --ring: oklch(0.806 0.064 160.4);
+  --seal: oklch(0.721 0.079 80.4); /* #BFA06B */
+  --seal-foreground: oklch(0.805 0.074 84.3); /* #D6BC88 */
+  --seal-tint: oklch(0.283 0.023 100.3); /* #2C2A1D */
+  --seal-tint-foreground: oklch(0.805 0.074 84.3);
+  --sidebar: oklch(0.188 0.011 163.5); /* #0F1512 */
+  --sidebar-foreground: oklch(0.943 0.009 161.3);
+  --sidebar-muted-foreground: oklch(0.742 0.023 158.4);
+  --sidebar-accent: oklch(0.264 0.019 160.9); /* #1D2822 */
+  --sidebar-accent-foreground: oklch(0.943 0.009 161.3);
+  --sidebar-border: oklch(0.409 0.029 158); /* #3D4F44 */
+  --sidebar-avatar: oklch(0.314 0.022 157.8); /* #28352D */
+  --sidebar-primary: oklch(0.806 0.064 160.4); /* #9CCDB2 */
+  --sidebar-seal: oklch(0.805 0.074 84.3); /* #D6BC88 */
+  --move-action: oklch(0.804 0.071 85.2); /* #D4BC8A */
+  --move-action-foreground: oklch(0.209 0.013 160);
+}
+:root.dark[data-theme='blush'] {
+  --background: oklch(0.211 0.008 4.2); /* #1C1718 */
+  --foreground: oklch(0.938 0.009 8.6); /* #F0E8E9 */
+  --card: oklch(0.25 0.008 4); /* #252021 */
+  --card-foreground: oklch(0.938 0.009 8.6);
+  --popover: oklch(0.25 0.008 4);
+  --popover-foreground: oklch(0.938 0.009 8.6);
+  --primary: oklch(0.783 0.056 7); /* #D9AAB2 */
+  --primary-foreground: oklch(0.211 0.008 4.2);
+  --primary-hover: oklch(0.857 0.039 7.9); /* #E8C6CB */
+  --secondary: oklch(0.28 0.009 6.3); /* #2D2728 */
+  --secondary-foreground: oklch(0.938 0.009 8.6);
+  --muted: oklch(0.28 0.009 6.3);
+  --muted-foreground: oklch(0.724 0.019 4.7); /* #B1A1A4 */
+  --foreground-secondary: oklch(0.826 0.016 7.6); /* #D0C2C4 */
+  --accent: oklch(0.293 0.01 8); /* #312A2B */
+  --accent-foreground: oklch(0.938 0.009 8.6);
+  --border: oklch(0.344 0.014 11); /* #403637 */
+  --border-subtle: oklch(0.31 0.012 9.2); /* #362E2F */
+  --input: oklch(0.534 0.017 7.3); /* #76696B */
+  --ring: oklch(0.783 0.056 7);
+  --seal: oklch(0.739 0.068 75.5); /* #C4A57A */
+  --seal-foreground: oklch(0.825 0.065 80.6); /* #DCC296 */
+  --seal-tint: oklch(0.286 0.017 70.8); /* #302921 */
+  --seal-tint-foreground: oklch(0.825 0.065 80.6);
+  --sidebar: oklch(0.188 0.007 0.9); /* #161213 */
+  --sidebar-foreground: oklch(0.938 0.009 8.6);
+  --sidebar-muted-foreground: oklch(0.724 0.019 4.7);
+  --sidebar-accent: oklch(0.259 0.009 6.4); /* #282223 */
+  --sidebar-accent-foreground: oklch(0.938 0.009 8.6);
+  --sidebar-border: oklch(0.38 0.016 5.5); /* #4A3F41 */
+  --sidebar-avatar: oklch(0.302 0.012 9.3); /* #342C2D */
+  --sidebar-primary: oklch(0.783 0.056 7); /* #D9AAB2 */
+  --sidebar-seal: oklch(0.825 0.065 80.6); /* #DCC296 */
+  --move-action: oklch(0.823 0.059 81.4); /* #D9C29A */
+  --move-action-foreground: oklch(0.211 0.008 4.2);
+}
+:root.dark[data-theme='civic'] {
+  --background: oklch(0.204 0.021 162.1); /* #0E1A14 */
+  --foreground: oklch(0.939 0.01 155.1); /* #E6EDE8 */
+  --card: oklch(0.248 0.026 160.5); /* #16251D */
+  --card-foreground: oklch(0.939 0.01 155.1);
+  --popover: oklch(0.248 0.026 160.5);
+  --popover-foreground: oklch(0.939 0.01 155.1);
+  --primary: oklch(0.805 0.089 156.5); /* #8FD1A8 */
+  --primary-foreground: oklch(0.204 0.021 162.1);
+  --primary-hover: oklch(0.875 0.062 157.2); /* #B5E3C6 */
+  --secondary: oklch(0.275 0.028 160.7); /* #1B2C23 */
+  --secondary-foreground: oklch(0.939 0.01 155.1);
+  --muted: oklch(0.275 0.028 160.7);
+  --muted-foreground: oklch(0.741 0.028 159.3); /* #9DB1A5 */
+  --foreground-secondary: oklch(0.804 0.024 157.5); /* #B3C4B9 */
+  --accent: oklch(0.293 0.031 160.7); /* #1E3127 */
+  --accent-foreground: oklch(0.939 0.01 155.1);
+  --border: oklch(0.356 0.036 161.1); /* #2B4236 */
+  --border-subtle: oklch(0.327 0.033 161); /* #253A2F */
+  --input: oklch(0.525 0.037 160); /* #587163 */
+  --ring: oklch(0.805 0.089 156.5);
+  --seal: oklch(0.728 0.108 81.7); /* #C9A052 */
+  --seal-foreground: oklch(0.789 0.103 84.4); /* #D9B56A */
+  --seal-tint: oklch(0.275 0.032 89); /* #2E2715 */
+  --seal-tint-foreground: oklch(0.789 0.103 84.4);
+  --sidebar: oklch(0.179 0.018 162.1); /* #0A140F */
+  --sidebar-foreground: oklch(0.939 0.01 155.1);
+  --sidebar-muted-foreground: oklch(0.741 0.028 159.3);
+  --sidebar-accent: oklch(0.255 0.026 162); /* #17271F */
+  --sidebar-accent-foreground: oklch(0.939 0.01 155.1);
+  --sidebar-border: oklch(0.415 0.036 162.6); /* #3A5246 */
+  --sidebar-avatar: oklch(0.309 0.031 160.9); /* #22352B */
+  --sidebar-primary: oklch(0.789 0.103 84.4); /* #D9B56A */
+  --sidebar-seal: oklch(0.789 0.103 84.4); /* #D9B56A */
+  --move-action: oklch(0.789 0.103 84.4); /* #D9B56A */
+  --move-action-foreground: oklch(0.259 0.034 163.1);
 }
 
 @theme inline {
-  --font-sans: var(--font-inter), var(--font-inter-ext), system-ui, sans-serif;
+  /*
+   * Public Sans for every UI and body face, Newsreader for display — both self-hosted from
+   * `app/fonts` via `next/font/local` (see the README there). The fallbacks are what a reader sees
+   * for the instant before `font-display: swap` lands, nothing more.
+   */
+  --font-sans: var(--font-public-sans), system-ui, sans-serif;
+  --font-display: var(--font-newsreader), Georgia, serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-foreground-secondary: var(--foreground-secondary);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -90,8 +402,28 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-seal: var(--seal);
+  --color-seal-foreground: var(--seal-foreground);
+  --color-seal-tint: var(--seal-tint);
+  --color-seal-tint-foreground: var(--seal-tint-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-avatar: var(--sidebar-avatar);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-seal: var(--sidebar-seal);
+  --color-move-action: var(--move-action);
+  --color-move-action-foreground: var(--move-action-foreground);
+  --color-move-bar: var(--move-bar);
+  --color-move-bar-foreground: var(--move-bar-foreground);
+  --color-move-bar-rule: var(--move-bar-rule);
+  --color-sidebar-edge: var(--sidebar-edge);
   --color-signal-wait: var(--signal-wait);
   --color-on-signal-wait: var(--on-signal-wait);
   --color-signal-move: var(--signal-move);
@@ -101,12 +433,17 @@
   --color-signal-closed: var(--signal-closed);
   --color-on-signal-closed: var(--on-signal-closed);
   --color-priority-urgent: var(--priority-urgent);
-  --color-priority-high: var(--priority-high);
-  --color-gold: var(--dts-gold);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-priority-urgent-bg: var(--priority-urgent-bg);
+  /*
+   * Spaced like Tailwind's own scale (sm 6, md 8, lg 10, xl 12) rather than shadcn's
+   * `--radius ± 4px`, so that `rounded-xl` means the 12px the handoff writes it as and
+   * `rounded-2xl` (Tailwind's 16px, untouched) means 16px. `lg` lands on the 10px that buttons and
+   * filter fields use.
+   */
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: calc(var(--radius) - 2px);
+  --radius-xl: var(--radius);
 }
 
 @layer base {
@@ -114,71 +451,18 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-background text-[15px] leading-normal text-foreground font-sans;
   }
   .eyebrow {
-    @apply text-muted-foreground text-xs font-semibold tracking-widest uppercase tabular-nums;
+    @apply text-seal-foreground text-xs font-bold tracking-[0.16em] uppercase tabular-nums;
   }
-}
-
-:root[data-accent='blue'] {
-  --primary: oklch(0.46 0.18 255);
-  --primary-foreground: oklch(0.985 0 0);
-  --accent: oklch(0.9 0.035 255);
-  --accent-foreground: oklch(0.3 0.065 255);
-  --ring: oklch(0.46 0.18 255);
-}
-:root.dark[data-accent='blue'] {
-  --primary: oklch(0.78 0.126 255);
-  --primary-foreground: oklch(0.18 0.035 255);
-  --accent: oklch(0.3 0.045 255);
-  --accent-foreground: oklch(0.9 0.035 255);
-  --ring: oklch(0.78 0.126 255);
-}
-
-:root[data-accent='green'] {
-  --primary: oklch(0.46 0.12 155);
-  --primary-foreground: oklch(0.985 0 0);
-  --accent: oklch(0.9 0.035 155);
-  --accent-foreground: oklch(0.3 0.065 155);
-  --ring: oklch(0.46 0.12 155);
-}
-:root.dark[data-accent='green'] {
-  --primary: oklch(0.78 0.084 155);
-  --primary-foreground: oklch(0.18 0.035 155);
-  --accent: oklch(0.3 0.045 155);
-  --accent-foreground: oklch(0.9 0.035 155);
-  --ring: oklch(0.78 0.084 155);
-}
-
-:root[data-accent='violet'] {
-  --primary: oklch(0.46 0.18 295);
-  --primary-foreground: oklch(0.985 0 0);
-  --accent: oklch(0.9 0.035 295);
-  --accent-foreground: oklch(0.3 0.065 295);
-  --ring: oklch(0.46 0.18 295);
-}
-:root.dark[data-accent='violet'] {
-  --primary: oklch(0.78 0.126 295);
-  --primary-foreground: oklch(0.18 0.035 295);
-  --accent: oklch(0.3 0.045 295);
-  --accent-foreground: oklch(0.9 0.035 295);
-  --ring: oklch(0.78 0.126 295);
-}
-
-:root[data-accent='rose'] {
-  --primary: oklch(0.46 0.18 10);
-  --primary-foreground: oklch(0.985 0 0);
-  --accent: oklch(0.9 0.035 10);
-  --accent-foreground: oklch(0.3 0.065 10);
-  --ring: oklch(0.46 0.18 10);
-}
-:root.dark[data-accent='rose'] {
-  --primary: oklch(0.78 0.126 10);
-  --primary-foreground: oklch(0.18 0.035 10);
-  --accent: oklch(0.3 0.045 10);
-  --accent-foreground: oklch(0.9 0.035 10);
-  --ring: oklch(0.78 0.126 10);
+  /*
+   * Every `DTS-YYYY-NNNNNN` in the app. Tabular so a column of them lines up digit for digit, and
+   * tracked out slightly because a run of same-width digits otherwise reads as one block.
+   */
+  .tracking-number {
+    @apply font-semibold tabular-nums tracking-[0.04em];
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {

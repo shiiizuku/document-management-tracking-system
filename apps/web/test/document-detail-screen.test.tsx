@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DocumentDetailScreen } from '../src/features/documents/document-detail-screen';
@@ -49,7 +49,7 @@ describe('DocumentDetailScreen', () => {
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
 
     await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
-    expect(screen.getByText('DTS-2026-000001')).toBeInTheDocument();
+    expect(screen.getByText(/DTS-2026-000001 · /)).toBeInTheDocument();
     expect(screen.getByText('Regional Office')).toBeInTheDocument();
     // The action button and the timeline entry for the same action share one label, so the user
     // is not matching an enum name against the control they pressed.
@@ -344,5 +344,29 @@ describe('DocumentDetailScreen', () => {
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument());
+  });
+
+  // The next step is a bar under the record, built from the server's allowedActions.
+  it('offers the available actions in a "Your move" bar, first one as the primary', async () => {
+    serve(documentDetail({ allowedActions: ['ACCEPT', 'ARCHIVE'] }));
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    const bar = await screen.findByRole('region', { name: 'Your move' });
+    expect(bar).toHaveTextContent('Your move: accept custody, or one other action.');
+    expect(within(bar).getByRole('button', { name: 'Accept custody' })).toHaveClass(
+      'bg-move-action',
+    );
+    expect(within(bar).getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+    expect(screen.queryByText(/No workflow actions are available/)).not.toBeInTheDocument();
+  });
+
+  it('hides the bar when there is nothing to do, and says so in the rail', async () => {
+    serve(documentDetail({ allowedActions: [] }));
+    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/No workflow actions are available/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('region', { name: 'Your move' })).not.toBeInTheDocument();
   });
 });

@@ -21,6 +21,7 @@ import type { AuthorizationActor, RouteRecipient } from '../authorization/author
 import {
   custodyDivisionId,
   custodySectionId,
+  documentIsOverdue,
   documentIsPending,
   documentIsPendingInRollup,
   documentScopeFor,
@@ -184,6 +185,8 @@ export interface DocumentSearchFilters {
   direction?: DocumentRow['direction'] | undefined;
   divisionId?: string | undefined;
   sectionId?: string | undefined;
+  /** Only documents still open past their due date. */
+  overdue?: boolean | undefined;
   sort?: 'createdAt' | 'priority' | 'status' | undefined;
   order?: 'asc' | 'desc' | undefined;
   page?: number | undefined;
@@ -394,6 +397,8 @@ export class DocumentsRepository {
      */
     if (filters.divisionId) conditions.push(eq(custodyDivisionId(), filters.divisionId));
     if (filters.sectionId) conditions.push(eq(custodySectionId(), filters.sectionId));
+    // Shared with the dashboard's Overdue tile (see `documentIsOverdue`), which links here.
+    if (filters.overdue) conditions.push(documentIsOverdue());
     const where = and(...conditions);
 
     // The enum columns are declared LOW→URGENT and IN_PROCESS→ARCHIVED, so Postgres orders them
@@ -1209,8 +1214,8 @@ export class DocumentsRepository {
    * tiles are `FILTER`s over a single pass rather than three sequential queries (D2 follow-up F1).
    */
   async summary(actor: AuthorizationActor): Promise<DashboardCounts> {
-    const overdue = sql`${documents.status} not in ('RELEASED', 'ARCHIVED')
-      and ${documents.dueAt} is not null and ${documents.dueAt} < now()`;
+    // The same predicate the registry's overdue filter uses, so the tile and its list agree.
+    const overdue = documentIsOverdue();
     const statusRows = await this.database
       .select({
         status: documents.status,

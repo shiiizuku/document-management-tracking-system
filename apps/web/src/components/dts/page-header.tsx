@@ -26,16 +26,16 @@ export function PageHeader({
     <header data-slot="page-header" className="flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         <p className="eyebrow">{eyebrow}</p>
-        <h1 className="mt-1 flex items-baseline gap-2 text-3xl text-foreground">
+        <h1 className="mt-2 flex items-baseline gap-3 font-display text-[2.75rem] leading-[1.05] font-normal text-foreground">
           <span className="truncate">{title}</span>
           {count === undefined ? null : (
-            <span className="font-sans text-base font-medium text-muted-foreground tabular-nums">
+            <span className="font-sans text-base font-semibold text-muted-foreground tabular-nums">
               {count.toLocaleString()}
             </span>
           )}
         </h1>
         {description ? (
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>
+          <p className="mt-2 max-w-2xl text-[15px] text-muted-foreground">{description}</p>
         ) : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}

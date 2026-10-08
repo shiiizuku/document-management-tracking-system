@@ -55,9 +55,11 @@ const summary = (overrides: Partial<DashboardSummary> = {}): DashboardSummary =>
   ...overrides,
 });
 
-const serve = (payload: DashboardSummary | Error) =>
+const serve = (payload: DashboardSummary | Error, assigned: unknown[] = []) =>
   apiMock.mockImplementation((path: string) => {
     if (path === '/auth/me') return Promise.resolve(sessionUser());
+    // The "Your move" strip counts the My work queue.
+    if (path === '/documents/assigned') return Promise.resolve(assigned);
     return payload instanceof Error ? Promise.reject(payload) : Promise.resolve(payload);
   });
 
@@ -106,6 +108,43 @@ describe('DashboardScreen', () => {
       'href',
       '/documents?status=PENDING&divisionId=division-1',
     );
+  });
+
+  // Overdue included, now that the registry has the same overdue filter the tile counts with.
+  it('makes every tile a link to its filtered list', async () => {
+    serve(summary());
+    renderWithQuery(<DashboardScreen />);
+
+    const expected = {
+      'Awaiting acceptance': '/documents?status=PENDING',
+      'In progress': '/documents?status=IN_PROCESS',
+      Overdue: '/documents?overdue=true',
+      'All documents': '/documents',
+    };
+    await waitFor(() => expect(screen.getByText('Overdue')).toBeInTheDocument());
+    for (const [label, href] of Object.entries(expected)) {
+      expect(screen.getByRole('link', { name: new RegExp(`^${label}`) })).toHaveAttribute(
+        'href',
+        href,
+      );
+    }
+  });
+
+  it('shows the Your move strip with the size of the My work queue', async () => {
+    serve(summary(), [{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+    renderWithQuery(<DashboardScreen />);
+
+    const strip = await screen.findByRole('region', { name: 'Your move' });
+    expect(strip).toHaveTextContent('Your move: 3 documents are assigned to you.');
+    expect(screen.getByRole('link', { name: 'Open my work' })).toHaveAttribute('href', '/my-work');
+  });
+
+  it('hides the Your move strip when nothing is assigned', async () => {
+    serve(summary(), []);
+    renderWithQuery(<DashboardScreen />);
+
+    await waitFor(() => expect(screen.getByText('Awaiting acceptance')).toBeInTheDocument());
+    expect(screen.queryByRole('region', { name: 'Your move' })).not.toBeInTheDocument();
   });
 
   it('breaks the pending queue down by division', async () => {

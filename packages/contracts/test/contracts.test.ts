@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CAPABILITIES,
   createDocumentSchema,
+  listDocumentsQuerySchema,
   storedWorkflowStatusSchema,
   workflowActionSchema,
   workflowStatusSchema,
@@ -89,5 +90,17 @@ describe('shared API contracts', () => {
       'ORG_MANAGE',
       'ACCOUNT_REQUEST_REVIEW',
     ]);
+  });
+
+  // The registry's overdue filter arrives as a query-string boolean; the other list params pass
+  // through untouched for the controller to read.
+  it('parses the overdue list filter from the query string and keeps the other params', () => {
+    expect(listDocumentsQuerySchema.parse({ overdue: 'true', status: 'PENDING' })).toEqual({
+      overdue: true,
+      status: 'PENDING',
+    });
+    expect(listDocumentsQuerySchema.parse({ overdue: 'false' }).overdue).toBe(false);
+    expect(listDocumentsQuerySchema.parse({}).overdue).toBeUndefined();
+    expect(listDocumentsQuerySchema.safeParse({ overdue: 'soon' }).success).toBe(false);
   });
 });

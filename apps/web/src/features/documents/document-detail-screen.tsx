@@ -4,7 +4,6 @@ import type { ComponentProps } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ArrowLeft, FileX, Lock } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -76,40 +75,46 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
           </Button>
 
           <Panel>
-            <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+            {/* A `<header>` so the record's identity and status have an element of their own: the
+                e2e screens find the status pill here rather than by position or class. */}
+            <header className="flex flex-wrap items-start gap-x-4 gap-y-2">
               <div className="min-w-0 flex-1">
-                <p className="eyebrow">{detail.trackingNumber}</p>
-                <h1 className="mt-1 flex items-start gap-2 text-2xl text-foreground">
+                <p className="eyebrow">
+                  {detail.trackingNumber} · {documentTypeLabel(detail.type)} ·{' '}
+                  {detail.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}
+                </p>
+                <h1 className="mt-2 flex items-start gap-2 font-display text-[2.5rem] leading-[1.1] font-normal text-foreground">
                   <span className="min-w-0">{detail.title}</span>
                   {detail.confidential ? (
                     <Lock
-                      className="mt-2 size-4 shrink-0 text-muted-foreground"
+                      className="mt-4 size-5 shrink-0 text-muted-foreground"
                       aria-label="Confidential"
                     />
                   ) : null}
                 </h1>
               </div>
               <div className="flex items-center gap-2">
-                {/*
+                <StatusBadge status={presentedStatus(detail)} />
+                {detail.priority === 'URGENT' ? <PriorityLabel priority="URGENT" /> : null}
+              </div>
+            </header>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/*
                   Both editing controls are gated on DOCUMENT_EDIT — and hidden on a closed record,
                   where the server refuses them anyway. The routing slip is not: a released document
                   is exactly the one whose printable dossier people still need.
                 */}
-                {can('DOCUMENT_EDIT') && !closed ? <RouteDialog document={detail} /> : null}
-                {can('DOCUMENT_EDIT') && !closed ? <MetadataDialog document={detail} /> : null}
-                <RoutingSlipDialog document={detail} />
-                {can('DOCUMENT_DELETE') ? <DeleteDocumentDialog document={detail} /> : null}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Status is not repeated here: the rail states it beside where the document is now,
-                  which is the pairing that answers "what happens next". */}
-              <Badge variant="outline">{documentTypeLabel(detail.type)}</Badge>
-              <Badge variant="outline">
-                {detail.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}
-              </Badge>
-              <PriorityLabel priority={detail.priority} />
+              {can('DOCUMENT_EDIT') && !closed ? <RouteDialog document={detail} /> : null}
+              {can('DOCUMENT_EDIT') && !closed ? <MetadataDialog document={detail} /> : null}
+              <RoutingSlipDialog document={detail} />
+              {can('DOCUMENT_DELETE') ? <DeleteDocumentDialog document={detail} /> : null}
+              {/* Urgent is already a pill beside the status; the quieter priorities sit here. */}
+              {detail.priority === 'URGENT' ? null : (
+                <span className="ml-auto">
+                  <PriorityLabel priority={detail.priority} />
+                </span>
+              )}
             </div>
           </Panel>
         </div>
@@ -129,7 +134,9 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
                 says so rather than showing a dash, because "not recorded" is the fact. */}
             {detail.releaseMethod?.requiresCarrier === true ? (
               <div>
-                <dt className="text-xs tracking-wide text-muted-foreground uppercase">Carrier</dt>
+                <dt className="text-xs font-bold tracking-[0.05em] text-foreground-secondary uppercase">
+                  Carrier
+                </dt>
                 <dd className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-sm text-foreground">
                   {detail.releaseMethod.carrier?.label ?? (
                     <span className="text-muted-foreground">Not recorded</span>
@@ -171,6 +178,8 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
         <Panel>
           <AttachmentsSection documentId={detail.id} canUpload={can('DOCUMENT_EDIT') && !closed} />
         </Panel>
+
+        <YourMoveBar document={detail} />
       </div>
 
       <DetailRail document={detail} />
@@ -181,8 +190,8 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
 /**
  * The sticky rail: where the document stands, what can be done to it, and how it got here.
  *
- * `top-20` is `3.5rem` for the shell's `sticky top-0 h-14` header plus the `py-6` the main region
- * gives every page. The shell scrolls the window — there is no inner overflow container — so
+ * `top-8` is the `py-8` the main region gives every page: at `lg`, where the rail is sticky, the shell
+ * has no topbar (Civic Ledger moved everything into the sidebar), so there is nothing above it. The shell scrolls the window — there is no inner overflow container — so
  * getting this wrong produces a rail that slides under a header it is supposed to sit below, which
  * is the usual failure of this pattern.
  *
@@ -193,18 +202,23 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
  */
 function DetailRail({ document }: Readonly<{ document: DocumentDetail }>) {
   return (
-    <aside className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-3.5rem-3rem)]">
+    <aside className="flex flex-col gap-4 lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)]">
       <Panel className="shrink-0">
         <LocationBlock document={document} />
 
-        <Separator />
-
-        <section className="space-y-2">
-          <h2 className="text-xs tracking-wide text-muted-foreground uppercase">
-            Available actions
-          </h2>
-          <DocumentActions document={document} />
-        </section>
+        {/* With actions available they are in the "Your move" bar under the record; the rail only
+            says so when there are none, so the absence of a bar is never unexplained. */}
+        {document.allowedActions.length === 0 ? (
+          <>
+            <Separator />
+            <section className="space-y-2">
+              <h2 className="text-xs font-bold tracking-[0.05em] text-foreground-secondary uppercase">
+                Available actions
+              </h2>
+              <DocumentActions document={document} />
+            </section>
+          </>
+        ) : null}
       </Panel>
 
       {/* `min-h-0` lets the panel shrink below its content, which is what hands the timeline's
@@ -217,6 +231,37 @@ function DetailRail({ document }: Readonly<{ document: DocumentDetail }>) {
 }
 
 /**
+ * The "Your move" bar: what this user can do next, pinned to the bottom of the record column.
+ *
+ * The buttons are `DocumentActions`, so the bar offers exactly the server's `allowedActions` and
+ * runs them through the same runner as the palette. The sentence names the first of them —
+ * lower-cased from its label, so it reads as a sentence — and the bar does not render at all when
+ * there is nothing to do, rather than showing an empty strip.
+ *
+ * `sticky bottom-0` inside the content column: it stays in view while the record scrolls under it,
+ * and ends where the column ends, so it never covers the rail.
+ */
+function YourMoveBar({ document }: Readonly<{ document: DocumentDetail }>) {
+  const [first, ...rest] = document.allowedActions;
+  if (first === undefined) return null;
+
+  return (
+    <section
+      aria-label="Your move"
+      className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border-t-2 border-move-bar-rule bg-move-bar px-6 py-3.5 text-move-bar-foreground shadow-[0_-8px_24px_rgb(0_0_0/0.08)]"
+    >
+      <p className="min-w-0 flex-1 text-[15px]">
+        <span className="font-bold">Your move:</span> {workflowActionLabel(first).toLowerCase()}
+        {rest.length === 0
+          ? '.'
+          : `, or ${rest.length === 1 ? 'one other action' : `${rest.length} other actions`}.`}
+      </p>
+      <DocumentActions document={document} placement="bar" />
+    </section>
+  );
+}
+
+/**
  * One group of the detail view, on a card surface.
  */
 function Panel({ className, ...props }: ComponentProps<'div'>) {
@@ -224,7 +269,7 @@ function Panel({ className, ...props }: ComponentProps<'div'>) {
 }
 
 /**
- * Status, and where the document physically is.
+ * Where the document physically is. (Its status is in the page header, beside the title.)
  *
  * The location is read off the routes, never off `divisionId`: forwarding is non-destructive
  * (ADR-0005), so that column records where the document was *registered* and stops moving after
@@ -238,9 +283,10 @@ function LocationBlock({ document }: Readonly<{ document: DocumentDetail }>) {
 
   return (
     <section className="space-y-2">
-      <StatusBadge status={presentedStatus(document)} />
       <div>
-        <h2 className="text-xs tracking-wide text-muted-foreground uppercase">Currently with</h2>
+        <h2 className="text-xs font-bold tracking-[0.05em] text-foreground-secondary uppercase">
+          Currently with
+        </h2>
         <p className="mt-0.5 text-sm text-foreground">{name ?? '—'}</p>
       </div>
     </section>
@@ -280,7 +326,9 @@ function DueField({ document }: Readonly<{ document: DocumentDetail }>) {
 
   return (
     <div>
-      <dt className="text-xs tracking-wide text-muted-foreground uppercase">Target date</dt>
+      <dt className="text-xs font-bold tracking-[0.05em] text-foreground-secondary uppercase">
+        Target date
+      </dt>
       <dd className="mt-0.5 text-sm text-foreground">
         {new Date(document.dueAt).toLocaleDateString()}
         {label === null ? null : (
@@ -301,7 +349,9 @@ function DueField({ document }: Readonly<{ document: DocumentDetail }>) {
 function Field({ label, value }: Readonly<{ label: string; value: string | null }>) {
   return (
     <div>
-      <dt className="text-xs tracking-wide text-muted-foreground uppercase">{label}</dt>
+      <dt className="text-xs font-bold tracking-[0.05em] text-foreground-secondary uppercase">
+        {label}
+      </dt>
       <dd className="mt-0.5 text-sm text-foreground first-letter:uppercase">{value ?? '—'}</dd>
     </div>
   );
@@ -415,7 +465,9 @@ function Timeline({ document }: Readonly<{ document: DocumentDetail }>) {
 
   return (
     <section className="flex min-h-0 flex-col gap-2">
-      <h2 className="text-xs tracking-wide text-muted-foreground uppercase">Timeline</h2>
+      <h2 className="text-xs font-bold tracking-[0.05em] text-foreground-secondary uppercase">
+        Timeline
+      </h2>
       {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           Nothing has happened to this document since it was registered.

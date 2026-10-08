@@ -140,7 +140,7 @@ function DivisionCard({ division }: Readonly<{ division: Division }>) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate font-medium text-foreground">{division.name}</span>
-            <code className="shrink-0 rounded bg-secondary px-1.5 py-0.5 font-mono text-xs text-secondary-foreground">
+            <code className="shrink-0 rounded-md border-[1.5px] border-seal px-1.5 py-0.5 font-mono text-xs font-semibold text-seal-foreground">
               {division.code}
             </code>
             {division.active ? null : <Badge variant="outline">Inactive</Badge>}
@@ -165,7 +165,7 @@ function DivisionCard({ division }: Readonly<{ division: Division }>) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm text-foreground">{section.name}</span>
-                  <code className="shrink-0 rounded bg-secondary px-1.5 py-0.5 font-mono text-xs text-secondary-foreground">
+                  <code className="shrink-0 rounded-md border-[1.5px] border-seal px-1.5 py-0.5 font-mono text-xs font-semibold text-seal-foreground">
                     {section.code}
                   </code>
                   {section.active ? null : <Badge variant="outline">Inactive</Badge>}

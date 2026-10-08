@@ -212,6 +212,25 @@ export const documentIsPendingInRollup = (): SQL =>
        where ${documentRoutes.acceptedAt} is null)`;
 
 /**
+ * The overdue condition: a document still open past its due date.
+ *
+ * One expression for the dashboard's Overdue tile and the registry's `overdue=true` filter, so the
+ * tile and the list it links to can never disagree — the same one-source-of-truth idea as scope
+ * (decision register 90) and {@link documentIsPending}. It was inline in the dashboard rollup until
+ * the tile became a link; it is moved here unchanged.
+ *
+ * Note what "open" means here: every status but RELEASED and ARCHIVED. A COMPLIED document whose
+ * due date has passed therefore counts as overdue. That is the rule the tile has always used, and
+ * changing it is a product decision rather than a refactor, so it is recorded here, not altered.
+ *
+ * Written as plain comparisons rather than `EXISTS`, so it reads the same in a `WHERE` and inside a
+ * rollup's `count(*) filter (where …)`.
+ */
+export const documentIsOverdue = (): SQL =>
+  sql`${documents.status} not in ('RELEASED', 'ARCHIVED')
+      and ${documents.dueAt} is not null and ${documents.dueAt} < now()`;
+
+/**
  * Applies {@link documentScopeFor} to a query builder. The `scopeToActor(query, actor)` form
  * is what repositories call; it exists so that forgetting to scope a query reads as a missing
  * call at the call site rather than as a subtly absent `and(...)` inside a long predicate.

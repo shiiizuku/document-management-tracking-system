@@ -1,4 +1,5 @@
 import type { DocumentPriority, WorkflowStatus } from '@dts/contracts';
+import { ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /*
@@ -33,58 +34,149 @@ const STATUS_LABELS: Record<WorkflowStatus, string> = {
   ARCHIVED: 'Archived',
 };
 
+/** A status as it is written to a user: `FOR_REVISION` reads as "For revision". */
+export const statusLabel = (status: WorkflowStatus): string => STATUS_LABELS[status] ?? status;
+
 /** Waiting on someone, moving, complete, or closed. */
-const STATUS_TONES: Record<WorkflowStatus, string> = {
-  PENDING: 'bg-signal-wait text-on-signal-wait',
-  FOR_REVISION: 'bg-signal-wait text-on-signal-wait',
+export type StatusTone = 'wait' | 'move' | 'done' | 'closed';
+
+export const STATUS_TONE: Record<WorkflowStatus, StatusTone> = {
+  PENDING: 'wait',
+  FOR_REVISION: 'wait',
   // Waiting on a named authority to act, like For signature — not stalled, but not moving either.
-  FOR_INITIAL: 'bg-signal-wait text-on-signal-wait',
-  IN_PROCESS: 'bg-signal-move text-on-signal-move',
-  FOR_SIGNATURE: 'bg-signal-move text-on-signal-move',
-  FOR_RELEASE: 'bg-signal-move text-on-signal-move',
-  SIGNED: 'bg-signal-done text-on-signal-done',
-  RELEASED: 'bg-signal-done text-on-signal-done',
+  FOR_INITIAL: 'wait',
+  IN_PROCESS: 'move',
+  FOR_SIGNATURE: 'move',
+  FOR_RELEASE: 'move',
+  SIGNED: 'done',
+  RELEASED: 'done',
   // The incoming counterpart to Released: the work is finished, the record is not yet closed.
-  COMPLIED: 'bg-signal-done text-on-signal-done',
-  ARCHIVED: 'bg-signal-closed text-on-signal-closed',
+  COMPLIED: 'done',
+  ARCHIVED: 'closed',
 };
+
+const TONE_CLASSES: Record<StatusTone, string> = {
+  wait: 'bg-signal-wait text-on-signal-wait',
+  move: 'bg-signal-move text-on-signal-move',
+  done: 'bg-signal-done text-on-signal-done',
+  closed: 'bg-signal-closed text-on-signal-closed',
+};
+
+/*
+ * A glyph per tone, so the four states read without colour: a ring for waiting, a filled dot for
+ * moving, a check for done and a dash for closed. They are drawn in `currentColor`, so they take
+ * the tone's text colour in both schemes, and they are hidden from assistive technology — the label
+ * beside them already says the status, and "check mark, Signed" would say it twice.
+ */
+function ToneGlyph({ tone }: Readonly<{ tone: StatusTone }>) {
+  switch (tone) {
+    case 'wait':
+      return (
+        <span
+          aria-hidden
+          data-glyph="ring"
+          className="size-1.5 shrink-0 rounded-full border-2 border-current box-content"
+        />
+      );
+    case 'move':
+      return (
+        <span
+          aria-hidden
+          data-glyph="dot"
+          className="size-[9px] shrink-0 rounded-full bg-current"
+        />
+      );
+    case 'done':
+      return (
+        <svg
+          aria-hidden
+          data-glyph="check"
+          viewBox="0 0 12 12"
+          className="size-[11px] shrink-0"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M2 6.5 4.75 9 10 3" />
+        </svg>
+      );
+    case 'closed':
+      return <span aria-hidden data-glyph="dash" className="h-0.5 w-[9px] shrink-0 bg-current" />;
+  }
+}
 
 export function StatusBadge({
   status,
   className,
 }: Readonly<{ status: WorkflowStatus; className?: string }>) {
+  const tone = STATUS_TONE[status] as StatusTone | undefined;
   return (
     <span
       data-slot="status-badge"
+      data-tone={tone}
       className={cn(
-        'inline-block rounded-xl px-2 py-1 text-[10px] font-bold whitespace-nowrap',
-        STATUS_TONES[status] ?? 'bg-secondary text-secondary-foreground',
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap',
+        tone === undefined ? 'bg-secondary text-secondary-foreground' : TONE_CLASSES[tone],
         className,
       )}
     >
+      {tone === undefined ? null : <ToneGlyph tone={tone} />}
       {STATUS_LABELS[status] ?? status}
     </span>
   );
 }
 
-/**
- * Priority, coloured only where it demands attention. LOW and NORMAL stay in the body colour on
- * purpose: if every row is coloured, none of them stands out.
- */
-const PRIORITY_TONES: Record<DocumentPriority, string> = {
-  URGENT: 'text-priority-urgent',
-  HIGH: 'text-priority-high',
-  NORMAL: 'text-muted-foreground',
-  LOW: 'text-muted-foreground',
+/** `URGENT` reads as "Urgent". Sentence case, like every other label in the app. */
+export const PRIORITY_LABELS: Record<DocumentPriority, string> = {
+  URGENT: 'Urgent',
+  HIGH: 'High',
+  NORMAL: 'Normal',
+  LOW: 'Low',
 };
 
+/**
+ * Priority, emphasised only where it demands attention. Low and Normal stay quiet on purpose: if
+ * every row is coloured, none of them stands out. High is set in the seal colour with an up-arrow;
+ * Urgent is a red pill with an "!" — each has a glyph as well as a colour, for the same reason the
+ * status badge does.
+ */
 export function PriorityLabel({ priority }: Readonly<{ priority: DocumentPriority }>) {
+  const label = PRIORITY_LABELS[priority] ?? priority;
+  if (priority === 'URGENT') {
+    return (
+      <span
+        data-slot="priority-label"
+        data-priority={priority}
+        className="inline-flex items-center gap-1 rounded-full bg-priority-urgent-bg px-2.5 py-1 text-xs font-bold whitespace-nowrap text-priority-urgent"
+      >
+        <span aria-hidden className="leading-none font-extrabold">
+          !
+        </span>
+        {label}
+      </span>
+    );
+  }
+  if (priority === 'HIGH') {
+    return (
+      <span
+        data-slot="priority-label"
+        data-priority={priority}
+        className="inline-flex items-center gap-1 text-xs font-bold whitespace-nowrap text-seal-foreground"
+      >
+        <ArrowUp aria-hidden className="size-3.5" strokeWidth={2.75} />
+        {label}
+      </span>
+    );
+  }
   return (
     <span
       data-slot="priority-label"
-      className={cn('text-[10px] font-bold', PRIORITY_TONES[priority])}
+      data-priority={priority}
+      className="text-xs font-medium whitespace-nowrap text-muted-foreground"
     >
-      {priority}
+      {label}
     </span>
   );
 }

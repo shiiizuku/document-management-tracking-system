@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { CornerDownLeft, Loader2, Search } from 'lucide-react';
 import type { WorkflowAction } from '@dts/contracts';
 import { Button } from '@/components/ui/button';
+import { fieldClasses } from '@/components/ui/field-styles';
 import {
   CommandDialog,
   CommandEmpty,
@@ -13,9 +14,9 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-  CommandShortcut,
 } from '@/components/ui/command';
 import { visibleNavItems } from '@/components/dts/nav-items';
+import { StatusBadge } from '@/components/dts/status-badge';
 import { ACTION_LABELS } from '@/features/documents/action-labels';
 import {
   DOCUMENT_SEARCH_MIN_LENGTH,
@@ -25,6 +26,7 @@ import {
 import { useActionRunner } from '@/features/documents/use-action-runner';
 import { useSession } from '@/features/session/queries';
 import { useDebounced } from '@/lib/use-debounced';
+import { cn } from '@/lib/utils';
 
 /**
  * The ⌘K command palette: jump to a document by tracking number, run an allowed action on the
@@ -45,8 +47,38 @@ import { useDebounced } from '@/lib/use-debounced';
  * the topbar prints the chord, which is the discoverability half; ⌘K/Ctrl+K is the half that has
  * to not collide, and it is the one chord users already expect to mean exactly this.
  */
-export function CommandPalette() {
-  const [open, setOpen] = useState(false);
+export function CommandPalette({
+  open: controlledOpen,
+  onOpenChange,
+  showTrigger = true,
+}: Readonly<{
+  /**
+   * Optional control from outside. The shell owns it so that two triggers — the sidebar's Search
+   * button on a wide screen and the topbar's on a narrow one — open one palette with one key
+   * listener; mounting the palette twice would make ⌘K open two dialogs at once.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Off when the caller places its own {@link PaletteTrigger}s. */
+  showTrigger?: boolean;
+}> = {}) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  // Read by the ⌘K toggle, which is registered once and must see the current value, not the
+  // value from the render that registered it.
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+  const setOpen = useCallback(
+    (next: boolean | ((was: boolean) => boolean)) => {
+      const value = typeof next === 'function' ? next(openRef.current) : next;
+      openRef.current = value;
+      if (onOpenChange) onOpenChange(value);
+      else setUncontrolledOpen(value);
+    },
+    [onOpenChange],
+  );
   const [term, setTerm] = useState('');
   const router = useRouter();
   const pathname = usePathname();
@@ -71,7 +103,7 @@ export function CommandPalette() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [setOpen]);
 
   /** Closes and clears, so the next ⌘K opens on a clean list rather than the last search. */
   const close = () => {
@@ -100,7 +132,7 @@ export function CommandPalette() {
 
   return (
     <>
-      <PaletteTrigger onClick={() => setOpen(true)} />
+      {showTrigger ? <PaletteTrigger onClick={() => setOpen(true)} /> : null}
 
       <CommandDialog
         open={open}
@@ -166,11 +198,9 @@ export function CommandPalette() {
                   value={`document-${item.id}`}
                   onSelect={() => go(`/documents/${item.id}`)}
                 >
-                  <span className="font-mono text-xs">{item.trackingNumber}</span>
-                  <span className="truncate">{item.title}</span>
-                  <CommandShortcut>
-                    {item.status.replaceAll('_', ' ').toLowerCase()}
-                  </CommandShortcut>
+                  <span className="tracking-number shrink-0 text-xs">{item.trackingNumber}</span>
+                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                  <StatusBadge status={item.status} className="ml-auto" />
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -220,8 +250,73 @@ export function CommandPalette() {
  * this is a real button — it opens the palette on click, and reads the chord out to assistive
  * technology through its accessible name.
  */
-function PaletteTrigger({ onClick }: Readonly<{ onClick: () => void }>) {
+export function PaletteTrigger({
+  onClick,
+  placement = 'topbar',
+  className,
+}: Readonly<{
+  onClick: () => void;
+  placement?: 'topbar' | 'sidebar' | 'field';
+  className?: string;
+}>) {
   const chord = useChordLabel();
+
+  /*
+   * In the wide-screen top bar that appears when the sidebar is collapsed, it is drawn as the
+   * filter-size search field it stands in for — same height, radius, border and fill as the search
+   * box above a list — so the one place to search reads as a field, not as another button.
+   */
+  if (placement === 'field') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label="Search documents, actions and screens"
+        aria-keyshortcuts="Control+K Meta+K"
+        className={fieldClasses(
+          'filter',
+          cn(
+            'flex max-w-md cursor-text items-center gap-2.5 text-left text-muted-foreground hover:border-ring/60',
+            className,
+          ),
+        )}
+      >
+        <Search className="size-4 shrink-0" aria-hidden />
+        <span className="flex-1 truncate">Search documents, actions and screens…</span>
+        <kbd
+          className="shrink-0 rounded-md border border-border bg-muted px-1.5 py-0.5 font-sans text-[11px] font-semibold text-muted-foreground"
+          aria-hidden
+        >
+          {chord}
+        </kbd>
+      </button>
+    );
+  }
+
+  // In the sidebar it is a full-width row above the nav, on the sidebar's own colours.
+  if (placement === 'sidebar') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={`Open the command palette (${chord})`}
+        className={cn(
+          'flex min-h-11 w-full items-center gap-2.5 rounded-[10px] border border-sidebar-border bg-sidebar-accent px-3 text-left text-[15px] text-sidebar-muted-foreground',
+          'transition-colors hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-seal focus-visible:outline-none',
+          className,
+        )}
+      >
+        <Search className="size-4 shrink-0" aria-hidden />
+        <span className="flex-1 truncate">Search</span>
+        <kbd
+          className="shrink-0 rounded-md border border-sidebar-border px-1.5 py-0.5 font-sans text-[11px] font-semibold"
+          aria-hidden
+        >
+          {chord}
+        </kbd>
+      </button>
+    );
+  }
 
   return (
     /*
@@ -235,7 +330,10 @@ function PaletteTrigger({ onClick }: Readonly<{ onClick: () => void }>) {
       variant="outline"
       onClick={onClick}
       aria-label={`Open the command palette (${chord})`}
-      className="h-9 w-full max-w-md justify-start gap-2 rounded-full px-4 font-normal text-muted-foreground"
+      className={cn(
+        'h-11 w-full max-w-md justify-start gap-2 rounded-full border border-border px-4 font-normal text-muted-foreground hover:bg-accent',
+        className,
+      )}
     >
       <Search aria-hidden />
       <span className="flex-1 truncate text-left">Search documents and actions</span>
@@ -250,20 +348,21 @@ function PaletteTrigger({ onClick }: Readonly<{ onClick: () => void }>) {
 }
 
 /**
- * How the chord is written on this machine — `⌘K` on a Mac, `Ctrl K` elsewhere.
+ * How a chord is written on this machine — `⌘K` on a Mac, `Ctrl K` elsewhere. Exported for the
+ * shell's sidebar toggle, whose `Ctrl B` hint has to follow the same rule.
  *
  * Resolved after mount rather than during render because the server has no platform to read, and
  * a guess baked into the HTML would be a hydration mismatch. The non-Mac form is the first paint,
  * so what a Mac user sees is a label that corrects itself, not a label that is missing.
  */
-function useChordLabel(): string {
+export function useChordLabel(key = 'K'): string {
   const [onMac, setOnMac] = useState(false);
 
   useEffect(() => {
     setOnMac(/mac|iphone|ipad/i.test(window.navigator.userAgent));
   }, []);
 
-  return onMac ? '⌘K' : 'Ctrl K';
+  return onMac ? `⌘${key}` : `Ctrl ${key}`;
 }
 
 /**

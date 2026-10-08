@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowDownLeft, ArrowUpRight, FileSearch, Lock } from 'lucide-react';
 import {
@@ -10,9 +11,15 @@ import {
 } from '@dts/contracts';
 import type { DataTableColumn, SortState } from '@/components/dts/data-table';
 import { EmptyState } from '@/components/dts/empty-state';
-import { FilterBar } from '@/components/dts/filter-bar';
+import { FilterBar, FilterCheckbox } from '@/components/dts/filter-bar';
 import { PageHeader } from '@/components/dts/page-header';
-import { PriorityLabel, StatusBadge, documentTypeLabel } from '@/components/dts/status-badge';
+import {
+  PRIORITY_LABELS,
+  PriorityLabel,
+  StatusBadge,
+  documentTypeLabel,
+  statusLabel,
+} from '@/components/dts/status-badge';
 import { useDivisions } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { CreateDocumentDialog } from './create-document-dialog';
@@ -38,16 +45,16 @@ const STATIC_FILTER_SELECTS = [
     id: 'status',
     label: 'Status',
     anyLabel: 'Any status',
-    options: workflowStatusSchema.options.map((value) => ({
-      value,
-      label: value.replaceAll('_', ' ').toLowerCase(),
-    })),
+    options: workflowStatusSchema.options.map((value) => ({ value, label: statusLabel(value) })),
   },
   {
     id: 'priority',
     label: 'Priority',
     anyLabel: 'Any priority',
-    options: documentPrioritySchema.options.map((value) => ({ value, label: value })),
+    options: documentPrioritySchema.options.map((value) => ({
+      value,
+      label: PRIORITY_LABELS[value],
+    })),
   },
   {
     id: 'type',
@@ -70,16 +77,31 @@ const columns: readonly DataTableColumn<DocumentListItem>[] = [
   {
     id: 'title',
     header: 'Document',
+    /*
+     * The title is a real link as well as the row being clickable: the row click is a pointer
+     * convenience, the link is what a keyboard, a middle-click or "open in new tab" can use.
+     * Titles wrap to two lines and then truncate, so a long one cannot push the columns off.
+     */
     cell: (row) => (
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate font-medium text-foreground">{row.title}</span>
+      <div className="min-w-0 max-w-[32rem] whitespace-normal">
+        <div className="flex items-start gap-1.5">
+          <Link
+            href={`/documents/${row.id}`}
+            onClick={(event) => event.stopPropagation()}
+            className="line-clamp-2 font-semibold text-foreground hover:text-primary hover:underline focus-visible:underline focus-visible:outline-none"
+          >
+            {row.title}
+          </Link>
           {row.confidential ? (
-            <Lock className="size-3 shrink-0 text-muted-foreground" aria-label="Confidential" />
+            <Lock
+              className="mt-1 size-3.5 shrink-0 text-muted-foreground"
+              aria-label="Confidential"
+            />
           ) : null}
         </div>
-        <div className="text-xs text-muted-foreground tabular-nums">
-          {row.trackingNumber}
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          <span className="tracking-number">{row.trackingNumber}</span>
+          {` · ${documentTypeLabel(row.type)}`}
           {row.referenceNumber === null ? '' : ` · ${row.referenceNumber}`}
         </div>
       </div>
@@ -209,9 +231,11 @@ export function RegistryScreen() {
       <FilterBar
         search={{
           value: searchDraft,
+          applied: filters.search,
           placeholder: 'Search title, tracking number, sender',
           onChange: setSearchDraft,
           onSubmit: () => applyFilters({ search: searchDraft }),
+          onClear: () => applyFilters({ search: '' }),
         }}
         selects={filterSelects}
         // Only the dropdown filters: sort and order are the table's business, and search has its
@@ -224,10 +248,30 @@ export function RegistryScreen() {
           divisionId: filters.divisionId,
         }}
         onSelectChange={(id, value) => applyFilters({ [id]: value })}
+        // The overdue flag is not a select, so its chip is supplied here; it counts toward the
+        // badge like any other filter.
+        extraChips={
+          filters.overdue
+            ? [
+                {
+                  id: 'overdue',
+                  label: 'Overdue',
+                  onRemove: () => applyFilters({ overdue: false }),
+                },
+              ]
+            : []
+        }
         onClear={() => router.push('/documents', { scroll: false })}
-        hasOtherActiveFilters={hasActiveDocumentFilters(filters)}
         trailing={<ListViewControl view={view} onChange={setView} />}
-      />
+        emptyResult={documents.data === undefined ? undefined : documents.data.total === 0}
+      >
+        <FilterCheckbox
+          id="filter-overdue"
+          label="Overdue only"
+          checked={filters.overdue}
+          onChange={(overdue) => applyFilters({ overdue })}
+        />
+      </FilterBar>
 
       <DocumentList
         view={view}

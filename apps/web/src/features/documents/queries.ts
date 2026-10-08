@@ -56,6 +56,11 @@ export interface DocumentFilters {
   direction: string;
   /** A division id, as the dashboard's chart links through with. '' means every division. */
   divisionId: string;
+  /**
+   * Only documents still open past their due date. The server owns the definition (one predicate
+   * shared with the dashboard's Overdue tile), so this is a flag, not a date range.
+   */
+  overdue: boolean;
   sort: DocumentSortField;
   order: 'asc' | 'desc';
 }
@@ -67,6 +72,7 @@ export const DEFAULT_DOCUMENT_FILTERS: DocumentFilters = {
   type: '',
   direction: '',
   divisionId: '',
+  overdue: false,
   sort: 'createdAt',
   order: 'desc',
 };
@@ -243,6 +249,9 @@ const documentKeys = {
   // Under `lists()` so that `invalidateDocument` settles it with every other cached list: a
   // released document must not keep showing as pending in the palette either.
   search: (term: string) => [...documentKeys.lists(), 'search', term] as const,
+  // Under `lists()` too: an assignment arriving over realtime must move the dashboard's "Your move"
+  // count and the My work queue, and `invalidateDocument` reaches them only through this prefix.
+  assigned: () => [...documentKeys.lists(), 'assigned'] as const,
   detail: (id: string) => [...documentKeys.all, 'detail', id] as const,
   revisions: (id: string) => [...documentKeys.all, 'revisions', id] as const,
   deleted: () => [...documentKeys.all, 'deleted'] as const,
@@ -265,6 +274,7 @@ export const documentsQueryString = (
   if (filters.type) params.set('type', filters.type);
   if (filters.direction) params.set('direction', filters.direction);
   if (filters.divisionId) params.set('divisionId', filters.divisionId);
+  if (filters.overdue) params.set('overdue', 'true');
   params.set('sort', filters.sort);
   params.set('order', filters.order);
   params.set('page', String(page));
@@ -282,6 +292,18 @@ export function useDocuments(filters: DocumentFilters, page: number) {
   });
 }
 
+/**
+ * The signed-in user's whole work queue (`GET /documents/assigned`, unpaged on purpose: a personal
+ * queue that needs paging is a queue nobody is working). Here rather than in the My work screen
+ * because the dashboard's "Your move" strip counts the same queue, and the two sharing one query
+ * key means they share one request and can never show different numbers.
+ */
+export function useAssignedDocuments() {
+  return useQuery({
+    queryKey: documentKeys.assigned(),
+    queryFn: () => api<DocumentListItem[]>('/documents/assigned'),
+  });
+}
 export function useDocument(id: string, enabled = true) {
   return useQuery({
     queryKey: documentKeys.detail(id),

@@ -28,14 +28,15 @@ export function renderWithQuery(ui: ReactNode): RenderResult & { client: QueryCl
       mutations: { retry: false },
     },
   });
-  return {
-    client,
-    ...render(
-      <QueryClientProvider client={client}>
-        <ThemeProvider>
-          <TooltipProvider>{ui}</TooltipProvider>
-        </ThemeProvider>
-      </QueryClientProvider>,
-    ),
-  };
+  // As `wrapper` rather than around `ui`, so `rerender` keeps the providers — and with them the
+  // cache — when a test re-renders after changing what a hook like `useSearchParams` returns.
+  const Providers = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>
+      <ThemeProvider>
+        <TooltipProvider>{children}</TooltipProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  );
+  const result: RenderResult = render(ui, { wrapper: Providers });
+  return { client, ...result };
 }

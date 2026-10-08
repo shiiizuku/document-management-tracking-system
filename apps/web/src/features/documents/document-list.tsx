@@ -1,5 +1,6 @@
 'use client';
 
+import { useSyncExternalStore } from 'react';
 import { LayoutGrid, List, Rows3 } from 'lucide-react';
 import type { DataTableColumn, SortState } from '@/components/dts/data-table';
 import { DataTable } from '@/components/dts/data-table';
@@ -37,7 +38,13 @@ export function ListViewControl({
     <div
       role="radiogroup"
       aria-label="List view"
-      className={cn('inline-flex rounded-lg border border-border bg-card p-0.5', className)}
+      className={cn(
+        'inline-flex rounded-[10px] border border-border bg-card p-0.5',
+        // Hidden at the width where `DocumentList` forces cards (NARROW_QUERY): a control whose
+        // Table and Lines options change nothing there would announce a view that is not shown.
+        'max-[759px]:hidden',
+        className,
+      )}
     >
       {LIST_VIEWS.map((option) => {
         const Icon = VIEW_ICONS[option.id];
@@ -51,9 +58,9 @@ export function ListViewControl({
             title={option.note}
             onClick={() => onChange(option.id)}
             className={cn(
-              'hover:bg-accent inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
               selected
-                ? 'bg-secondary text-secondary-foreground'
+                ? 'bg-muted font-semibold text-foreground'
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
@@ -86,8 +93,29 @@ export interface DocumentListProps {
   empty: React.ReactNode;
 }
 
-export function DocumentList({ view, columns, ...props }: DocumentListProps) {
+const NARROW_QUERY = '(max-width: 759px)';
+
+const subscribeNarrow = (onChange: () => void) => {
+  const media = typeof window.matchMedia === 'function' ? window.matchMedia(NARROW_QUERY) : null;
+  media?.addEventListener('change', onChange);
+  return () => media?.removeEventListener('change', onChange);
+};
+const narrowNow = () =>
+  typeof window.matchMedia === 'function' && window.matchMedia(NARROW_QUERY).matches;
+
+/**
+ * Whether the viewport is under 760px, where a table's columns no longer fit and the handoff
+ * forces the card view. Read through `useSyncExternalStore` so it follows a rotation or a resize,
+ * and false on the server, where there is no viewport to ask.
+ */
+function useNarrowViewport(): boolean {
+  return useSyncExternalStore(subscribeNarrow, narrowNow, () => false);
+}
+
+export function DocumentList({ view: chosen, columns, ...props }: DocumentListProps) {
   const rowKey = (row: DocumentListItem) => row.id;
+  // The reader's choice is kept, not overwritten: widen the window and their view comes back.
+  const view = useNarrowViewport() ? 'card' : chosen;
 
   if (view === 'card') return <DocumentCards {...props} columns={columns} rowKey={rowKey} />;
   if (view === 'line') return <DocumentLines {...props} columns={columns} rowKey={rowKey} />;

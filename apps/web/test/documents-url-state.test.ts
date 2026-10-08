@@ -42,6 +42,16 @@ describe('reading registry filters from the URL', () => {
     expect(parseDocumentFilters(params(query)).divisionId).toBe('');
   });
 
+  // The dashboard's Overdue tile links to `?overdue=true`; only that exact value is a filter.
+  it.each([
+    ['true', true],
+    ['false', false],
+    ['1', false],
+    ['', false],
+  ])('reads overdue=%s as %s', (value, expected) => {
+    expect(parseDocumentFilters(params(`overdue=${value}`)).overdue).toBe(expected);
+  });
+
   it('falls back to the default sort rather than to no sort at all', () => {
     const filters = parseDocumentFilters(params('sort=whatever&order=sideways'));
     expect(filters.sort).toBe(DEFAULT_DOCUMENT_FILTERS.sort);
@@ -91,6 +101,7 @@ describe('writing registry filters to the URL', () => {
       type: 'SPECIAL_ORDER',
       direction: 'OUTGOING',
       divisionId: '3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
+      overdue: true,
       sort: 'status',
       order: 'asc',
     } as const;
@@ -106,6 +117,10 @@ describe('hasActiveDocumentFilters', () => {
     expect(
       hasActiveDocumentFilters({ ...DEFAULT_DOCUMENT_FILTERS, sort: 'status', order: 'asc' }),
     ).toBe(false);
+  });
+
+  it('notices the overdue filter', () => {
+    expect(hasActiveDocumentFilters({ ...DEFAULT_DOCUMENT_FILTERS, overdue: true })).toBe(true);
   });
 
   it('counts whitespace-only search as no search', () => {
@@ -128,6 +143,14 @@ describe('documentsQueryString', () => {
     expect(query.get('page')).toBe('1');
     expect(query.get('pageSize')).toBe('20');
     expect(query.get('status')).toBeNull();
+    expect(query.get('overdue')).toBeNull();
+  });
+
+  it('sends overdue=true to the API when the filter is on', () => {
+    const query = new URLSearchParams(
+      documentsQueryString({ ...DEFAULT_DOCUMENT_FILTERS, overdue: true }, 1),
+    );
+    expect(query.get('overdue')).toBe('true');
   });
 
   it('trims the free-text search so a stray space is not part of the match', () => {

@@ -15,6 +15,7 @@ import {
   assignDocumentSchema,
   createDocumentSchema,
   linkReferenceDocumentSchema,
+  listDocumentsQuerySchema,
   recordReleaseCarrierSchema,
   routeDocumentSchema,
   shareDocumentSchema,
@@ -24,6 +25,7 @@ import {
   type AssignDocumentInput,
   type CreateDocumentInput,
   type LinkReferenceDocumentInput,
+  type ListDocumentsQuery,
   type RecordReleaseCarrierInput,
   type RouteDocumentInput,
   type ShareDocumentInput,
@@ -50,7 +52,11 @@ export class DocumentsController {
   ) {}
 
   @Get()
-  list(@CurrentUser() actor: RequestUser, @Query() query: Record<string, string | undefined>) {
+  list(
+    @CurrentUser() actor: RequestUser,
+    @Query(new ZodValidationPipe(listDocumentsQuerySchema))
+    query: Record<string, string | undefined> & ListDocumentsQuery,
+  ) {
     const filters: DocumentSearchFilters = {
       ...(query.search ? { search: query.search } : {}),
       ...(query.status ? { status: query.status as DocumentSearchFilters['status'] } : {}),
@@ -61,6 +67,7 @@ export class DocumentsController {
         : {}),
       ...(query.divisionId ? { divisionId: query.divisionId } : {}),
       ...(query.sectionId ? { sectionId: query.sectionId } : {}),
+      ...(query.overdue === true ? { overdue: true } : {}),
       ...(query.sort ? { sort: query.sort as NonNullable<DocumentSearchFilters['sort']> } : {}),
       ...(query.order ? { order: query.order as NonNullable<DocumentSearchFilters['order']> } : {}),
       ...(query.page ? { page: Number(query.page) } : {}),

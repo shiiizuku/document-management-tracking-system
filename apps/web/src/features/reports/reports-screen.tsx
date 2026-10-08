@@ -82,12 +82,7 @@ export function ReportsScreen() {
               )}
               XLSX
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={exportFile.isPending}
-              onClick={() => onExport('pdf')}
-            >
+            <Button type="button" disabled={exportFile.isPending} onClick={() => onExport('pdf')}>
               {exportFile.isPending && exportFile.variables?.format === 'pdf' ? (
                 <Loader2 className="animate-spin" />
               ) : (
