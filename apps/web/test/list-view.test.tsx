@@ -62,17 +62,17 @@ describe('list view', () => {
 
     // The table, which is the default.
     expect(screen.getByText(/DTS-2026-000001/)).toBeInTheDocument();
-    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('En route')).toBeInTheDocument();
 
     await choose('Cards');
     expect(screen.getByTestId('document-cards')).toBeInTheDocument();
     expect(screen.getByText(/DTS-2026-000001/)).toBeInTheDocument();
-    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('En route')).toBeInTheDocument();
 
     await choose('Lines');
     expect(screen.getByTestId('document-lines')).toBeInTheDocument();
     expect(screen.getByText(/DTS-2026-000001/)).toBeInTheDocument();
-    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('En route')).toBeInTheDocument();
   });
 
   it('switches views without touching the URL or refetching the page', async () => {

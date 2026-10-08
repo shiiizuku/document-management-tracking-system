@@ -83,7 +83,7 @@ describe('MyWorkScreen', () => {
       '/documents/doc-1',
     );
     expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/documents/doc-1');
-    await userEvent.click(screen.getByText('Pending'));
+    await userEvent.click(screen.getByText('En route'));
     expect(pushMock).toHaveBeenCalledWith('/documents/doc-1');
   });
 

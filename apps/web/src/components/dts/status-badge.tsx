@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils';
  */
 
 const STATUS_LABELS: Record<WorkflowStatus, string> = {
-  PENDING: 'Pending',
+  PENDING: 'En route',
   IN_PROCESS: 'In process',
   FOR_REVISION: 'For revision',
   FOR_INITIAL: 'For initial',
