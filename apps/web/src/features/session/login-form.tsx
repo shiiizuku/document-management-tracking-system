@@ -33,7 +33,11 @@ const developmentDefaults: LoginInput =
     ? { email: 'records@dts.local', password: 'Records@1234!' }
     : { email: '', password: '' };
 
-export function LoginForm() {
+/**
+ * `autoFocus` is on for the dedicated sign-in screen and off where the form shares a page with
+ * other content (the landing page), where focusing a field would scroll past the headline.
+ */
+export function LoginForm({ autoFocus = true }: Readonly<{ autoFocus?: boolean }>) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const login = useLogin();
@@ -81,7 +85,7 @@ export function LoginForm() {
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input type="email" autoComplete="username" autoFocus {...field} />
+                <Input type="email" autoComplete="username" autoFocus={autoFocus} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
