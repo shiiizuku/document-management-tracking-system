@@ -38,7 +38,13 @@ export function ListViewControl({
     <div
       role="radiogroup"
       aria-label="List view"
-      className={cn('inline-flex rounded-[10px] border border-border bg-card p-0.5', className)}
+      className={cn(
+        'inline-flex rounded-[10px] border border-border bg-card p-0.5',
+        // Hidden at the width where `DocumentList` forces cards (NARROW_QUERY): a control whose
+        // Table and Lines options change nothing there would announce a view that is not shown.
+        'max-[759px]:hidden',
+        className,
+      )}
     >
       {LIST_VIEWS.map((option) => {
         const Icon = VIEW_ICONS[option.id];

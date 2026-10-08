@@ -190,6 +190,31 @@ describe('AuditScreen', () => {
     expect(panel).not.toBeInTheDocument();
   });
 
+  // The panel is not modal, so the result set can change under it. A detail for an event that is no
+  // longer listed would be evidence the active filters exclude.
+  it('drops the detail when its event leaves the rows on screen', async () => {
+    serve();
+    const { rerender } = renderWithQuery(<AuditScreen />);
+    await waitFor(() =>
+      expect(screen.getByRole('cell', { name: 'Ana Dela Cruz' })).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole('cell', { name: 'Ana Dela Cruz' }));
+    expect(
+      await screen.findByRole('region', { name: /Document workflow · accept/i }),
+    ).toBeInTheDocument();
+
+    // The next page holds a different event.
+    searchParams.current = new URLSearchParams('page=2');
+    serve({ trail: auditPage([auditEvent({ id: 'audit-2', action: 'auth.login' })]) });
+    rerender(<AuditScreen />);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('region', { name: /Document workflow · accept/i }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   // No free-text search on the trail; the date range is a single removable chip.
   it('has no search box, and shows a date range as one chip', async () => {
     searchParams.current = new URLSearchParams('from=2026-10-01&to=2026-10-07');

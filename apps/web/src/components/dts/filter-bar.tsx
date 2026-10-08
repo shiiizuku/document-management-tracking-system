@@ -119,6 +119,7 @@ export function FilterBar({
 }: FilterBarProps) {
   const panelId = useId();
   const chipRowRef = useRef<HTMLDivElement>(null);
+  const advancedButtonRef = useRef<HTMLButtonElement>(null);
 
   const chips: FilterChipSpec[] = [
     ...(search !== undefined && search.applied.trim() !== ''
@@ -160,10 +161,11 @@ export function FilterBar({
   const removeChip = (index: number) => {
     chips[index]?.onRemove();
     requestAnimationFrame(() => {
-      const row = chipRowRef.current;
-      if (!row) return;
-      const remaining = row.querySelectorAll<HTMLElement>('[data-chip-remove], [data-clear-all]');
-      const target = remaining[Math.min(index, remaining.length - 1)];
+      // Removing the last chip unmounts the whole row, so its absence is the "nothing left" case.
+      const remaining =
+        chipRowRef.current?.querySelectorAll<HTMLElement>('[data-chip-remove], [data-clear-all]') ??
+        [];
+      const target = remaining[Math.min(index, remaining.length - 1)] ?? advancedButtonRef.current;
       target?.focus();
     });
   };
@@ -176,6 +178,7 @@ export function FilterBar({
   const advancedButton = (
     <CollapsiblePrimitive.Trigger asChild>
       <Button
+        ref={advancedButtonRef}
         type="button"
         variant="outline"
         aria-controls={panelId}

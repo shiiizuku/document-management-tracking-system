@@ -6,6 +6,7 @@ import {
   DEFAULT_DOCUMENT_FILTERS,
   invalidateDocument,
   presentedStatus,
+  useAssignedDocuments,
   useRunAction,
   useUpdateMetadata,
 } from '../src/features/documents/queries';
@@ -76,6 +77,21 @@ describe('invalidateDocument', () => {
     invalidateDocument(client, 'doc-1');
 
     expect(invalidatedKeys(invalidate)).toContain(JSON.stringify(['documents', 'deleted']));
+  });
+
+  // The realtime adapter's only lever is `invalidateDocument`, so an assignment arriving while the
+  // dashboard is open must refetch the queue its "Your move" strip counts — not wait for a refocus.
+  it('refetches the assigned queue, so the dashboard count follows an assignment', async () => {
+    const { client, wrapper } = harness();
+    apiMock.mockResolvedValue([]);
+    const { result } = renderHook(() => useAssignedDocuments(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    invalidateDocument(client, undefined);
+
+    await waitFor(() =>
+      expect(apiMock.mock.calls.filter(([path]) => path === '/documents/assigned')).toHaveLength(2),
+    );
   });
 
   // The key factory is private, so a list key must be reachable by the prefix the invalidation

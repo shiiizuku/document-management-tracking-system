@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { FilterBar, type FilterBarProps } from '../src/components/dts/filter-bar';
 
@@ -185,6 +186,30 @@ describe('FilterBar', () => {
       renderBar({ onClear, values: { status: 'PENDING' } });
       await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
       expect(onClear).toHaveBeenCalledOnce();
+    });
+
+    it('hands focus to Advanced search when the last chip goes, not to the page', async () => {
+      // Stateful, so removing the only chip really unmounts the chip row, as it does in the app.
+      function Bar() {
+        const [values, setValues] = useState<Record<string, string>>({
+          status: 'PENDING',
+          priority: '',
+        });
+        return (
+          <FilterBar
+            search={search()}
+            selects={selects}
+            values={values}
+            onSelectChange={(id, value) => setValues((current) => ({ ...current, [id]: value }))}
+            onClear={vi.fn()}
+          />
+        );
+      }
+      render(<Bar />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Remove filter Status: Pending' }));
+      expect(screen.queryByText('Filtered by')).not.toBeInTheDocument();
+      await waitFor(() => expect(advancedButton()).toHaveFocus());
     });
   });
 

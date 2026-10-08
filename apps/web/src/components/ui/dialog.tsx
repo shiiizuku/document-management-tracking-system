@@ -57,6 +57,9 @@ function DialogContent({
         className={cn(
           'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-[18px] border p-7 outline-none sm:max-w-[560px]',
           'bg-card text-card-foreground shadow-[0_12px_30px_rgb(0_0_0/0.18)]',
+          // Radix locks the page's scroll while a dialog is open, so a form taller than the viewport
+          // (the forward dialog on a phone) must scroll itself or its submit button is unreachable.
+          'max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain',
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:duration-200 data-[state=open]:ease-out',
           'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:duration-150 data-[state=closed]:ease-in',
           className,

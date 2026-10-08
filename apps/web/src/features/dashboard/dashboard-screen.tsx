@@ -1,5 +1,6 @@
 'use client';
 
+import { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ArrowRight, Clock, FileText, Inbox, LayoutDashboard } from 'lucide-react';
 import type { WorkflowStatus } from '@dts/contracts';
@@ -24,9 +25,23 @@ import { useDashboardSummary, type DashboardSummary } from './queries';
  * number nobody can check, and these are the same scoped counts the registry reports — so the
  * tile, the bar and the filtered list always agree.
  */
+/*
+ * The calendar day in the viewer's own timezone, read only in the browser.
+ *
+ * Formatted during server rendering it would be the server's day, which for an office in UTC+8
+ * is yesterday for the first eight hours after local midnight — and the hydrated text would then
+ * disagree with what the server sent. `getServerSnapshot` returns null, so the server and the
+ * hydration pass both print a plain "Today" and the date appears on the client's next render.
+ */
+const noSubscription = () => () => {};
+const localDay = () =>
+  new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+const noDayOnServer = () => null;
+
 export function DashboardScreen() {
   const summary = useDashboardSummary();
   const { user } = useSession();
+  const today = useSyncExternalStore(noSubscription, localDay, noDayOnServer);
 
   if (summary.error !== null) {
     return (
@@ -59,11 +74,7 @@ export function DashboardScreen() {
   return (
     <>
       <PageHeader
-        eyebrow={`Today · ${new Date().toLocaleDateString('en-US', {
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-        })}`}
+        eyebrow={today === null ? 'Today' : `Today · ${today}`}
         title={user === null ? 'Dashboard' : `Good day, ${user.displayName.split(' ')[0] ?? ''}`}
         description="Everything below counts only what your account is authorized to see."
         actions={

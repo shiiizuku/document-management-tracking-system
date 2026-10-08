@@ -54,6 +54,16 @@ export function AuditScreen() {
   const filters = parseAuditFilters(searchParams);
   const page = parseAuditPage(searchParams);
   const events = useAuditEvents(filters, page);
+  /*
+   * The detail panel is not modal, so the page or the filters can change under it. It shows the
+   * selection only while that event is among the rows on screen: an auditor must never read the
+   * detail of a row the current filters exclude. Derived rather than cleared on navigation, so going
+   * back to the page that holds the event brings its detail back.
+   */
+  const shown =
+    selected !== null && (events.data?.items ?? []).some((event) => event.id === selected.id)
+      ? selected
+      : null;
 
   // Only for the names and the actor dropdown. Requested at all only when this user may read the
   // directory: the trail is readable by a capability the user list is not.
@@ -218,7 +228,7 @@ export function AuditScreen() {
             pageSize={AUDIT_PAGE_SIZE}
             onPageChange={(nextPage) => navigate(filters, nextPage)}
             onRowClick={setSelected}
-            selectedKey={selected?.id ?? null}
+            selectedKey={shown?.id ?? null}
             isLoading={events.isPending}
             isFetching={events.isFetching}
             error={events.error}
@@ -241,10 +251,10 @@ export function AuditScreen() {
             }
           />
         </div>
-        {selected === null ? null : (
+        {shown === null ? null : (
           <EventDetailPanel
-            event={selected}
-            actorName={actorName(selected.actorId, nameById)}
+            event={shown}
+            actorName={actorName(shown.actorId, nameById)}
             onClose={() => setSelected(null)}
           />
         )}

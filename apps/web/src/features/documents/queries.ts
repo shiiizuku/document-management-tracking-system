@@ -249,6 +249,9 @@ const documentKeys = {
   // Under `lists()` so that `invalidateDocument` settles it with every other cached list: a
   // released document must not keep showing as pending in the palette either.
   search: (term: string) => [...documentKeys.lists(), 'search', term] as const,
+  // Under `lists()` too: an assignment arriving over realtime must move the dashboard's "Your move"
+  // count and the My work queue, and `invalidateDocument` reaches them only through this prefix.
+  assigned: () => [...documentKeys.lists(), 'assigned'] as const,
   detail: (id: string) => [...documentKeys.all, 'detail', id] as const,
   revisions: (id: string) => [...documentKeys.all, 'revisions', id] as const,
   deleted: () => [...documentKeys.all, 'deleted'] as const,
@@ -297,7 +300,7 @@ export function useDocuments(filters: DocumentFilters, page: number) {
  */
 export function useAssignedDocuments() {
   return useQuery({
-    queryKey: ['documents', 'assigned'] as const,
+    queryKey: documentKeys.assigned(),
     queryFn: () => api<DocumentListItem[]>('/documents/assigned'),
   });
 }
