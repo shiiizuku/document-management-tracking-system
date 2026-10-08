@@ -104,7 +104,7 @@ describe('AttachmentsSection preview control', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Preview' }));
 
     const frame = await screen.findByTitle('Preview of budget.pdf');
-    expect(frame).toHaveAttribute('src', 'blob:preview-1');
+    expect(frame).toHaveAttribute('src', 'blob:preview-1#toolbar=0&navpanes=0');
     expect(frame).not.toHaveAttribute('sandbox');
   });
 

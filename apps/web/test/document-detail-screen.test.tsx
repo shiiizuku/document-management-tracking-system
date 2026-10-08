@@ -290,10 +290,10 @@ describe('DocumentDetailScreen', () => {
    * whose printable copy people still need. The export is audited server-side.
    */
   /*
-   * The slip goes to the browser's print preview. It is fetched through the preview route, so the
-   * server audits it as a view, and nothing is exported.
+   * The slip goes to the browser's print preview. Printing takes a copy away, so it is fetched
+   * through the export route and the server audits it as an export, not a view.
    */
-  it('prints the routing slip through the preview route, never the export route', async () => {
+  it('prints the routing slip through the audited export route', async () => {
     inlineMock.mockResolvedValue({
       url: 'blob:slip-1',
       mediaType: 'application/pdf',
@@ -308,7 +308,7 @@ describe('DocumentDetailScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: /Routing slip/ }));
 
     await waitFor(() =>
-      expect(inlineMock).toHaveBeenCalledWith('/documents/doc-1/routing-slip/preview.pdf'),
+      expect(inlineMock).toHaveBeenCalledWith('/documents/doc-1/routing-slip.pdf'),
     );
     expect(downloadMock).not.toHaveBeenCalled();
   });

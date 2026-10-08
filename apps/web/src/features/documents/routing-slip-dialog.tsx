@@ -5,16 +5,16 @@ import { Loader2, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { inlineContent } from '@/lib/api';
-import { routingSlipPreviewPath, type DocumentDetail } from './queries';
+import { routingSlipExportPath, type DocumentDetail } from './queries';
 
 /**
- * The routing slip, opened in the browser's own print preview (decision 170).
+ * The routing slip, sent to the browser's print preview (decision 170).
  *
- * The slip is fetched through the *preview* route, so printing it still writes
- * `document.routing-slip-viewed` rather than an export: the audit trail's question about a routing
- * slip is who took a copy out of the building, and a look at the slip must not read as one. The
- * bytes go into an off-screen frame and that frame is printed, which is what brings up the browser's
- * print dialog and its preview with no intermediate on-page viewer.
+ * Printing is taking a copy out of the building — the slip is the sheet that is stapled to the
+ * physical document — so it is fetched through the *export* route and the server records
+ * `document.routing-slip-exported`, not a view. The bytes go into an off-screen frame and that
+ * frame is printed, which brings up the browser's print dialog and its preview with no on-page
+ * viewer in between.
  *
  * The frame and its object URL are released a minute after printing is requested — long enough for
  * the print dialog to have taken what it needs, short enough that the file does not linger.
@@ -25,7 +25,7 @@ export function RoutingSlipDialog({ document }: Readonly<{ document: DocumentDet
   const print = async () => {
     setBusy(true);
     try {
-      const content = await inlineContent(routingSlipPreviewPath(document.id));
+      const content = await inlineContent(routingSlipExportPath(document.id));
       const frame = window.document.createElement('iframe');
       frame.title = `Routing slip for ${document.trackingNumber}`;
       frame.setAttribute('aria-hidden', 'true');
