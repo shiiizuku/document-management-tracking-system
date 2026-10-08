@@ -1,16 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, CheckCheck, Lock } from 'lucide-react';
 import type { DataTableColumn } from '@/components/dts/data-table';
 import { EmptyState } from '@/components/dts/empty-state';
 import { PageHeader } from '@/components/dts/page-header';
 import { PriorityLabel, StatusBadge, documentTypeLabel } from '@/components/dts/status-badge';
-import { api } from '@/lib/api';
 import { DocumentList, ListViewControl } from './document-list';
 import { useListView } from './list-view';
-import type { DocumentListItem } from './queries';
+import { useAssignedDocuments, type DocumentListItem } from './queries';
 
 /**
  * The documents assigned to the signed-in user.
@@ -20,17 +18,6 @@ import type { DocumentListItem } from './queries';
  * shared one, because the four states — loading, empty, error, rows — are the same four, and a
  * second list component would answer them slightly differently.
  */
-
-const assignedKeys = {
-  queue: ['documents', 'assigned'] as const,
-};
-
-function useAssignedDocuments() {
-  return useQuery({
-    queryKey: assignedKeys.queue,
-    queryFn: () => api<DocumentListItem[]>('/documents/assigned'),
-  });
-}
 
 const columns: readonly DataTableColumn<DocumentListItem>[] = [
   {

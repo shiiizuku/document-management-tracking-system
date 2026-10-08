@@ -289,6 +289,18 @@ export function useDocuments(filters: DocumentFilters, page: number) {
   });
 }
 
+/**
+ * The signed-in user's whole work queue (`GET /documents/assigned`, unpaged on purpose: a personal
+ * queue that needs paging is a queue nobody is working). Here rather than in the My work screen
+ * because the dashboard's "Your move" strip counts the same queue, and the two sharing one query
+ * key means they share one request and can never show different numbers.
+ */
+export function useAssignedDocuments() {
+  return useQuery({
+    queryKey: ['documents', 'assigned'] as const,
+    queryFn: () => api<DocumentListItem[]>('/documents/assigned'),
+  });
+}
 export function useDocument(id: string, enabled = true) {
   return useQuery({
     queryKey: documentKeys.detail(id),
