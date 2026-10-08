@@ -40,7 +40,7 @@ describe('ThemeToggle', () => {
     );
   });
 
-  it('shows swatches only, marks the current one, and closes back onto the trigger', async () => {
+  it('names each swatch on hover, marks the current one, and closes back onto the trigger', async () => {
     const user = userEvent.setup();
     window.localStorage.setItem(THEME_STORAGE_KEY, 'civic');
     renderToggle();
@@ -54,12 +54,18 @@ describe('ThemeToggle', () => {
       .filter((button) => button.hasAttribute('aria-pressed'));
     expect(swatches.map((swatch) => swatch.getAttribute('aria-label'))).toEqual([
       'Neutral pastel',
+      'Stone grey',
+      'Slate grey',
+      'Cool mist',
+      'Warm sand',
       'Sage pastel',
       'Blush pastel',
       'Civic Ledger',
     ]);
-    // Names are labels only: nothing in a swatch is visible text.
+    // Nothing in a swatch is visible text; the name shows in a tooltip on hover.
     swatches.forEach((swatch) => expect(swatch.textContent).toBe(''));
+    await user.hover(screen.getByRole('button', { name: 'Slate grey' }));
+    expect(await screen.findByRole('tooltip', { name: 'Slate grey' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Civic Ledger' })).toHaveAttribute(
       'aria-pressed',
       'true',

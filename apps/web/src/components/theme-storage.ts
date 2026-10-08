@@ -5,7 +5,7 @@
  *
  * - `dts.theme` holds the colour MODE (light / dark / system). The name predates the Civic Ledger
  *   themes and is kept, because renaming it would reset every user's dark-mode choice.
- * - `dts.theme.v1` holds the THEME (neutral / sage / blush / civic) — the whole palette.
+ * - `dts.theme.v1` holds the THEME (neutral / stone / slate / mist / sand / sage / blush / civic) — the whole palette.
  *
  * The theme replaced the five accents that were stored under `dts.accent.v1`. Their closest
  * matches carry over (green → sage, rose → blush), everything else lands on the default, and the
@@ -17,13 +17,26 @@
  * provider uses rather than retyped beside them.
  */
 
-export const THEMES = ['neutral', 'sage', 'blush', 'civic'] as const;
+export const THEMES = [
+  'neutral',
+  'stone',
+  'slate',
+  'mist',
+  'sand',
+  'sage',
+  'blush',
+  'civic',
+] as const;
 export type Theme = (typeof THEMES)[number];
 export const DEFAULT_THEME: Theme = 'neutral';
 
 /** Human names, used for the swatches' accessible labels — the picker shows no visible text. */
 export const THEME_NAMES: Record<Theme, string> = {
   neutral: 'Neutral pastel',
+  stone: 'Stone grey',
+  slate: 'Slate grey',
+  mist: 'Cool mist',
+  sand: 'Warm sand',
   sage: 'Sage pastel',
   blush: 'Blush pastel',
   civic: 'Civic Ledger',

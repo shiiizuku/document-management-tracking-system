@@ -188,6 +188,24 @@ describe('AppShell', () => {
       ).not.toBeInTheDocument();
     });
 
+    it('moves the brand, the bell and the account into the top bar', async () => {
+      setViewport('desktop');
+      startCollapsed();
+      renderShell([]);
+
+      await screen.findByRole('button', TOPBAR_SEARCH);
+      const topbar = document.querySelector('[data-slot="app-desktop-topbar"]');
+      if (!(topbar instanceof HTMLElement)) throw new Error('no top bar');
+      expect(within(topbar).getByText('Document Tracking')).toBeInTheDocument();
+      expect(within(topbar).getByRole('button', { name: /^Notifications/ })).toBeInTheDocument();
+      expect(within(topbar).getByRole('button', { name: 'Ana Dela Cruz' })).toBeInTheDocument();
+      expect(within(sidebar()).queryByRole('button', { name: /^Notifications/ })).toBeNull();
+      expect(within(sidebar()).queryByRole('button', { name: 'Ana Dela Cruz' })).toBeNull();
+      expect(within(sidebar()).queryByText('Document Tracking')).toBeNull();
+      // The rail keeps the per-person appearance controls.
+      expect(within(sidebar()).getByRole('button', { name: /^Theme: / })).toBeInTheDocument();
+    });
+
     it('has no top bar while expanded, and search stays in the sidebar', async () => {
       setViewport('desktop');
       renderShell([]);
