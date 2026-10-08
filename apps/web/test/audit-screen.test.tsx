@@ -177,11 +177,30 @@ describe('AuditScreen', () => {
 
     await userEvent.click(screen.getByRole('cell', { name: 'Ana Dela Cruz' }));
 
-    const dialog = await screen.findByRole('dialog');
-    expect(dialog).toHaveTextContent('11111111-2222-4333-8444-555555555555');
-    expect(dialog).toHaveTextContent('10.0.0.4');
+    // A panel beside the table rather than a modal, so the neighbouring rows stay in view.
+    const panel = await screen.findByRole('region', { name: /Document workflow · accept/i });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(panel).toHaveTextContent('11111111-2222-4333-8444-555555555555');
+    expect(panel).toHaveTextContent('10.0.0.4');
     // The summary is shown verbatim: its keys differ per action, so labelling them would risk
     // mislabelling evidence.
-    expect(dialog).toHaveTextContent('"toStatus": "IN_PROCESS"');
+    expect(panel).toHaveTextContent('"toStatus": "IN_PROCESS"');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close the detail' }));
+    expect(panel).not.toBeInTheDocument();
+  });
+
+  // No free-text search on the trail; the date range is a single removable chip.
+  it('has no search box, and shows a date range as one chip', async () => {
+    searchParams.current = new URLSearchParams('from=2026-10-01&to=2026-10-07');
+    serve();
+    renderWithQuery(<AuditScreen />);
+
+    await waitFor(() => expect(screen.getByText('Filtered by')).toBeInTheDocument());
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Remove filter Dates: Oct 1 – Oct 7, 2026' }),
+    );
+    expect(pushMock).toHaveBeenCalledWith('/audit', { scroll: false });
   });
 });

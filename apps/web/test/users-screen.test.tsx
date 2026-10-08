@@ -116,7 +116,7 @@ describe('UsersScreen', () => {
     await waitFor(() => expect(screen.getByLabelText('Search')).toBeInTheDocument());
 
     await userEvent.type(screen.getByLabelText('Search'), 'ana');
-    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await userEvent.type(screen.getByLabelText('Search'), '{Enter}');
 
     await waitFor(() => expect(calledPaths(apiMock)).toContain('/users?search=ana'));
   });

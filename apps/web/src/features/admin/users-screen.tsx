@@ -200,9 +200,14 @@ export function UsersScreen() {
       <FilterBar
         search={{
           value: searchDraft,
+          applied: filters.search,
           placeholder: 'Search name or email',
           onChange: setSearchDraft,
           onSubmit: () => applyFilters({ search: searchDraft }),
+          onClear: () => {
+            setSearchDraft('');
+            applyFilters({ search: '' });
+          },
         }}
         selects={[
           {

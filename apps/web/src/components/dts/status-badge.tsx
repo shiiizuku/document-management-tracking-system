@@ -34,6 +34,9 @@ const STATUS_LABELS: Record<WorkflowStatus, string> = {
   ARCHIVED: 'Archived',
 };
 
+/** A status as it is written to a user: `FOR_REVISION` reads as "For revision". */
+export const statusLabel = (status: WorkflowStatus): string => STATUS_LABELS[status] ?? status;
+
 /** Waiting on someone, moving, complete, or closed. */
 export type StatusTone = 'wait' | 'move' | 'done' | 'closed';
 

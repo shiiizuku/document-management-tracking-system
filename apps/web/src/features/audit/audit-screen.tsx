@@ -1,18 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ScrollText } from 'lucide-react';
+import { ScrollText, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+
 import { DataTable, type DataTableColumn } from '@/components/dts/data-table';
 import { EmptyState } from '@/components/dts/empty-state';
 import { FilterBar } from '@/components/dts/filter-bar';
@@ -155,33 +150,49 @@ export function AuditScreen() {
         ]}
         values={{ user: filters.user, action: filters.action }}
         onSelectChange={(id, value) => applyFilters({ [id]: value })}
+        // The date range is one chip, not two: it is one question ("when"), and removing it
+        // should widen the window back to everything in a single step.
+        extraChips={
+          filters.from === '' && filters.to === ''
+            ? []
+            : [
+                {
+                  id: 'dates',
+                  label: 'Dates',
+                  value: dateRangeLabel(filters.from, filters.to),
+                  onRemove: () => applyFilters({ from: '', to: '' }),
+                },
+              ]
+        }
         onClear={() => router.push('/audit', { scroll: false })}
-        hasOtherActiveFilters={hasActiveAuditFilters(filters)}
+        emptyResult={events.data === undefined ? undefined : events.data.total === 0}
       >
         {/*
           Native date inputs rather than a calendar component: the range is typed far more often
           than it is clicked, both bounds are whole days, and the browser's own control is already
           keyboard-accessible and localised.
         */}
-        <div className="min-w-36">
-          <Label htmlFor="audit-from" className="mb-1.5 text-xs text-muted-foreground">
+        <div className="min-w-0 flex-[1_1_180px]">
+          <Label htmlFor="audit-from" className="mb-1.5">
             From
           </Label>
           <Input
             id="audit-from"
             type="date"
+            fieldSize="filter"
             value={filters.from}
             max={filters.to === '' ? undefined : filters.to}
             onChange={(event) => applyFilters({ from: event.target.value })}
           />
         </div>
-        <div className="min-w-36">
-          <Label htmlFor="audit-to" className="mb-1.5 text-xs text-muted-foreground">
+        <div className="min-w-0 flex-[1_1_180px]">
+          <Label htmlFor="audit-to" className="mb-1.5">
             To
           </Label>
           <Input
             id="audit-to"
             type="date"
+            fieldSize="filter"
             value={filters.to}
             min={filters.from === '' ? undefined : filters.from}
             onChange={(event) => applyFilters({ to: event.target.value })}
@@ -189,99 +200,129 @@ export function AuditScreen() {
         </div>
       </FilterBar>
 
-      <DataTable<AuditEvent>
-        caption="Recorded actions, most recent first"
-        columns={columns}
-        rows={events.data?.items ?? []}
-        rowKey={(row) => row.id}
-        total={events.data?.total ?? 0}
-        page={page}
-        pageSize={AUDIT_PAGE_SIZE}
-        onPageChange={(nextPage) => navigate(filters, nextPage)}
-        onRowClick={setSelected}
-        selectedKey={selected?.id ?? null}
-        isLoading={events.isPending}
-        isFetching={events.isFetching}
-        error={events.error}
-        onRetry={() => void events.refetch()}
-        empty={
-          <EmptyState
-            icon={ScrollText}
-            title={
-              hasActiveAuditFilters(filters)
-                ? 'No recorded actions match these filters'
-                : 'Nothing has been recorded yet'
+      {/*
+        The selected row's detail sits beside the table on a wide screen and wraps below it on a
+        narrow one — a flex row rather than a breakpoint, so it moves when the table actually runs
+        out of room. It replaced a dialog: an auditor compares a row's detail with its neighbours,
+        and a modal hid exactly those.
+      */}
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="min-w-0 flex-[999_1_560px]">
+          <DataTable<AuditEvent>
+            caption="Recorded actions, most recent first"
+            columns={columns}
+            rows={events.data?.items ?? []}
+            rowKey={(row) => row.id}
+            total={events.data?.total ?? 0}
+            page={page}
+            pageSize={AUDIT_PAGE_SIZE}
+            onPageChange={(nextPage) => navigate(filters, nextPage)}
+            onRowClick={setSelected}
+            selectedKey={selected?.id ?? null}
+            isLoading={events.isPending}
+            isFetching={events.isFetching}
+            error={events.error}
+            onRetry={() => void events.refetch()}
+            empty={
+              <EmptyState
+                icon={ScrollText}
+                title={
+                  hasActiveAuditFilters(filters)
+                    ? 'No recorded actions match these filters'
+                    : 'Nothing has been recorded yet'
+                }
+                description={
+                  hasActiveAuditFilters(filters)
+                    ? 'Widen the date range, or clear the filters to see the whole trail.'
+                    : 'Actions are recorded as they happen. This list fills itself.'
+                }
+                className="border-0 bg-transparent"
+              />
             }
-            description={
-              hasActiveAuditFilters(filters)
-                ? 'Widen the date range, or clear the filters to see the whole trail.'
-                : 'Actions are recorded as they happen. This list fills itself.'
-            }
-            className="border-0 bg-transparent"
           />
-        }
-      />
-
-      <EventDetailDialog
-        event={selected}
-        actorName={selected === null ? '' : actorName(selected.actorId, nameById)}
-        onClose={() => setSelected(null)}
-      />
+        </div>
+        {selected === null ? null : (
+          <EventDetailPanel
+            event={selected}
+            actorName={actorName(selected.actorId, nameById)}
+            onClose={() => setSelected(null)}
+          />
+        )}
+      </div>
     </>
   );
 }
 
 /**
- * One row in full.
+ * One row in full, in a panel beside the table.
  *
  * The `summary` is rendered as formatted JSON rather than as a field list, and that is the honest
  * choice: its keys differ per action, the API's policy is that it holds IDs and enum values only,
  * and a presentation layer that guessed at labels would eventually mislabel evidence.
+ *
+ * Focus moves to the panel when a row is chosen, so a keyboard user lands on what they opened, and
+ * back to nothing in particular on close — the row they came from is still where it was.
  */
-function EventDetailDialog({
+function EventDetailPanel({
   event,
   actorName: name,
   onClose,
-}: Readonly<{ event: AuditEvent | null; actorName: string; onClose: () => void }>) {
+}: Readonly<{ event: AuditEvent; actorName: string; onClose: () => void }>) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [event.id]);
+
   return (
-    <Dialog open={event !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
-        {event === null ? null : (
-          <>
-            <DialogHeader>
-              <p className="eyebrow">Recorded action</p>
-              <DialogTitle className="first-letter:uppercase">
-                {auditActionLabel(event.action)}
-              </DialogTitle>
-              <DialogDescription>
-                <time dateTime={event.occurredAt}>
-                  {new Date(event.occurredAt).toLocaleString()}
-                </time>
-              </DialogDescription>
-            </DialogHeader>
+    <section
+      aria-labelledby="audit-detail-title"
+      className="relative min-w-0 flex-[1_1_300px] space-y-4 rounded-2xl border-[1.5px] border-seal bg-card p-5"
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={onClose}
+        aria-label="Close the detail"
+        className="absolute top-3 right-3 bg-muted text-muted-foreground"
+      >
+        <X />
+      </Button>
+      <div className="pr-12">
+        <p className="eyebrow">Recorded action</p>
+        <h2
+          id="audit-detail-title"
+          ref={headingRef}
+          tabIndex={-1}
+          className="mt-1 font-display text-[26px] leading-tight first-letter:uppercase focus:outline-none"
+        >
+          {auditActionLabel(event.action)}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          <time dateTime={event.occurredAt}>{new Date(event.occurredAt).toLocaleString()}</time>
+        </p>
+      </div>
 
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
-              <Detail label="Actor" value={name} />
-              <Detail label="Actor id" value={event.actorId} mono />
-              <Detail label="Target" value={`${event.targetType} ${event.targetId}`} mono />
-              <Detail label="Outcome" value={event.outcome} />
-              <Detail label="Source address" value={event.sourceIp} mono />
-              <Detail label="Correlation id" value={event.correlationId} mono />
-            </dl>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
+        <Detail label="Actor" value={name} />
+        <Detail label="Actor id" value={event.actorId} mono />
+        <Detail label="Target" value={`${event.targetType} ${event.targetId}`} mono />
+        <Detail label="Outcome" value={event.outcome} />
+        <Detail label="Source address" value={event.sourceIp} mono />
+        <Detail label="Correlation id" value={event.correlationId} mono />
+      </dl>
 
-            <div>
-              <h4 className="text-xs tracking-wide text-muted-foreground uppercase">Detail</h4>
-              <pre className="mt-1 overflow-x-auto rounded-md border border-border bg-secondary/30 p-3 font-mono text-xs">
-                {JSON.stringify(event.summary, null, 2)}
-              </pre>
-            </div>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+      <div>
+        <h3 className="text-xs font-bold tracking-[0.05em] text-foreground-secondary uppercase">
+          Detail
+        </h3>
+        <pre className="mt-1 overflow-x-auto rounded-xl border border-border bg-muted p-3 font-mono text-xs">
+          {JSON.stringify(event.summary, null, 2)}
+        </pre>
+      </div>
+    </section>
   );
 }
-
 function Detail({
   label,
   value,
@@ -289,7 +330,9 @@ function Detail({
 }: Readonly<{ label: string; value: string | null; mono?: boolean }>) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs tracking-wide text-muted-foreground uppercase">{label}</dt>
+      <dt className="text-xs font-bold tracking-[0.05em] text-foreground-secondary uppercase">
+        {label}
+      </dt>
       <dd className={`mt-0.5 truncate text-foreground${mono ? ' font-mono text-xs' : ''}`}>
         {value === null || value === '' ? '—' : value}
       </dd>
@@ -308,3 +351,19 @@ const actorName = (actorId: string | null, nameById: Map<string, string>): strin
 
 /** The leading segment of a UUID — enough to recognise a row, short enough to scan a column of. */
 const shortId = (id: string): string => (id.length > 12 ? `${id.slice(0, 8)}…` : id);
+
+/** "Oct 1 – Oct 7, 2026", or an open-ended "From Oct 1, 2026" / "Until Oct 7, 2026". */
+const dateRangeLabel = (from: string, to: string): string => {
+  const format = (day: string, withYear: boolean) =>
+    new Date(`${day}T00:00:00.000Z`).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      ...(withYear ? { year: 'numeric' } : {}),
+      timeZone: 'UTC',
+    });
+  if (from !== '' && to !== '') {
+    const sameYear = from.slice(0, 4) === to.slice(0, 4);
+    return `${format(from, !sameYear)} – ${format(to, true)}`;
+  }
+  return from !== '' ? `From ${format(from, true)}` : `Until ${format(to, true)}`;
+};
