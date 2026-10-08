@@ -71,6 +71,12 @@ export const currentlyWith = (page: Page): Locator =>
 export const action = (page: Page, label: string): Locator =>
   yourMove(page).getByRole('button', { name: label, exact: true });
 
+/**
+ * Every action this account is offered. Counting them is an assertion of its own: naming only the
+ * absent ones would pass against a bar that had grown a new one. None at all means no bar.
+ */
+export const actions = (page: Page): Locator => yourMove(page).getByRole('button');
+
 export const timeline = (page: Page): Locator => rail(page).getByRole('list');
 
 export const attachments = (page: Page): Locator =>

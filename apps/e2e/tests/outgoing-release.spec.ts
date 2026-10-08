@@ -1,6 +1,7 @@
 import { truncateDocuments } from '../fixtures/database';
 import {
   action,
+  actions,
   attachments,
   openDocumentFromRegistry,
   rail,
@@ -77,13 +78,13 @@ test('an outgoing letter is drafted, endorsed, signed, released by courier and a
     await openDocumentFromRegistry(director, TITLE);
 
     // The narrowest non-viewer role in the table: `DOCUMENT_SIGN` and `REPORT_VIEW`, nothing else.
-    // Counting the buttons is the assertion — naming the absent ones would pass against a rail
+    // Counting the buttons is the assertion — naming the absent ones would pass against a bar
     // that had grown a new one.
-    await expect(rail(director).getByRole('button')).toHaveCount(1);
+    await expect(actions(director)).toHaveCount(1);
     await runAction(director, 'Record signature', 'Signed');
 
     // And now there is nothing further this account may do to it.
-    await expect(rail(director).getByRole('button')).toHaveCount(0);
+    await expect(actions(director)).toHaveCount(0);
     await expect(rail(director)).toContainText('No workflow actions are available to you');
   });
 
