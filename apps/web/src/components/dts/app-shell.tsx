@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { KeyRound, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
@@ -40,10 +41,10 @@ import { activeNavHref, navSections, visibleNavItems } from './nav-items';
  * and that topbar carries the two things a phone user needs without opening it — search and the
  * bell. The account menu is in the sheet's footer there, so it is never mounted twice.
  *
- * Collapsing the wide-screen sidebar (its toggle, or Ctrl/⌘B) leaves no room for a search field in
- * a 64px rail, so search moves out of it into a top bar across the content column. There is only
- * ever one search entry point on screen: the sidebar's while expanded, the top bar's while
- * collapsed.
+ * Collapsing the wide-screen sidebar (its toggle, or Ctrl/⌘B) leaves no room in a 64px rail for
+ * the brand, a search field or the account, so they move into a top bar across the content column:
+ * brand on the left, search centred, bell and account on the right. The rail keeps the nav, the
+ * theme and colour-mode buttons and the toggle. There is only ever one of each on screen.
  *
  * The same nav renders twice — in the permanent sidebar and inside the sheet — from one
  * `SidebarNav` below, so the two cannot drift apart.
@@ -158,16 +159,31 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
       <aside
         data-slot="app-sidebar"
         className={cn(
-          'sticky top-0 hidden h-screen shrink-0 flex-col border-r border-sidebar-edge bg-sidebar text-sidebar-foreground lg:flex',
-          'transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
+          'sticky top-0 hidden h-screen shrink-0 flex-col overflow-hidden border-r border-sidebar-edge bg-sidebar text-sidebar-foreground lg:flex',
           collapsed ? 'w-16' : 'w-64',
         )}
       >
-        {/* Focus order follows the handoff: brand, Search, nav, then the footer controls. */}
-        <Brand collapsed={collapsed} />
-        {searchInTopbar ? null : <SidebarSearch collapsed={collapsed} onOpen={openPalette} />}
+        {/*
+          Focus order follows the handoff: brand, Search, nav, then the footer controls. Collapsed
+          on a wide screen, the brand, search, account and bell all move to the top bar; the rail
+          keeps a band the top bar's height so the two rules beneath them line up.
+        */}
+        {searchInTopbar ? (
+          <div aria-hidden className="h-16 shrink-0 border-b border-sidebar-avatar" />
+        ) : (
+          <>
+            <Brand />
+            <SidebarSearch collapsed={collapsed} onOpen={openPalette} />
+          </>
+        )}
         <SidebarNav collapsed={collapsed} />
-        <SidebarFooter user={user} collapsed={collapsed} live={realtime.connected} />
+        <SidebarFooter
+          user={user}
+          collapsed={collapsed}
+          live={realtime.connected}
+          showAccount={!searchInTopbar}
+          showBell={!searchInTopbar}
+        />
         <div
           className={cn(
             'border-t border-sidebar-avatar px-2 py-1.5',
@@ -200,18 +216,25 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/*
-          Wide screen, sidebar collapsed: the search the rail has no room for, as a field across
-          the top of the content column, aligned with the page content beneath it. Gated on the
-          viewport in script and also hidden below `lg` in CSS, so it can never sit beside the
-          narrow topbar.
+          Wide screen, sidebar collapsed: everything the 64px rail has no room for moves here —
+          the brand on the left, search centred, and the bell and account on the right. Gated on
+          the viewport in script and also hidden below `lg` in CSS, so it can never sit beside the
+          narrow topbar. The brand slides in from the rail it just left.
         */}
         {searchInTopbar ? (
           <header
             data-slot="app-desktop-topbar"
-            className="sticky top-0 z-20 hidden h-14 shrink-0 border-b border-border bg-card lg:block"
+            className="sticky top-0 z-20 hidden h-16 shrink-0 grid-cols-[1fr_minmax(0,36rem)_1fr] items-center gap-4 border-b border-border bg-card px-4 sm:px-6 lg:grid"
           >
-            <div className="mx-auto flex h-full w-full max-w-[1280px] items-center px-4 sm:px-6">
-              <PaletteTrigger placement="field" onClick={openPalette} />
+            <Brand placement="topbar" />
+            <PaletteTrigger
+              placement="field"
+              onClick={openPalette}
+              className="w-full max-w-none animate-in fade-in duration-300"
+            />
+            <div className="flex items-center justify-end gap-1 animate-in fade-in slide-in-from-right-4 duration-300 ease-out">
+              <NotificationsSheet live={realtime.connected} />
+              <AccountMenu user={user} placement="topbar" />
             </div>
           </header>
         ) : null}
@@ -247,8 +270,9 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
             </SheetContent>
           </Sheet>
 
-          <span className="min-w-0 shrink truncate font-display text-lg sm:text-xl">
-            Document Tracking
+          <span className="flex min-w-0 shrink items-center gap-2">
+            <BrandLogo className="size-8" />
+            <span className="truncate font-display text-lg sm:text-xl">Document Tracking</span>
           </span>
 
           {/*
@@ -286,39 +310,51 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
 }
 
 /**
- * The product mark: a seal ring with "DTS" set in the display face, then the product name and the
- * office. Drawn rather than the bureau's raster logo, because the seal has to take each theme's
- * sidebar colours, and a fixed-colour image on a plate read as a sticker on the dark Civic bar.
+ * The bureau's logo, downscaled from `public/branding/mgb-logo.png` (1.3 MB) to a 160px copy so
+ * the shell does not ship the print master. Decorative: the product name always sits beside it.
  */
-function Brand({ collapsed = false }: Readonly<{ collapsed?: boolean }>) {
+function BrandLogo({ className }: Readonly<{ className?: string }>) {
+  return (
+    <Image
+      src="/branding/mgb-logo-160.png"
+      alt=""
+      width={160}
+      height={160}
+      className={cn('shrink-0 object-contain', className)}
+    />
+  );
+}
+
+/**
+ * The product mark: the bureau's logo, then the product name and the office. It sits at the top
+ * of the expanded sidebar, and on the left of the top bar while the sidebar is collapsed — sliding
+ * in from the rail's side each time it changes place, so the eye can follow where it went.
+ */
+function Brand({ placement = 'sidebar' }: Readonly<{ placement?: 'sidebar' | 'topbar' }>) {
+  const topbar = placement === 'topbar';
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center pt-5 pb-4',
-        collapsed ? 'justify-center px-2' : 'gap-3 px-4',
+        'flex min-w-0 shrink-0 items-center gap-3',
+        'animate-in fade-in slide-in-from-left-4 duration-300 ease-out',
+        topbar ? '' : 'px-4 pt-5 pb-4',
       )}
     >
-      <span
-        className="flex size-[38px] shrink-0 items-center justify-center rounded-full border-2 border-sidebar-seal font-display text-[13px] tracking-wider text-sidebar-seal"
-        aria-hidden={!collapsed}
-        role={collapsed ? 'img' : undefined}
-        aria-label={collapsed ? 'Document Tracking System' : undefined}
-      >
-        DTS
-      </span>
-      {collapsed ? null : (
-        <span className="min-w-0">
-          <span className="block truncate font-display text-lg leading-tight">
-            Document Tracking
-          </span>
-          <span
-            className="block truncate text-xs text-sidebar-muted-foreground"
-            title="Mines and Geosciences Bureau"
-          >
-            Mines and Geosciences Bureau
-          </span>
+      <BrandLogo className={topbar ? 'size-9' : 'size-10'} />
+      <span className="min-w-0">
+        <span className="block truncate font-display text-lg leading-tight whitespace-nowrap">
+          Document Tracking
         </span>
-      )}
+        <span
+          className={cn(
+            'block truncate text-xs whitespace-nowrap',
+            topbar ? 'text-muted-foreground' : 'text-sidebar-muted-foreground',
+          )}
+          title="Mines and Geosciences Bureau"
+        >
+          Mines and Geosciences Bureau
+        </span>
+      </span>
     </div>
   );
 }
@@ -380,7 +416,10 @@ function SidebarNav({
     <nav
       data-slot="app-navigation"
       aria-label="Primary"
-      className={cn('flex-1 space-y-5 overflow-y-auto pb-4', collapsed ? 'px-2' : 'px-3')}
+      className={cn(
+        'flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-2 pb-4',
+        collapsed && 'pt-3',
+      )}
     >
       {sections.map((group) => (
         <div key={group.section ?? 'workspace'} className="space-y-1">
@@ -393,7 +432,7 @@ function SidebarNav({
           {group.section === undefined ? null : collapsed ? (
             <hr className="mx-2 border-t border-sidebar-border" aria-hidden />
           ) : (
-            <p className="px-3 pb-1 text-[11px] font-bold tracking-[0.12em] text-sidebar-muted-foreground uppercase">
+            <p className="px-[15px] pb-1 text-[11px] font-bold tracking-[0.12em] text-sidebar-muted-foreground uppercase">
               {group.section}
             </p>
           )}
@@ -403,50 +442,51 @@ function SidebarNav({
              * The current item is marked three ways — fill, weight and an underline in the theme's
              * accent — so the underline is never the only signal, and `aria-current` says it to a
              * screen reader.
+             *
+             * The icon never moves: its inset is fixed so it sits centred in the 64px rail and
+             * where it always was in the 256px sidebar, and the label stays mounted and fades
+             * while the width animates. Collapsing then reads as the sidebar closing over its
+             * labels rather than as the nav being redrawn. The faded label is still the link's
+             * accessible name.
              */
             const link = (
               <Link
                 data-slot="navigation-link"
-                key={item.href}
                 href={item.href}
                 onClick={onNavigate}
                 aria-current={isCurrent ? 'page' : undefined}
                 className={cn(
-                  'flex min-h-11 items-center rounded-[10px] text-[15px]',
+                  'flex min-h-11 items-center gap-3 overflow-hidden rounded-[10px] px-[15px] text-[15px]',
                   'transition-colors duration-150 ease-in-out',
                   'focus-visible:ring-2 focus-visible:ring-sidebar-seal focus-visible:outline-none',
-                  collapsed ? 'justify-center px-0' : 'gap-3 px-3',
                   isCurrent
                     ? 'bg-sidebar-accent font-semibold text-sidebar-foreground'
                     : 'text-sidebar-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
                 )}
               >
                 <item.icon className="size-[18px] shrink-0" aria-hidden />
-                {collapsed ? (
-                  <span className="sr-only">{item.label}</span>
-                ) : (
-                  <span
-                    className={cn(
-                      'truncate',
-                      isCurrent &&
-                        'underline decoration-sidebar-primary decoration-[3px] underline-offset-[7px]',
-                    )}
-                  >
-                    {item.label}
-                  </span>
-                )}
+                <span
+                  className={cn(
+                    'truncate whitespace-nowrap transition-opacity duration-200 ease-out',
+                    collapsed ? 'opacity-0' : 'opacity-100 delay-100',
+                    isCurrent &&
+                      'underline decoration-sidebar-primary decoration-[3px] underline-offset-[7px]',
+                  )}
+                >
+                  {item.label}
+                </span>
               </Link>
             );
 
             // Collapsed, the label is the only thing identifying the icon, so it has to be
-            // reachable by pointer as well as by screen reader.
-            return collapsed ? (
+            // reachable by pointer as well as by screen reader. The tooltip wraps the link in both
+            // states, with content only while collapsed: swapping the wrapper in and out would
+            // remount the link and cut its label's fade short.
+            return (
               <Tooltip key={item.href}>
                 <TooltipTrigger asChild>{link}</TooltipTrigger>
-                <TooltipContent side="right">{item.label}</TooltipContent>
+                {collapsed ? <TooltipContent side="right">{item.label}</TooltipContent> : null}
               </Tooltip>
-            ) : (
-              link
             );
           })}
         </div>
@@ -460,14 +500,22 @@ function SidebarNav({
  *
  * Expanded, the account is its own row (a 256px sidebar cannot fit a name beside three 44px
  * buttons without truncating every name to nothing), with the three controls in a row beneath it.
- * Collapsed, all four stack as icons.
+ * Collapsed on a wide screen, the account and the bell move to the top bar and the theme and
+ * colour-mode buttons stack in the rail.
  */
 function SidebarFooter({
   user,
   live,
   collapsed = false,
+  showAccount = true,
   showBell = true,
-}: Readonly<{ user: SessionUser; live: boolean; collapsed?: boolean; showBell?: boolean }>) {
+}: Readonly<{
+  user: SessionUser;
+  live: boolean;
+  collapsed?: boolean;
+  showAccount?: boolean;
+  showBell?: boolean;
+}>) {
   return (
     <div
       data-slot="sidebar-footer"
@@ -476,7 +524,7 @@ function SidebarFooter({
         collapsed ? 'flex flex-col items-center gap-1 px-2 py-2' : 'space-y-1 px-3 py-3',
       )}
     >
-      <AccountMenu user={user} collapsed={collapsed} />
+      {showAccount ? <AccountMenu user={user} placement={collapsed ? 'rail' : 'sidebar'} /> : null}
       <div className={cn('flex gap-1', collapsed ? 'flex-col items-center' : 'items-center')}>
         <ThemePicker collapsed={collapsed} />
         {showBell ? <NotificationsSheet live={live} placement="sidebar" /> : null}
@@ -486,15 +534,22 @@ function SidebarFooter({
   );
 }
 
+/**
+ * The account button and its menu. In the expanded sidebar it shows the name and placement beside
+ * the avatar; in the rail and in the collapsed top bar it is the avatar alone, named for assistive
+ * technology, and in the top bar it takes the page's colours rather than the sidebar's.
+ */
 function AccountMenu({
   user,
-  collapsed = false,
-}: Readonly<{ user: SessionUser; collapsed?: boolean }>) {
+  placement = 'sidebar',
+}: Readonly<{ user: SessionUser; placement?: 'sidebar' | 'rail' | 'topbar' }>) {
+  const avatarOnly = placement !== 'sidebar';
+  const topbar = placement === 'topbar';
   const logout = useLogout();
   const [changingPassword, setChangingPassword] = useState(false);
   const division = useDivisionName(user.divisionId);
   const role = enumLabel(user.role);
-  const placement = division === null ? role : `${role} · ${division}`;
+  const roleLine = division === null ? role : `${role} · ${division}`;
 
   return (
     <>
@@ -502,34 +557,47 @@ function AccountMenu({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            aria-label={collapsed ? user.displayName : undefined}
+            aria-label={avatarOnly ? user.displayName : undefined}
             className={cn(
-              'flex min-h-11 items-center gap-3 rounded-[10px] text-left',
-              'hover:bg-sidebar-accent/60 focus-visible:ring-2 focus-visible:ring-sidebar-seal focus-visible:outline-none data-[state=open]:bg-sidebar-accent',
-              collapsed ? 'justify-center p-1' : 'w-full px-1.5 py-1',
+              'flex min-h-11 items-center gap-3 rounded-[10px] text-left focus-visible:ring-2 focus-visible:outline-none',
+              topbar
+                ? 'hover:bg-accent focus-visible:ring-ring data-[state=open]:bg-muted'
+                : 'hover:bg-sidebar-accent/60 focus-visible:ring-sidebar-seal data-[state=open]:bg-sidebar-accent',
+              avatarOnly ? 'justify-center p-1' : 'w-full px-1.5 py-1',
             )}
           >
             <Avatar className="size-9">
-              <AvatarFallback className="bg-sidebar-avatar text-xs font-semibold text-sidebar-foreground">
+              <AvatarFallback
+                className={cn(
+                  'text-xs font-semibold',
+                  topbar
+                    ? 'bg-secondary text-secondary-foreground'
+                    : 'bg-sidebar-avatar text-sidebar-foreground',
+                )}
+              >
                 {initials(user.displayName)}
               </AvatarFallback>
             </Avatar>
-            {collapsed ? null : (
+            {avatarOnly ? null : (
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold" title={user.displayName}>
                   {user.displayName}
                 </span>
                 <span
                   className="block truncate text-xs text-sidebar-muted-foreground"
-                  title={placement}
+                  title={roleLine}
                 >
-                  {placement}
+                  {roleLine}
                 </span>
               </span>
             )}
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="start" className="w-56">
+        <DropdownMenuContent
+          side={topbar ? 'bottom' : 'top'}
+          align={topbar ? 'end' : 'start'}
+          className="w-56"
+        >
           <DropdownMenuLabel className="font-normal">
             <span className="block truncate text-sm">{user.displayName}</span>
             <span className="block truncate text-xs text-muted-foreground">{user.email}</span>

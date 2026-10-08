@@ -10,13 +10,14 @@ disagree, this document wins: it records decisions made after some boards were d
 A re-skin of `apps/web`, not a rebuild. Routes, data, capabilities and workflow behaviour stay as they are.
 What changes:
 
-1. **Themes.** The five accents (Default, Blue, Green, Violet, Rose) become four whole-palette themes:
-   **Neutral pastel** (default), **Sage pastel**, **Blush pastel**, and **Civic Ledger** (the original dark-green
+1. **Themes.** The five accents (Default, Blue, Green, Violet, Rose) become whole-palette themes:
+   **Neutral pastel** (default), four further neutrals (**Stone grey**, **Slate grey**, **Cool mist**, **Warm
+   sand**, added 2026-10-08), **Sage pastel**, **Blush pastel**, and **Civic Ledger** (the original dark-green
    look). A theme sets the background, surfaces, borders, text, primary colour and sidebar, not just the accent.
 2. **Type.** Newsreader for display headings, Public Sans for UI and body, tabular figures for tracking
    numbers.
-3. **Shell.** The existing left sidebar is restyled. The theme picker becomes a palette button with a
-   swatch-only popover in the sidebar footer.
+3. **Shell.** The existing left sidebar is restyled, with the bureau's logo as the brand mark. The theme picker
+   becomes a palette button with a swatch popover in the sidebar footer, each swatch named in a tooltip.
 4. **Fields.** Every text field, select and date input uses one of two sizes. Each has a 14px inset and a
    drawn chevron or calendar icon.
 5. **Filters.** On the Registry and the Audit trail, the filter fields move behind an **Advanced search**
@@ -47,7 +48,7 @@ the bar described below, and phone-specific navigation (bottom tab bar) — the 
 ### Theme palettes (light)
 
 Each theme defines the same token set. Implement as `:root[data-theme='<id>']` blocks in `theme.css`, mapping
-onto the shadcn variables in the second column. Ids: `neutral`, `sage`, `blush`, `civic`. Hex is the design
+onto the shadcn variables in the second column. Ids: `neutral`, `sage`, `blush`, `civic` (the extra neutrals are below). Hex is the design
 value; convert to `oklch()` to match the file's convention.
 
 | Design token | shadcn / app variable | Neutral pastel | Sage pastel | Blush pastel | Civic Ledger | Usage |
@@ -75,13 +76,34 @@ value; convert to `oklch()` to match the file's convention.
 | barLine | `--sidebar-border` | #C9C2B6 | #B5C4BA | #CDBDBE | #4F6359 | Search button border, secondary button border on the bar |
 | barAvatar | `--sidebar-avatar` (new) | #D6CFC3 | #C9D6CD | #DCCDCE | #2F4A3C | Avatar fill, sidebar footer divider |
 | barUnderline | `--sidebar-primary` | #527061 | #49745E | #895C64 | #D9B56A | Underline under the active nav label |
-| barGold | `--sidebar-seal` (new) | #79603C | #7A6238 | #79603C | #D9B56A | Seal ring and "DTS" text in the sidebar, unread dot |
+| barGold | `--sidebar-seal` (new) | #79603C | #7A6238 | #79603C | #D9B56A | Unread dot, sidebar focus ring |
 | goldBtn | `--move-action` (new) | #D8C3A0 | #D4BC8A | #D9C29A | #D9B56A | Primary button on the "Your move" bar |
 | onGold | `--move-action-foreground` (new) | #2D2A26 | #22302A | #2F2627 | #13291F | Text on that button |
 
 Contrast is enforced by `apps/web/test/theme-palettes.test.ts`: 4.5:1 for text and 3:1 for field borders, the focus
-ring and the active-nav underline, across all four themes in light and dark mode. The values above already include the
+ring and the active-nav underline, across every theme in light and dark mode. The values above already include the
 2026-10-08 contrast fix (darker primary in the pastels, darker sidebar seal text, and 3:1 field borders).
+
+### Extra neutral themes
+
+Added 2026-10-08: `stone`, `slate`, `mist` and `sand`, ordered after Neutral in `THEMES`. Each is the Neutral
+palette (light and dark) with its greys moved to another hue and its primary moved to match; lightness is
+Neutral's, which is what keeps every contrast pair passing. The seal golds and `--move-action` are Neutral's. The
+full token set is in `apps/web/app/theme.css`; the main values:
+
+| Token | Stone grey | Slate grey | Cool mist | Warm sand |
+|---|---|---|---|---|
+| `--background` | #F4F3F2 | #F0F4F8 | #F0F4F5 | #F8F2EC |
+| `--card` | #FCFCFB | #FBFCFE | #FAFDFD | #FEFCF8 |
+| `--foreground` | #2B2B29 | #282B2F | #272C2D | #2F2A23 |
+| `--primary` | #5C6B72 | #516A87 | #487072 | #835F49 |
+| `--border` | #D9D9D5 | #D3D9E2 | #D0DBDD | #E2D7C9 |
+| `--input` | #8E8C88 | #848D99 | #819092 | #998A77 |
+| `--sidebar` | #E2E2DE | #DBE2EB | #D9E4E6 | #EBE0D2 |
+| dark `--background` | #181817 | #17181A | #161919 | #1A1815 |
+| dark `--card` | #21201F | #1E2124 | #1E2122 | #24201B |
+| dark `--primary` | #B1BFC6 | #A7BFDB | #A0C4C6 | #D7B4A0 |
+| dark `--sidebar` | #131312 | #121315 | #111414 | #151310 |
 
 ### Dark mode
 
@@ -204,10 +226,12 @@ Replace `--font-sans` with Public Sans and add `--font-display` for Newsreader. 
 Keep the structure: sticky `w-64` sidebar at `lg+` with the collapse toggle, and a sheet nav below `lg`. Restyle it:
 
 - Background `--sidebar`, text `--sidebar-foreground`. Light themes have no border; dark gets a right border.
-- Top to bottom: brand (38px seal ring in `--sidebar-seal` with "DTS" in Newsreader, then "Document Tracking" in
-  Newsreader 18px, then "MGB · [Region]" at 12px muted), then a Search button (min-h-11, `--sidebar-accent` fill,
+- Top to bottom: brand (the bureau's logo at 40px, from `public/branding/mgb-logo-160.png`, a 160px copy of the
+  1.3 MB `mgb-logo.png`; then "Document Tracking" in Newsreader 18px, then "Mines and Geosciences Bureau" at 12px
+  muted), then a Search button (min-h-11, `--sidebar-accent` fill,
   1px `--sidebar-border`, `Ctrl K` kbd hint, opens the command palette), then the nav.
-- Nav items: min-h-11, `px-3`, rounded-[10px], 18px icon, gap-3, 15px. Inactive items `--sidebar-muted-foreground`.
+- Nav items: min-h-11, `px-[15px]` inside a `px-2` nav (so the icon sits centred in the 64px rail and does not
+  move on collapse), rounded-[10px], 18px icon, gap-3, 15px. Inactive items `--sidebar-muted-foreground`.
   The active item gets a `--sidebar-accent` fill, `--sidebar-foreground` text at weight 600, and its label
   underlined: `decoration-[--sidebar-primary] decoration-[3px] underline-offset-[7px]`.
 - The "Administration" heading: 11px/700, `tracking-[0.12em]`, uppercase, muted. Its hide-when-empty logic is
@@ -215,14 +239,23 @@ Keep the structure: sticky `w-64` sidebar at `lg+` with the collapse toggle, and
 - Footer row, above the collapse toggle: avatar (36px, `--sidebar-avatar`), then name and "[Role] · [Division]"
   (truncate with an ellipsis), then the **palette button**, then the notifications bell (unread dot
   `--sidebar-seal` with a 2px `--sidebar` ring). The colour-mode (sun/moon) toggle stays next to these.
-- Collapsed (`w-16`): icons only, tooltips on hover, palette button and bell stacked.
+- Collapsed (`w-16`): icons only, tooltips on hover, palette button and colour-mode toggle stacked. The brand, the
+  account and the bell move to the top bar (below).
+- **Motion.** The width animates over 300ms with `cubic-bezier(0.32, 0.72, 0, 1)`. Nav labels stay mounted and
+  fade (200ms; 100ms delay on expand) while the icons hold still. Declare the width transition in `theme.css` on
+  `[data-slot='app-sidebar']`, not as a utility: the global unlayered colour transition outranks Tailwind's
+  `transition-*` classes and would make the width snap. Keep the nav-item tooltip wrapper mounted in both states,
+  so collapsing does not remount links and cut the fade short.
 - Collapse toggle: keeps `aria-expanded`, adds `aria-keyshortcuts="Control+B Meta+B"`, and its tooltip shows the
   `Ctrl B` (`⌘B` on a Mac) hint. Ctrl/⌘B toggles the sidebar at `lg+`, except while focus is in an input, textarea,
   select or contenteditable. It never touches Ctrl/⌘K. The state is still remembered per device. The width
   transition is off under `prefers-reduced-motion`.
 - **Collapsed-sidebar top bar (`lg+` only).** While the sidebar is collapsed, a top bar spans the content column:
-  sticky, `h-14`, `--card` fill, 1px bottom `--border`, matching the below-`lg` bar. It holds one search bar, a
-  button drawn as a filter-size field (44px, rounded-[10px], 1.5px `--input` border, `max-w-md`), with a search icon,
+  sticky, `h-16`, `--card` fill, 1px bottom `--border`, on a three-column grid (`1fr minmax(0,36rem) 1fr`). Left:
+  the brand (36px logo, name and bureau), sliding in from the left (`slide-in-from-left-4`, 300ms) as it leaves the
+  rail. Right: the bell and the account avatar (its menu opens below, aligned to the end), sliding in from the
+  right. The rail keeps a 64px band with a bottom rule level with the top bar's. Centre: one search bar, a
+  button drawn as a filter-size field (44px, rounded-[10px], 1.5px `--input` border, full column width), fading in, with a search icon,
   the placeholder "Search documents, actions and screens…" and a `Ctrl K` hint. It opens the same command palette as
   every other Search button, with `aria-label="Search documents, actions and screens"` and
   `aria-keyshortcuts="Control+K Meta+K"`. The collapsed rail then drops its own Search button, so there is one search
@@ -235,16 +268,17 @@ Keep the structure: sticky `w-64` sidebar at `lg+` with the collapse toggle, and
   fill is `--sidebar-accent`.
 - Popover: opens upward from the footer (`side="top" align="start"`; `side="right"` when collapsed). Width 216px,
   p-3, rounded-[14px], `--popover`, 1px `--border`, shadow `0 12px 30px rgb(0 0 0 / .18)`.
-- Heading "Theme" 13px/600. Below it a 4-column grid of **swatch-only** buttons with no visible names. Each
+- Heading "Theme" 13px/600. Below it a 4-column grid of swatch buttons with no visible text. Each
   swatch: 44×44, rounded-[10px], centred 18px dot in the theme's `accent` with a 3px ring in its `bar` colour.
-  Order: Neutral pastel, Sage pastel, Blush pastel, Civic Ledger.
-- Each swatch has `aria-label="<Theme name>"` and `aria-pressed`. The selected swatch gets a `--muted` fill and an
+  Order: Neutral pastel, Stone grey, Slate grey, Cool mist, Warm sand, Sage pastel, Blush pastel, Civic Ledger.
+- Each swatch shows its theme name in a tooltip (below it) on hover and focus, and has `aria-label="<Theme name>"`
+  and `aria-pressed`. The selected swatch gets a `--muted` fill and an
   inset 1.5px `--primary` ring.
 - Picking a swatch applies the theme immediately and closes the popover. Esc closes it and returns focus to the
   trigger (Radix Popover does this already).
 
 **State and storage.** Rename the concept from accent to theme:
-- `THEMES = ['neutral', 'sage', 'blush', 'civic'] as const`, default `neutral`.
+- `THEMES = ['neutral', 'stone', 'slate', 'mist', 'sand', 'sage', 'blush', 'civic'] as const`, default `neutral`.
 - Set `data-theme` on `<html>` (drop `data-accent`).
 - Storage key `dts.theme.v1`. Note that `dts.theme` already holds the light/dark mode, so don't reuse that key.
 - Update the boot script in `layout.tsx` to set `data-theme` before first paint. Migrate an old
