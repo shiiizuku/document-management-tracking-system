@@ -236,7 +236,7 @@ function YourMoveStrip() {
  * dimensional, and each bar has to be a link to the division's own filtered list.
  */
 function PendingByDivision({ summary }: Readonly<{ summary: DashboardSummary | undefined }>) {
-  if (summary === undefined) return <PanelSkeleton title="Pending by division" rows={4} />;
+  if (summary === undefined) return <PanelSkeleton title="En route by division" rows={4} />;
 
   const rows = summary.pendingByDivision;
   const largest = Math.max(1, ...rows.map((row) => row.total));
@@ -244,7 +244,7 @@ function PendingByDivision({ summary }: Readonly<{ summary: DashboardSummary | u
   return (
     <section className="space-y-3">
       <h2 className="font-display text-[26px] leading-tight text-foreground">
-        Pending by division
+        En route by division
       </h2>
       {rows.length === 0 ? (
         <EmptyState

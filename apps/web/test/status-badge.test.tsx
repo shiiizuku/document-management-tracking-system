@@ -8,7 +8,7 @@ import { PriorityLabel, StatusBadge } from '../src/components/dts/status-badge';
  * and the glyph is decoration — the label is still the text a screen reader hears.
  */
 const CASES: readonly [WorkflowStatus, string, string, string][] = [
-  ['PENDING', 'wait', 'ring', 'Pending'],
+  ['PENDING', 'wait', 'ring', 'En route'],
   ['FOR_REVISION', 'wait', 'ring', 'For revision'],
   ['FOR_INITIAL', 'wait', 'ring', 'For initial'],
   ['IN_PROCESS', 'move', 'dot', 'In process'],

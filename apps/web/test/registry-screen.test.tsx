@@ -60,7 +60,7 @@ describe('RegistryScreen', () => {
 
     await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
     expect(screen.getByText(/DTS-2026-000001/)).toBeInTheDocument();
-    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('En route')).toBeInTheDocument();
   });
 
   it('shows no rows and no empty state while the first page loads', () => {
@@ -124,7 +124,7 @@ describe('RegistryScreen', () => {
 
     await openAdvanced();
     await userEvent.click(screen.getByLabelText('Status'));
-    await userEvent.click(screen.getByRole('option', { name: 'Pending' }));
+    await userEvent.click(screen.getByRole('option', { name: 'En route' }));
 
     expect(pushMock).toHaveBeenCalledWith('/documents?status=PENDING', { scroll: false });
   });
@@ -187,7 +187,7 @@ describe('RegistryScreen', () => {
       'href',
       '/documents/doc-1',
     );
-    await userEvent.click(screen.getByText('Pending'));
+    await userEvent.click(screen.getByText('En route'));
     expect(pushMock).toHaveBeenCalledWith('/documents/doc-1');
   });
 
