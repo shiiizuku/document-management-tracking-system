@@ -143,7 +143,13 @@ export function AccountRequestsScreen() {
               <Check />
               Approve
             </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => setRejecting(row)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="border-destructive text-destructive hover:bg-priority-urgent-bg"
+              onClick={() => setRejecting(row)}
+            >
               <X />
               Reject
             </Button>

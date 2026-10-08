@@ -13,9 +13,9 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-  CommandShortcut,
 } from '@/components/ui/command';
 import { visibleNavItems } from '@/components/dts/nav-items';
+import { StatusBadge } from '@/components/dts/status-badge';
 import { ACTION_LABELS } from '@/features/documents/action-labels';
 import {
   DOCUMENT_SEARCH_MIN_LENGTH,
@@ -197,11 +197,9 @@ export function CommandPalette({
                   value={`document-${item.id}`}
                   onSelect={() => go(`/documents/${item.id}`)}
                 >
-                  <span className="font-mono text-xs">{item.trackingNumber}</span>
-                  <span className="truncate">{item.title}</span>
-                  <CommandShortcut>
-                    {item.status.replaceAll('_', ' ').toLowerCase()}
-                  </CommandShortcut>
+                  <span className="tracking-number shrink-0 text-xs">{item.trackingNumber}</span>
+                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                  <StatusBadge status={item.status} className="ml-auto" />
                 </CommandItem>
               ))}
             </CommandGroup>

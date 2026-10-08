@@ -142,7 +142,11 @@ export function UsersScreen() {
           {/* A lockout is not a deactivation: it expires on its own, and conflating the two has
               someone reactivating an account that was never switched off. */}
           {row.locked ? <Badge variant="outline">Locked out</Badge> : null}
-          {row.canAccessConfidential ? <Badge variant="outline">Confidential</Badge> : null}
+          {row.canAccessConfidential ? (
+            <Badge variant="outline" className="border-seal text-seal-foreground">
+              Confidential
+            </Badge>
+          ) : null}
         </div>
       ),
     },

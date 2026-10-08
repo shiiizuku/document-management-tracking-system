@@ -214,16 +214,18 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Copy in for information (optional)</FormLabel>
-                  <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border px-2 py-1.5">
+                  <div className="max-h-56 divide-y divide-border-subtle overflow-y-auto rounded-xl border-[1.5px] border-input">
                     {consultable.length === 0 ? (
-                      <p className="text-muted-foreground text-sm">No other divisions.</p>
+                      <p className="px-3.5 py-3 text-sm text-muted-foreground">
+                        No other divisions.
+                      </p>
                     ) : (
                       consultable.map((division) => {
                         const selected = (field.value ?? []).includes(division.id);
                         return (
                           <label
                             key={division.id}
-                            className="flex items-center gap-2 text-sm leading-6"
+                            className="flex min-h-11 cursor-pointer items-center gap-3 px-3.5 text-[15px] hover:bg-accent"
                           >
                             <Checkbox
                               checked={selected}
@@ -264,7 +266,7 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
               )}
             />
 
-            <DialogFooter>
+            <DialogFooter className="border-t border-border pt-4">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
