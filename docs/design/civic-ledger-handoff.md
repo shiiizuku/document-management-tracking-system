@@ -58,11 +58,11 @@ value; convert to `oklch()` to match the file's convention.
 | hoverRow | `--accent` | #F2EFE9 | #EEF2EE | #F3EDEC | #F0F4F0 | Row and item hover (shadcn's `accent` is the hover fill) |
 | line | `--border` | #DDD8CF | #D3DDD6 | #E0D5D3 | #CDD6CF | Card borders, dividers |
 | line2 | `--border-subtle` (new) | #E9E5DE | #E3EAE5 | #ECE4E2 | #E1E7E2 | Row dividers inside tables and lists |
-| field | `--input` | #B9B2A6 | #A9B8AE | #BFAFAC | #9FB2A6 | Text field, select and textarea borders |
+| field | `--input` | #928C80 | #819086 | #988986 | #7F9186 | Text field, select and textarea borders |
 | ink | `--foreground` | #2D2A26 | #22302A | #2F2627 | #13291F | Body text, headings |
 | ink2 | `--foreground-secondary` (new) | #4F4A43 | #43524A | #524546 | #3D5248 | Column headers, field labels, descriptions |
 | ink3 | `--muted-foreground` | #625C54 | #56655D | #66585A | #4F6359 | Hints, timestamps, metadata, chevrons |
-| accent | `--primary`, `--ring` | #5C7A6B | #4F7A64 | #8A5E66 | #1F6B45 | Primary buttons, links, focus ring, active-filter count badge |
+| accent | `--primary`, `--ring` | #527061 | #49745E | #895C64 | #1F6B45 | Primary buttons, links, focus ring, active-filter count badge |
 | onAccent | `--primary-foreground` | #FFFFFF | #FFFFFF | #FFFFFF | #FFFFFF | Text on primary |
 | accentHover | `--primary-hover` (new) | #4A6557 | #3F6552 | #714B53 | #14502F | Primary button and link hover |
 | gold | `--seal` (new) | #C4A57A | #BFA06B | #C4A57A | #B8892F | Seal ring, active-filter chip border, focus accent in admin |
@@ -74,13 +74,14 @@ value; convert to `oklch()` to match the file's convention.
 | barPill | `--sidebar-accent` | #F5F2EC | #F1F5F2 | #F8F3F3 | #22382D | Active nav item fill, Search button fill, open palette button |
 | barLine | `--sidebar-border` | #C9C2B6 | #B5C4BA | #CDBDBE | #4F6359 | Search button border, secondary button border on the bar |
 | barAvatar | `--sidebar-avatar` (new) | #D6CFC3 | #C9D6CD | #DCCDCE | #2F4A3C | Avatar fill, sidebar footer divider |
-| barUnderline | `--sidebar-primary` | #5C7A6B | #4F7A64 | #8A5E66 | #D9B56A | Underline under the active nav label |
-| barGold | `--sidebar-seal` (new) | #7E6440 | #7A6238 | #7E6440 | #D9B56A | Seal ring and "DTS" text in the sidebar, unread dot |
+| barUnderline | `--sidebar-primary` | #527061 | #49745E | #895C64 | #D9B56A | Underline under the active nav label |
+| barGold | `--sidebar-seal` (new) | #79603C | #7A6238 | #79603C | #D9B56A | Seal ring and "DTS" text in the sidebar, unread dot |
 | goldBtn | `--move-action` (new) | #D8C3A0 | #D4BC8A | #D9C29A | #D9B56A | Primary button on the "Your move" bar |
 | onGold | `--move-action-foreground` (new) | #2D2A26 | #22302A | #2F2627 | #13291F | Text on that button |
 
-All text pairs above were picked for at least 4.5:1 contrast (white on each `accent` is ≥ 4.7:1). Re-check after
-the oklch conversion.
+Contrast is enforced by `apps/web/test/theme-palettes.test.ts`: 4.5:1 for text and 3:1 for field borders, the focus
+ring and the active-nav underline, across all four themes in light and dark mode. The values above already include the
+2026-10-08 contrast fix (darker primary in the pastels, darker sidebar seal text, and 3:1 field borders).
 
 ### Dark mode
 
@@ -97,7 +98,7 @@ boards: `CL-Today-Dark`, `CL-Journey-Dark` (each has the palette popover), and t
 | `--accent` (hover fill) | #2D2A26 | #24302A | #312A2B | #1E3127 |
 | `--border` | #3B3732 | #33433A | #403637 | #2B4236 |
 | `--border-subtle` | #312E2A | #2A3830 | #362E2F | #253A2F |
-| `--input` | #5C564E | #536459 | #615456 | #4A6355 |
+| `--input` | #706A61 | #5F7166 | #76696B | #587163 |
 | `--foreground` | #EDE9E3 | #E7EEEA | #F0E8E9 | #E6EDE8 |
 | `--foreground-secondary` | #CBC4BA | #BFCCC4 | #D0C2C4 | #B3C4B9 |
 | `--muted-foreground` | #ABA398 | #A0B0A6 | #B1A1A4 | #9DB1A5 |
@@ -414,6 +415,9 @@ admin sub-tab row from the boards; the sidebar covers it. Other per-screen detai
    query? Current plan: reuse My work's total.
 
 ## Decisions log
+
+- 2026-10-08: contrast fix. In the light pastels, primary, sidebar-seal and input are darkened; input is adjusted in
+  all eight theme and mode blocks so field borders reach 3:1. Each change moves lightness only, so hues are unchanged.
 
 - 2026-10-07: add an `overdue` list filter, and link the dashboard's Overdue tile to it.
 - 2026-10-07: each theme gets its own dark palette, replacing the single shared dark palette.
