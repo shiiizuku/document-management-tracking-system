@@ -9,7 +9,9 @@
  * - `connect-src` — the page, and the `blob:` preview frames it creates (which inherit this
  *   policy), may talk only to this origin and the API. That is the outbound-request limit
  *   `inline-file-pane.tsx` says the API's own CSP cannot give a blob URL.
- * - `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` — the usual injection footholds.
+ * - `object-src blob:` — Chrome's PDF viewer is an embedded plugin and is blocked by `'none'`, which
+ *   the `blob:` preview frame inherits; only this page's own blob URLs may be plugin content.
+ * - `base-uri 'self'`, `form-action 'self'` — the usual injection footholds.
  */
 export const securityHeaders = (apiUrl: string): { key: string; value: string }[] => {
   const api = new URL(apiUrl);
@@ -24,7 +26,7 @@ export const securityHeaders = (apiUrl: string): { key: string; value: string }[
     "font-src 'self' data:",
     `connect-src 'self' ${api.origin} ${socket}`,
     "frame-src 'self' blob:",
-    "object-src 'none'",
+    'object-src blob:',
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",

@@ -24,7 +24,7 @@ describe('web security headers', () => {
     const policy = header('http://localhost:4001/api/v1', 'Content-Security-Policy');
     expect(policy).toContain("frame-src 'self' blob:");
     expect(policy).toContain("img-src 'self' data: blob:");
-    expect(policy).toContain("object-src 'none'");
+    expect(policy).toContain('object-src blob:');
   });
 
   it('sends the remaining baseline headers', () => {

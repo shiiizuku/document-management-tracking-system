@@ -125,7 +125,7 @@ describe('AppShell', () => {
     expect(within(screen.getByRole('menu')).getByText('Staff member')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('menuitem', { name: /Sign out/ }));
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/login'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/'));
   });
 
   it('lets anyone change their own password from the account menu', async () => {

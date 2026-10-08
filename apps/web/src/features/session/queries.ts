@@ -115,7 +115,7 @@ export function useLogin() {
 }
 
 /**
- * Signs out, then clears the cache and returns to `/login`.
+ * Signs out, then clears the cache and returns to the landing page at `/`.
  *
  * Deliberately `onSettled`, not `onSuccess`: the user asked to leave, so a failed or offline
  * logout must still leave no cached records on the screen or in memory. The cookie may outlive
@@ -128,7 +128,7 @@ export function useLogout() {
     mutationFn: () => api<void>('/auth/logout', { method: 'POST' }),
     onSettled: () => {
       client.clear();
-      router.replace('/login');
+      router.replace('/');
     },
   });
 }

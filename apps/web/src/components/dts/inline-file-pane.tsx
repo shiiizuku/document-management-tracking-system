@@ -117,6 +117,22 @@ export function InlineFilePane({
     );
   }
 
+  /*
+   * Chrome refuses to show its PDF viewer inside ANY sandboxed frame — "This page has been blocked
+   * by Chrome" — whatever `allow-*` flags are set. A blob typed `application/pdf` can only be
+   * handed to that viewer, never parsed as HTML, so it cannot run in this page's origin; the
+   * sandbox is dropped for it alone. Every other non-image type keeps the sandbox below.
+   */
+  if (content.mediaType.split(';')[0]?.trim().toLowerCase() === 'application/pdf') {
+    return (
+      <iframe
+        src={content.url}
+        title={`Preview of ${name}`}
+        className={cn('w-full rounded-md border border-border bg-secondary/30', className)}
+      />
+    );
+  }
+
   return (
     <iframe
       src={content.url}
