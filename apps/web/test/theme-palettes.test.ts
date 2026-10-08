@@ -77,10 +77,38 @@ const COMBINATIONS = THEMES.flatMap((theme) => [
   [theme, 'dark'] as const,
 ]);
 
+/**
+ * [text or indicator, what it sits on, minimum ratio]. 4.5:1 for text (WCAG 1.4.3); 3:1 for field
+ * borders, the focus ring and the active-nav underline, which identify a control or its state
+ * (WCAG 1.4.11). Each pair is one the screens actually draw — primary is link and button colour on
+ * the page, a card, a muted fill (the open Advanced search button) and a hovered row.
+ */
 const PAIRS = [
-  ['--foreground', '--background'],
-  ['--muted-foreground', '--background'],
-  ['--primary-foreground', '--primary'],
+  ['--foreground', '--background', 4.5],
+  ['--foreground', '--card', 4.5],
+  ['--foreground', '--muted', 4.5],
+  ['--muted-foreground', '--background', 4.5],
+  ['--muted-foreground', '--card', 4.5],
+  ['--muted-foreground', '--muted', 4.5],
+  ['--foreground-secondary', '--background', 4.5],
+  ['--foreground-secondary', '--muted', 4.5],
+  ['--primary', '--background', 4.5],
+  ['--primary', '--card', 4.5],
+  ['--primary', '--muted', 4.5],
+  ['--primary', '--accent', 4.5],
+  ['--primary-foreground', '--primary', 4.5],
+  ['--primary-foreground', '--primary-hover', 4.5],
+  ['--seal-foreground', '--background', 4.5],
+  ['--seal-foreground', '--seal-tint', 4.5],
+  ['--sidebar-foreground', '--sidebar', 4.5],
+  ['--sidebar-foreground', '--sidebar-accent', 4.5],
+  ['--sidebar-muted-foreground', '--sidebar', 4.5],
+  ['--sidebar-seal', '--sidebar', 4.5],
+  ['--move-action-foreground', '--move-action', 4.5],
+  ['--input', '--card', 3],
+  ['--input', '--background', 3],
+  ['--ring', '--background', 3],
+  ['--sidebar-primary', '--sidebar', 3],
 ] as const;
 
 describe('theme palettes', () => {
@@ -90,16 +118,16 @@ describe('theme palettes', () => {
   });
 
   it.each(COMBINATIONS)(
-    '%s %s keeps body text, hints and primary text at 4.5:1 or better',
+    '%s %s meets 4.5:1 for text and 3:1 for borders and focus indicators',
     (theme, mode) => {
       const vars = palette(theme, mode === 'dark');
-      for (const [text, ground] of PAIRS) {
+      const failures = PAIRS.flatMap(([text, ground, minimum]) => {
         const ratio = contrast(vars[text] ?? '', vars[ground] ?? '');
-        expect(
-          ratio,
-          `${theme} ${mode}: ${text} on ${ground} is ${ratio.toFixed(2)}:1`,
-        ).toBeGreaterThanOrEqual(4.5);
-      }
+        return ratio >= minimum
+          ? []
+          : [`${text} on ${ground} is ${ratio.toFixed(2)}:1, needs ${minimum}:1`];
+      });
+      expect(failures, `${theme} ${mode}`).toEqual([]);
     },
   );
 });
