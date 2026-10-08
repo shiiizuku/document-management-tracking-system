@@ -93,7 +93,7 @@ describe('AttachmentsSection preview control', () => {
    * that matters: the frame carries no `allow-` tokens, so a crafted PDF has no scripting and an
    * opaque origin.
    */
-  it('renders a PDF in a frame with nothing allowed', async () => {
+  it('renders a PDF in an unsandboxed frame, which Chrome requires for its viewer', async () => {
     listOf(attachmentVersion());
     servePdf();
     renderWithQuery(<AttachmentsSection documentId="doc-1" canUpload={false} />);
@@ -104,8 +104,8 @@ describe('AttachmentsSection preview control', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Preview' }));
 
     const frame = await screen.findByTitle('Preview of budget.pdf');
-    expect(frame).toHaveAttribute('src', 'blob:preview-1');
-    expect(frame).toHaveAttribute('sandbox', '');
+    expect(frame).toHaveAttribute('src', 'blob:preview-1#toolbar=0&navpanes=0');
+    expect(frame).not.toHaveAttribute('sandbox');
   });
 
   it('renders an image as an image rather than in a document frame', async () => {

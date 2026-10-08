@@ -10,7 +10,7 @@ import type {
   WorkflowAction,
   WorkflowStatus,
 } from '@dts/contracts';
-import { api, download } from '@/lib/api';
+import { api } from '@/lib/api';
 
 /**
  * Everything the browser knows about documents.
@@ -569,19 +569,7 @@ export function useRestoreDocument() {
 export const routingSlipPreviewPath = (id: string): string =>
   `/documents/${id}/routing-slip/preview.pdf`;
 
-/**
- * Downloads the printable routing slip — the dossier that travels with the physical document.
- *
- * Through `download()` rather than a link for the same reason as every other export: the request
- * needs the session cookie, and a refusal must appear beside the button instead of replacing the
- * page with an error document.
- */
-export function useRoutingSlip() {
-  return useMutation({
-    mutationFn: ({ id, trackingNumber }: { id: string; trackingNumber: string }) =>
-      download(`/documents/${id}/routing-slip.pdf`, `routing-slip-${trackingNumber}.pdf`),
-  });
-}
+export const routingSlipExportPath = (id: string): string => `/documents/${id}/routing-slip.pdf`;
 
 /**
  * Links an incoming document as a Reference Document of this outgoing one (decisions 165, 179).

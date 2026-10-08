@@ -41,7 +41,7 @@ export function AttachmentPreviewDialog({
           Preview
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[92vh] gap-3 sm:max-w-4xl">
+      <DialogContent className="max-h-[96vh] gap-3 sm:max-w-[min(96vw,1400px)]">
         <DialogHeader>
           <DialogTitle className="truncate">{version.originalName}</DialogTitle>
           <DialogDescription>
@@ -53,7 +53,7 @@ export function AttachmentPreviewDialog({
           <InlineFilePane
             path={attachmentContentPath(documentId, version.id)}
             name={version.originalName}
-            className="h-[70vh] max-h-[70vh]"
+            className="h-[80vh] max-h-[80vh]"
           />
         ) : null}
       </DialogContent>

@@ -8,11 +8,15 @@ import { ApiError } from '../src/lib/api';
 import { division, documentDetail, sessionUser } from './fixtures';
 import { renderWithQuery } from './query-harness';
 
-const { apiMock, downloadMock } = vi.hoisted(() => ({ apiMock: vi.fn(), downloadMock: vi.fn() }));
+const { apiMock, downloadMock, inlineMock } = vi.hoisted(() => ({
+  apiMock: vi.fn(),
+  downloadMock: vi.fn(),
+  inlineMock: vi.fn(),
+}));
 
 vi.mock('../src/lib/api', async () => {
   const actual = await vi.importActual<typeof ApiModule>('../src/lib/api');
-  return { ...actual, api: apiMock, download: downloadMock };
+  return { ...actual, api: apiMock, download: downloadMock, inlineContent: inlineMock };
 });
 
 vi.mock('next/navigation', () => ({
@@ -286,11 +290,15 @@ describe('DocumentDetailScreen', () => {
    * whose printable copy people still need. The export is audited server-side.
    */
   /*
-   * The slip opens on screen and is exported only if someone presses Download inside it
-   * (decision 170). The two go to different routes because the server audits them as different
-   * actions, so the assertion is that the ordinary path requests the preview and nothing else.
+   * The slip goes to the browser's print preview. Printing takes a copy away, so it is fetched
+   * through the export route and the server audits it as an export, not a view.
    */
-  it('opens the routing slip on screen before anything is exported', async () => {
+  it('prints the routing slip through the audited export route', async () => {
+    inlineMock.mockResolvedValue({
+      url: 'blob:slip-1',
+      mediaType: 'application/pdf',
+      release: vi.fn(),
+    });
     serve(documentDetail());
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
     await waitFor(() =>
@@ -299,27 +307,10 @@ describe('DocumentDetailScreen', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Routing slip/ }));
 
-    await screen.findByRole('dialog');
+    await waitFor(() =>
+      expect(inlineMock).toHaveBeenCalledWith('/documents/doc-1/routing-slip.pdf'),
+    );
     expect(downloadMock).not.toHaveBeenCalled();
-  });
-
-  it('downloads the routing slip from inside the preview, named after the tracking number', async () => {
-    downloadMock.mockResolvedValue('routing-slip-DTS-2026-000001.pdf');
-    serve(documentDetail());
-    renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Routing slip/ })).toBeInTheDocument(),
-    );
-
-    await userEvent.click(screen.getByRole('button', { name: /Routing slip/ }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Download' }));
-
-    await waitFor(() =>
-      expect(downloadMock).toHaveBeenCalledWith(
-        '/documents/doc-1/routing-slip.pdf',
-        'routing-slip-DTS-2026-000001.pdf',
-      ),
-    );
   });
 
   it('still offers the routing slip on a closed record', async () => {

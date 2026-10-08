@@ -106,7 +106,7 @@ describe('useLogin', () => {
 });
 
 describe('useLogout', () => {
-  it('clears the cache and returns to the login screen', async () => {
+  it('clears the cache and returns to the landing page', async () => {
     apiMock.mockResolvedValue(undefined);
     const { client, wrapper } = harness();
     client.setQueryData(['session'], user);
@@ -114,7 +114,7 @@ describe('useLogout', () => {
 
     result.current.mutate();
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/login'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/'));
     expect(client.getQueryData(['session'])).toBeUndefined();
   });
 
@@ -127,7 +127,7 @@ describe('useLogout', () => {
 
     result.current.mutate();
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/login'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/'));
     expect(client.getQueryData(['session'])).toBeUndefined();
   });
 });
