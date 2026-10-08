@@ -43,14 +43,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { ConfirmDialog } from '@/components/dts/confirm-dialog';
 import { documentTypeLabel } from '@/components/dts/status-badge';
 import { useUploadAttachmentToDocument } from '@/features/attachments/queries';
-import { useDivisions, useSections } from '@/features/org/queries';
+import { useDivisions, useHeadOfBureau, useSections } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { applyServerErrors } from '@/lib/forms';
 import { cn } from '@/lib/utils';
 import { dueDateToIso, isoToDueDate } from './due-date';
 import { DOCUMENT_TYPES, useCreateDocument } from './queries';
+import { RecipientsField, SuggestInput } from './recipients-field';
+
+/** "Name, Title", tolerating a blank name and a setting that has not loaded yet. */
+const senderLabel = (head: { name?: string; title?: string } | undefined): string =>
+  [head?.name ?? '', head?.title ?? 'Head of the Bureau']
+    .filter((part) => part.trim() !== '')
+    .join(', ');
 
 /** Radix cannot hold `''` as a select value, and "no section" is a real choice. */
 const NO_SECTION = '__none__';
@@ -72,7 +80,29 @@ const NO_SECTION = '__none__';
  * it is optional going in and guaranteed coming out. `useForm`'s third type argument is the
  * post-validation shape, which is what the submit handler is given.
  */
-type CreateFormValues = z.input<typeof createDocumentSchema>;
+/**
+ * The server's schema plus the one rule that only the form can usefully state up front: an
+ * outgoing document needs someone to be addressed to. The API accepts an empty list (older records
+ * and integrations have none), so the requirement lives here rather than in the shared contract.
+ */
+const createFormSchema = createDocumentSchema.superRefine((value, context) => {
+  if (value.direction === 'OUTGOING' && value.recipients.length === 0) {
+    context.addIssue({
+      code: 'custom',
+      path: ['recipients'],
+      message: 'Add at least one recipient',
+    });
+  }
+});
+type CreateFormValues = z.input<typeof createFormSchema>;
+
+const withoutBlankEmails = (values: CreateFormValues): CreateFormValues => ({
+  ...values,
+  recipients: values.recipients?.map((recipient) => ({
+    ...recipient,
+    emails: recipient.emails?.filter((address) => address.trim() !== ''),
+  })),
+});
 export function CreateDocumentDialog() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -90,7 +120,9 @@ export function CreateDocumentDialog() {
   const busy = create.isPending || uploadingIndex !== null;
 
   const form = useForm<CreateFormValues, unknown, CreateDocumentInput>({
-    resolver: zodResolver(createDocumentSchema),
+    // An email row left empty is "none", not an invalid address: it is dropped before validation.
+    resolver: (values, context, options) =>
+      zodResolver(createFormSchema)(withoutBlankEmails(values), context, options),
     defaultValues: {
       title: '',
       type: 'MEMORANDUM',
@@ -99,6 +131,7 @@ export function CreateDocumentDialog() {
       divisionId: user?.divisionId ?? '',
       description: '',
       sender: '',
+      recipients: [],
       company: '',
       /*
        * These three live in a collapsed panel, so they are not mounted when the form first
@@ -135,6 +168,19 @@ export function CreateDocumentDialog() {
   // Decision 168: the sender's reference belongs to an incoming letter and has no meaning on an
   // outgoing one, whose reference the server allocates (decision 169).
   const incoming = form.watch('direction') === 'INCOMING';
+  const headOfBureau = useHeadOfBureau();
+  const senderValue = form.watch('sender') ?? '';
+  const recipientCount = form.watch('recipients')?.length ?? 0;
+
+  /*
+   * One blank recipient row appears when a document becomes outgoing, so the field is there to be
+   * typed into, and the list is emptied when it becomes incoming — an incoming document has no
+   * recipients, and a leftover blank row would fail validation for a field nobody can see.
+   */
+  useEffect(() => {
+    if (!incoming && recipientCount === 0) form.setValue('recipients', [{ name: '', emails: [] }]);
+    if (incoming && recipientCount > 0) form.setValue('recipients', []);
+  }, [incoming, recipientCount, form]);
   const sections = useSections(divisionId || null);
 
   // Default to the user's own division once the list arrives, or to the only one there is. Doing
@@ -161,7 +207,14 @@ export function CreateDocumentDialog() {
    * this awaits each upload rather than firing them in parallel: the first failure is reported
    * with the filename that caused it, not as one opaque rejection out of five.
    */
+  /*
+   * Registering writes a tracking number that goes on paper, so a valid form is held and read back
+   * to the clerk first. Only the confirm button runs the submit.
+   */
+  const [pending, setPending] = useState<CreateDocumentInput | null>(null);
+
   const onSubmit = async (values: CreateDocumentInput) => {
+    setPending(null);
     setFormError(null);
 
     let document: Awaited<ReturnType<typeof create.mutateAsync>>;
@@ -215,7 +268,10 @@ export function CreateDocumentDialog() {
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
+          <form
+            onSubmit={form.handleSubmit((values) => setPending(values))}
+            className="flex flex-col gap-3"
+          >
             {formError === null ? null : (
               <Alert variant="destructive">
                 <AlertCircle />
@@ -326,25 +382,49 @@ export function CreateDocumentDialog() {
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="sender"
-              render={({ field }) => (
+            {incoming ? (
+              <FormField
+                control={form.control}
+                name="sender"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sender</FormLabel>
+                    <FormControl>
+                      <SuggestInput
+                        kind="sender"
+                        name={field.name}
+                        ref={field.ref}
+                        onBlur={field.onBlur}
+                        maxLength={240}
+                        value={senderValue}
+                        onChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : (
+              <>
+                {/*
+                  An outgoing document is always sent in the Head of the Bureau's name, so the
+                  sender is shown and not asked for. The server sets it from the office settings
+                  whatever this form sends; showing it here is what lets the clerk see it.
+                */}
                 <FormItem>
-                  <FormLabel>Sender</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  {/*
-                    No "required for incoming" hint under the field. The shared schema already
-                    says it, in the same words, at the moment it is actually true — a standing
-                    line of grey text repeats that for every clerk filing outgoing mail, who it
-                    does not apply to.
-                  */}
-                  <FormMessage />
+                  <FormLabel htmlFor="register-sender">Sender</FormLabel>
+                  <Input
+                    id="register-sender"
+                    readOnly
+                    value={headOfBureau.data === undefined ? '' : senderLabel(headOfBureau.data)}
+                  />
+                  <FormDescription>
+                    Outgoing documents are always sent by the Head of the Bureau.
+                  </FormDescription>
                 </FormItem>
-              )}
-            />
+                <RecipientsField disabled={busy} />
+              </>
+            )}
 
             {/*
               Subject is on the form, not folded into an optional panel. It is the line the bureau's
@@ -399,7 +479,11 @@ export function CreateDocumentDialog() {
             */}
             <OptionalSection
               title="More details"
-              summary="Priority, section, target date, company, email"
+              summary={
+                incoming
+                  ? 'Priority, section, target date, company, email'
+                  : 'Priority, section, target date, company'
+              }
               hasError={hasDetailErrors}
             >
               {/*
@@ -508,30 +592,32 @@ export function CreateDocumentDialog() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email address</FormLabel>
-                      <FormControl>
-                        {/*
+                {incoming ? (
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email address</FormLabel>
+                        <FormControl>
+                          {/*
                           `type="email"` for the keyboard it brings up on a phone and for the browser's
                           own hint; the contract validates it properly either way, because a type
                           attribute is a convenience and not a check.
                         */}
-                        <Input
-                          type="email"
-                          autoComplete="off"
-                          placeholder="sender@agency.gov.ph"
-                          {...field}
-                          value={field.value ?? ''}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                          <Input
+                            type="email"
+                            autoComplete="off"
+                            placeholder="sender@agency.gov.ph"
+                            {...field}
+                            value={field.value ?? ''}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
               </div>
             </OptionalSection>
 
@@ -574,6 +660,46 @@ export function CreateDocumentDialog() {
           </form>
         </Form>
       </DialogContent>
+      <ConfirmDialog
+        open={pending !== null}
+        onOpenChange={(next) => {
+          if (!next) setPending(null);
+        }}
+        title="Register this document?"
+        description="A tracking number is assigned as soon as you confirm, and it goes on the physical document."
+        confirmLabel="Register"
+        busy={busy}
+        onConfirm={() => {
+          if (pending !== null) void onSubmit(pending);
+        }}
+      >
+        {pending === null ? null : (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+            <dt className="text-muted-foreground">Title</dt>
+            <dd className="min-w-0 break-words">{pending.title}</dd>
+            <dt className="text-muted-foreground">Direction</dt>
+            <dd>{pending.direction === 'OUTGOING' ? 'Outgoing' : 'Incoming'}</dd>
+            <dt className="text-muted-foreground">Sender</dt>
+            <dd className="min-w-0 break-words">
+              {pending.direction === 'OUTGOING' ? senderLabel(headOfBureau.data) : pending.sender}
+            </dd>
+            {pending.direction === 'OUTGOING' ? (
+              <>
+                <dt className="text-muted-foreground">To</dt>
+                <dd className="min-w-0 break-words">
+                  {pending.recipients.map((recipient) => recipient.name).join('; ')}
+                </dd>
+              </>
+            ) : null}
+            {staged.length === 0 ? null : (
+              <>
+                <dt className="text-muted-foreground">Files</dt>
+                <dd>{staged.length}</dd>
+              </>
+            )}
+          </dl>
+        )}
+      </ConfirmDialog>
     </Dialog>
   );
 }

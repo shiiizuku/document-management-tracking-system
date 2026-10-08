@@ -37,6 +37,8 @@ const serve = () => {
     if (path === '/auth/me') return Promise.resolve(sessionUser());
     if (path === '/divisions') return Promise.resolve([division()]);
     if (path.startsWith('/divisions/')) return Promise.resolve([section()]);
+    if (path === '/office/head-of-bureau')
+      return Promise.resolve({ name: '', title: 'Regional Director' });
     if (path.startsWith('/documents/') && path.endsWith('/metadata'))
       return Promise.resolve(documentDetail());
     return Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 });

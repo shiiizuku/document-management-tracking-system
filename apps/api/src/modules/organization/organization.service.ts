@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type {
   CreateDivisionInput,
+  HeadOfBureau,
   CreateSectionInput,
   Role,
   UpdateDivisionInput,
@@ -48,6 +49,25 @@ export class OrganizationService {
     private readonly authorization: AuthorizationService,
     private readonly audit: AuditWriter,
   ) {}
+
+  async getHeadOfBureau(actor: RequestUser): Promise<HeadOfBureau> {
+    this.authorization.assert(actor, 'organization:read');
+    return this.repository.getHeadOfBureau();
+  }
+
+  async setHeadOfBureau(actor: RequestUser, input: HeadOfBureau): Promise<HeadOfBureau> {
+    this.authorization.assert(actor, 'organization:update');
+    const saved = await this.repository.setHeadOfBureau(input, actor.id);
+    await this.audit.write({
+      actorId: actor.id,
+      action: 'office.head-of-bureau-updated',
+      targetType: 'office',
+      targetId: 'office',
+      outcome: 'SUCCESS',
+      summary: { name: saved.name, title: saved.title },
+    });
+    return saved;
+  }
 
   async listDivisions(actor: RequestUser): Promise<DivisionRow[]> {
     this.authorization.assert(actor, 'organization:read');

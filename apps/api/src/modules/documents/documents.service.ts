@@ -39,7 +39,13 @@ import {
   type RouteCustody,
 } from '../workflow/workflow.service.js';
 // The presented vocabulary, which includes the derived `PENDING`; see `TimelineEntry`.
-import type { ReleaseCarrier, ReleaseMethod, WorkflowStatus } from '@dts/contracts';
+import type {
+  DocumentRecipient,
+  NameSuggestionsQuery,
+  ReleaseCarrier,
+  ReleaseMethod,
+  WorkflowStatus,
+} from '@dts/contracts';
 import {
   DocumentsRepository,
   type DashboardActivityEntry,
@@ -88,6 +94,7 @@ export interface PublicDocument {
   sender: string | null;
   company: string | null;
   email: string | null;
+  recipients: DocumentRecipient[];
   divisionId: string;
   sectionId: string | null;
   createdById: string;
@@ -286,6 +293,7 @@ export class DocumentsService {
       sender: row.sender,
       company: row.company,
       email: row.email,
+      recipients: row.recipients,
       divisionId: row.divisionId,
       sectionId: row.sectionId,
       createdById: row.createdById,
@@ -330,6 +338,13 @@ export class DocumentsService {
       : false;
   }
 
+  // ------------------------------------------------------------------- suggestions
+
+  /** Autocomplete for the create form. Any signed-in reader may ask; scope is applied in SQL. */
+  suggestNames(actor: RequestUser, input: NameSuggestionsQuery): Promise<string[]> {
+    return this.repository.suggestNames(actor, input.kind, input.q);
+  }
+
   // ------------------------------------------------------------------- create
 
   async create(actor: RequestUser, input: CreateDocumentInput): Promise<PublicDocument> {
@@ -365,7 +380,13 @@ export class DocumentsService {
           priority: input.priority,
           direction: input.direction,
           status: 'IN_PROCESS',
-          sender: input.sender ?? null,
+          // An outgoing document is always sent in the Head of the Bureau's name, whatever the
+          // client put in `sender`; recipients belong to outgoing mail only.
+          sender:
+            input.direction === 'OUTGOING'
+              ? await this.repository.headOfBureauSender(tx)
+              : (input.sender ?? null),
+          recipients: input.direction === 'OUTGOING' ? input.recipients : [],
           company: input.company ?? null,
           email: input.email ?? null,
           divisionId: input.divisionId,

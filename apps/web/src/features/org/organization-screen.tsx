@@ -34,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/dts/empty-state';
 import { PageHeader } from '@/components/dts/page-header';
 import { applyServerErrors } from '@/lib/forms';
+import { HeadOfBureauCard } from './head-of-bureau-card';
 import {
   useCreateDivision,
   useCreateSection,
@@ -89,6 +90,8 @@ export function OrganizationScreen() {
         description="Divisions and their sections. Codes are fixed once created — they appear in issued reference numbers."
         actions={<DivisionDialog />}
       />
+
+      <HeadOfBureauCard />
 
       {divisions.isPending ? (
         <div className="space-y-3" aria-hidden>

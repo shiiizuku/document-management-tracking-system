@@ -38,6 +38,7 @@ import {
   documentSequences,
   documentShares,
   documents,
+  officeSettings,
   referenceCounters,
   releaseCarriers,
   releaseEvents,
@@ -248,6 +249,55 @@ export class DocumentsRepository {
     const [row] = await executor.insert(documents).values(values).returning();
     if (!row) throw new Error('Insert of a document returned no row');
     return row;
+  }
+
+  /**
+   * What an outgoing document reads as its sender: the Head of the Bureau's name and title from
+   * `office_settings`. A blank name leaves the title alone, which is honest until an administrator
+   * has filled it in.
+   */
+  async headOfBureauSender(executor: DatabaseExecutor = this.database): Promise<string> {
+    const [row] = await executor.select().from(officeSettings).where(eq(officeSettings.id, 1));
+    const title = row?.headOfBureauTitle ?? 'Regional Director';
+    return [row?.headOfBureauName ?? '', title].filter((part) => part.trim() !== '').join(', ');
+  }
+
+  /**
+   * Names already used as the sender of an incoming document or as a recipient of an outgoing one,
+   * for autocomplete. Drawn through {@link documentScopeFor} so a suggestion can never reveal a
+   * correspondent from a document the caller may not read, and never from a confidential one at
+   * all — a name is the very thing confidentiality is protecting there.
+   */
+  async suggestNames(
+    actor: AuthorizationActor,
+    kind: 'sender' | 'recipient',
+    query: string,
+    limit = 8,
+  ): Promise<string[]> {
+    // `%`, `_` and the escape character are literal in a name, not LIKE wildcards.
+    const pattern = `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+    const visible = and(
+      isNull(documents.deletedAt),
+      eq(documents.confidential, false),
+      documentScopeFor(actor),
+    );
+    if (kind === 'sender') {
+      const rows = await this.database
+        .selectDistinct({ name: documents.sender })
+        .from(documents)
+        .where(and(visible, eq(documents.direction, 'INCOMING'), ilike(documents.sender, pattern)))
+        .orderBy(asc(documents.sender))
+        .limit(limit);
+      return rows.flatMap((row) => (row.name === null ? [] : [row.name]));
+    }
+    // No alias on `documents`: the scope predicate names its columns as `documents.<column>`.
+    const result = await this.database.execute<{ name: string }>(sql`
+      select distinct r.value ->> 'name' as name
+      from ${documents}, jsonb_array_elements(${documents.recipients}) as r(value)
+      where ${visible} and ${documents.direction} = 'OUTGOING' and r.value ->> 'name' ilike ${pattern}
+      order by name
+      limit ${limit}`);
+    return result.rows.map((row) => row.name);
   }
 
   /** Unscoped fetch of a live (not soft-deleted) document. */

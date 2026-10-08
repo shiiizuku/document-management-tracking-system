@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateDivisionInput,
   CreateSectionInput,
+  HeadOfBureau,
   UpdateDivisionInput,
   UpdateSectionInput,
 } from '@dts/contracts';
@@ -40,6 +41,7 @@ export interface Section {
 }
 
 const orgKeys = {
+  headOfBureau: ['org', 'head-of-bureau'] as const,
   divisions: ['org', 'divisions'] as const,
   sections: (divisionId: string) => ['org', 'sections', divisionId] as const,
 };
@@ -50,6 +52,27 @@ const orgKeys = {
  * otherwise re-request a list that cannot have changed.
  */
 const ORG_STALE_TIME = 30 * 60_000;
+
+/**
+ * Who every outgoing document is sent in the name of. Read by the register form to show the
+ * sender it cannot change, and by the organization console, which is where it is changed.
+ */
+export function useHeadOfBureau() {
+  return useQuery({
+    queryKey: orgKeys.headOfBureau,
+    queryFn: () => api<HeadOfBureau>('/office/head-of-bureau'),
+    staleTime: ORG_STALE_TIME,
+  });
+}
+
+export function useUpdateHeadOfBureau() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: HeadOfBureau) =>
+      api<HeadOfBureau>('/office/head-of-bureau', { method: 'PUT', body: JSON.stringify(input) }),
+    onSuccess: () => invalidateOrg(client),
+  });
+}
 
 export function useDivisions() {
   return useQuery({

@@ -46,6 +46,7 @@ export const documentItem = (overrides: Partial<DocumentListItem> = {}): Documen
   trackingNumber: 'DTS-2026-000001',
   referenceNumber: 'REF-9',
   email: null,
+  recipients: [],
   title: 'Incoming budget letter',
   type: 'LETTER',
   description: 'Covering letter for the quarterly budget submission.',

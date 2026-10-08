@@ -143,6 +143,40 @@ export class InMemoryDocumentsRepository {
     return Promise.resolve(next);
   }
 
+  /** Settable by a test; the default is what a fresh database holds before an administrator names the Head. */
+  headOfBureau = 'Regional Director';
+
+  headOfBureauSender(): Promise<string> {
+    return Promise.resolve(this.headOfBureau);
+  }
+
+  suggestNames(
+    actor: AuthorizationActor,
+    kind: 'sender' | 'recipient',
+    query: string,
+  ): Promise<string[]> {
+    const needle = query.toLowerCase();
+    const names = new Set<string>();
+    for (const row of this.documents.values()) {
+      if (
+        row.deletedAt !== null ||
+        row.confidential ||
+        !this.authorization.canRead(actor, this.resource(row))
+      )
+        continue;
+      const candidates =
+        kind === 'sender'
+          ? row.direction === 'INCOMING' && row.sender !== null
+            ? [row.sender]
+            : []
+          : row.direction === 'OUTGOING'
+            ? row.recipients.map((recipient) => recipient.name)
+            : [];
+      for (const name of candidates) if (name.toLowerCase().includes(needle)) names.add(name);
+    }
+    return Promise.resolve([...names].sort());
+  }
+
   insert(values: NewDocument): Promise<DocumentRow> {
     const timestamp = now();
     const row: DocumentRow = {
@@ -150,6 +184,7 @@ export class InMemoryDocumentsRepository {
       trackingNumber: values.trackingNumber,
       referenceNumber: values.referenceNumber ?? null,
       email: values.email ?? null,
+      recipients: values.recipients ?? [],
       title: values.title,
       type: values.type,
       description: values.description ?? null,
