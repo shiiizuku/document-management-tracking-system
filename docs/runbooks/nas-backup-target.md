@@ -117,6 +117,20 @@ So the stack writes to a **local folder** and a scheduled task copies it to the 
    Get-ScheduledTask 'DTS*' | Get-ScheduledTaskInfo | Select-Object TaskName, LastRunTime, LastTaskResult
    ```
 
+5. Register the freshness check, so a job that stops is noticed (every 5 minutes):
+
+   ```powershell
+   $check = New-ScheduledTaskAction -Execute 'C:\Program Files\Git\bin\bash.exe' -WorkingDirectory 'C:\dts' -Argument 'scripts/check-backup-freshness.sh --nas //<nas-address>/<share>/dts D:/dts-archive'
+   $every5 = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5)
+   Register-ScheduledTask 'DTS backup freshness' -Action $check -Trigger $every5 -User $user -Password (Read-Host 'Windows password') `
+     -Settings (New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew)
+   ```
+
+   The script exits 1 when anything is stale, which Task Scheduler records as `LastTaskResult`
+   1; that alone is not an alert. Set `ALERT_WEBHOOK_URL` in the task's environment (or have
+   whoever is on call watch `Get-ScheduledTaskInfo 'DTS backup freshness'`) so it reaches a
+   person. See [Freshness check](#freshness-check) for what it tests.
+
 ### What the local folder costs
 
 The recovery point gains the push interval: a WAL segment closes within 60 s and reaches the NAS
@@ -174,6 +188,19 @@ findmnt -t cifs /mnt/dts-backup          # must print a line; nothing means it i
 test -f /mnt/dts-backup/.dts-archive && echo ok
 ```
 
+Docker must not start before the share is mounted. A container started against an unmounted
+`/mnt/dts-backup` writes WAL to the empty local folder under it, and mounting the share afterwards
+does not reach into the running container (bind mounts are not propagated). So make the Docker
+service wait for the mount:
+
+```bash
+systemctl edit docker      # add:  [Unit]  RequiresMountsFor=/mnt/dts-backup
+systemctl daemon-reload
+```
+
+After a reboot, before trusting the stack, run `findmnt -t cifs /mnt/dts-backup` and
+`test -f /mnt/dts-backup/.dts-archive && echo ok`; nothing printed means it is not the NAS.
+
 Set `BACKUP_PATH=/mnt/dts-backup` in `.env`, then `docker compose up -d postgres minio`. The same
 trap applies: if the share is not mounted, `/mnt/dts-backup` is an empty local folder and Docker
 uses it without complaint. The jobs check the marker first. Root's crontab:
@@ -183,10 +210,41 @@ uses it without complaint. The jobs check the marker first. Root's crontab:
 30 1 * * *   cd /opt/dts && test -f /mnt/dts-backup/.dts-archive && flock /run/dts-mirror.lock bash scripts/backup.sh >> /var/log/dts-backup.log 2>&1
 ```
 
+And the freshness check, from the same crontab (see [Freshness check](#freshness-check)):
+
+```
+*/5 * * * *  cd /opt/dts && bash scripts/check-backup-freshness.sh --nas /mnt/dts-backup /mnt/dts-backup >> /var/log/dts-backup.log 2>&1 || logger -t dts-backup 'backup freshness check failed'
+```
+
+On Linux the archive and the NAS are the same mount, so `--nas` there verifies the markers and the
+mount marker rather than a second copy.
+
 **Not yet exercised:** Postgres's `archive_command` and the mirror writing to a CIFS mount from
 inside a container. The D3 rehearsal could not test it (its Windows workstation cannot mount the
 share into Docker without storing the password). The ownership options above are the usual answer.
 The checks in section 4 catch it if they are not.
+
+## Freshness check
+
+`scripts/check-backup-freshness.sh` is the alarm for P-13. Each job leaves a proof of its last good
+run: `mirror-objects.sh` touches `.status/objects` and `backup.sh` touches `.status/base` in the
+archive, and the push carries them to the NAS with their times. The check reads those, so it
+notices a job that has stopped even though the last good copy is still sitting there.
+
+| Check | Stale when |
+| --- | --- |
+| `objects` | the last good mirror pass is more than 7 minutes old (one missed pass plus the push) |
+| `base` | the last good base backup is more than 26 hours old |
+| `archiver` | the postgres container is not running, or `pg_stat_archiver` shows a failure after its last success (skipped only when `docker` is absent) |
+| `nas-push` | `.status/pushed` on the NAS is more than 5 minutes old. `push-archive.ps1` writes it only after a whole successful copy, so a push that copied the markers and then failed on a later file shows up here |
+| `nas-obj`, `nas-base` | the same two markers on the NAS are stale or missing |
+| `nas-wal` | the newest local WAL segment old enough to have been pushed is not on the NAS |
+| `nas` | the share has no `.dts-archive` marker (not mounted, or not the NAS) |
+
+WAL is judged by the archiver and by the NAS comparison, not by file age: Postgres closes a segment
+each minute only while there is activity, so an idle night would look stale. Thresholds can be set
+with `OBJECTS_MAX_AGE`, `BASE_MAX_AGE` and `PUSH_GRACE` (seconds). It is a check on the jobs, not a
+restore: the rehearsal in section 4 is still the proof that the copies are usable.
 
 ## 4. Before calling it done
 
@@ -196,6 +254,8 @@ The checks in section 4 catch it if they are not.
 - [ ] `select failed_count from pg_stat_archiver` is 0.
 - [ ] The mirror runs every 3 minutes and the base backup nightly: check the task history or
       `/var/log/dts-backup.log`.
+- [ ] `bash scripts/check-backup-freshness.sh --nas <nas> <archive>` prints no `STALE` line. Then
+      stop the push for 10 minutes and confirm the check fails and the alert reaches a person.
 - [ ] A restore has been rehearsed from the NAS (`backup-restore.md`, Rehearsing).
 
 ## Restoring onto a replacement server

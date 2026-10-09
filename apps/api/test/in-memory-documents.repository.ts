@@ -466,6 +466,22 @@ export class InMemoryDocumentsRepository {
     return Promise.resolve(row === undefined ? null : { ...row });
   }
 
+  /** No labels configured: callers fall back to the code. */
+  documentTypeLabels(): Promise<Map<string, string>> {
+    return Promise.resolve(new Map<string, string>());
+  }
+
+  /** Every code is offered unless a test retires it. */
+  private readonly retiredDocumentTypes = new Set<string>();
+
+  retireDocumentTypeForTest(code: string): void {
+    this.retiredDocumentTypes.add(code);
+  }
+
+  isActiveDocumentType(code: string): Promise<boolean> {
+    return Promise.resolve(!this.retiredDocumentTypes.has(code));
+  }
+
   hasActiveAssignment(documentId: string, userId: string): Promise<boolean> {
     return Promise.resolve(this.assignments.get(documentId)?.has(userId) ?? false);
   }

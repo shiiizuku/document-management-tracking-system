@@ -15,6 +15,7 @@ const row = (overrides: Partial<ReportDocument>): ReportDocument => ({
   recipients: [],
   company: 'Public',
   type: 'MEMORANDUM',
+  typeLabel: 'Memorandum',
   direction: 'INCOMING',
   divisionId: 'division-a',
   sectionId: 'section-a1',
@@ -74,5 +75,14 @@ describe('monthly report exports', () => {
     const xml = strFromU8(detailSheet!);
     expect(xml).not.toContain('<f>');
     expect(xml).toContain('&apos;=HYPERLINK');
+  });
+
+  it("prints the administrator's label for the type, not its code", async () => {
+    const workbook = await new ReportExportService().monthlyXlsx(
+      report([row({ type: 'NOTICE_OF_VIOLATION', typeLabel: 'Notice of Violation' })]),
+    );
+    const xml = strFromU8(unzipSync(workbook)['xl/worksheets/sheet2.xml']!);
+    expect(xml).toContain('Notice of Violation');
+    expect(xml).not.toContain('NOTICE_OF_VIOLATION');
   });
 });

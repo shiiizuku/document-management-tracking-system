@@ -25,8 +25,8 @@ import {
 import { EmptyState } from '@/components/dts/empty-state';
 import { PageHeader } from '@/components/dts/page-header';
 import { TableRowsSkeleton, TilesSkeleton } from '@/components/dts/skeletons';
-import { documentTypeLabel } from '@/components/dts/status-badge';
 import { MONTH_NAMES, monthName, useMonthlyReport, useReportDownload } from './queries';
+import { useDocumentTypeLabel } from '@/features/org/queries';
 
 /** Six years back is as far as the picker goes; anything older is a records-retention question. */
 const YEARS_OFFERED = 6;
@@ -39,6 +39,7 @@ const YEARS_OFFERED = 6;
  * artefact you send is the exported file, which carries its own period in its filename.
  */
 export function ReportsScreen() {
+  const typeLabel = useDocumentTypeLabel();
   const now = new Date();
   const [year, setYear] = useState(now.getUTCFullYear());
   const [month, setMonth] = useState(now.getUTCMonth() + 1);
@@ -222,7 +223,7 @@ export function ReportsScreen() {
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {documentTypeLabel(entry.type)}
+                      {typeLabel(entry.type)}
                     </TableCell>
                     <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
                       {entry.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}

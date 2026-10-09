@@ -1,4 +1,5 @@
 import { hash } from 'bcryptjs';
+import { eq } from 'drizzle-orm';
 import { config } from 'dotenv';
 import { createDatabase } from './client.js';
 import {
@@ -8,6 +9,44 @@ import {
 } from '../config/environment.js';
 import { ORD_DIVISION_CODE } from '../modules/organization/organization.constants.js';
 import { divisions, sections, users } from './schema.js';
+
+const MGB_REGION_3_DIVISIONS = [
+  {
+    code: 'MMD',
+    name: 'Mine Management Division',
+    sections: [
+      { code: 'MTSS', name: 'Monitoring and Technical Services Section' },
+      { code: 'MTES', name: 'Mining Tenement Evaluation Section' },
+      { code: 'MLSS', name: 'Mineral Lands Survey Section' },
+    ],
+  },
+  {
+    code: 'MSESDD',
+    name: 'Mine Safety, Environment and Social Development Division',
+    sections: [
+      { code: 'MSHS', name: 'Mine Safety and Health Section' },
+      { code: 'MEMS', name: 'Mine Environmental Management Section' },
+      { code: 'SDS', name: 'Social Development Section' },
+    ],
+  },
+  {
+    code: 'GD',
+    name: 'Geosciences Division',
+    sections: [
+      { code: 'GHEGS', name: 'Geohazard and Engineering Geology Section' },
+      { code: 'GENEGS', name: 'General and Economic Geology Section' },
+      { code: 'HEGS', name: 'Hydrogeology and Environmental Geology Section' },
+    ],
+  },
+  {
+    code: 'FAD',
+    name: 'Finance and Administrative Division',
+    sections: [
+      { code: 'FIN', name: 'Finance Section' },
+      { code: 'ADMIN', name: 'Administrative Section' },
+    ],
+  },
+] as const;
 
 config({ path: new URL('../../../../.env', import.meta.url) });
 
@@ -67,6 +106,30 @@ try {
       set: { code: 'GENERAL', active: true, updatedAt: new Date() },
     })
     .returning();
+  /*
+   * The regional office's own divisions and sections, as published in MGB Region III's
+   * "Directory of Key Officials" (region3.mgb.gov.ph/directory-of-key-officials, read 2026-10-09).
+   * The Director's Office there is the ORD above.
+   *
+   * Insert-if-missing, never update: an administrator may have renamed or retired one of these
+   * since, and a re-run of the seed must not undo that. Division codes become the prefix of
+   * reference numbers issued on paper (decision 153), so they are chosen once here and not
+   * derived from the names.
+   */
+  for (const division of MGB_REGION_3_DIVISIONS) {
+    await db
+      .insert(divisions)
+      .values({ code: division.code, name: division.name })
+      .onConflictDoNothing();
+    const [row] = await db.select().from(divisions).where(eq(divisions.code, division.code));
+    // A division of the same name under another code was created by hand; leave it be.
+    if (!row) continue;
+    for (const section of division.sections)
+      await db
+        .insert(sections)
+        .values({ divisionId: row.id, code: section.code, name: section.name })
+        .onConflictDoNothing();
+  }
   const passwordHash = await hash(seedAdminPassword ?? 'Admin@12345!', 12);
   await db
     .insert(users)

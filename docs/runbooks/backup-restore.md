@@ -32,6 +32,7 @@ host `BACKUP_PATH` is the mounted share. On a Windows host Docker cannot write t
 | `scripts/mirror-objects.sh` | every 3 minutes | Bounds what attachments lose to the same few minutes as the rows that point at them. 5 minutes plus the push to the NAS can exceed P-13 |
 | `scripts/backup.sh` | nightly | Bounds replay time on restore; runs a mirror pass too |
 | `scripts/push-archive.ps1` | every minute, Windows hosts only | Copies the local archive to the NAS |
+| `scripts/check-backup-freshness.sh` | every 5 minutes | Fails when a job above has stopped producing fresh copies; see [`nas-backup-target.md`](nas-backup-target.md#freshness-check) |
 
 How each is scheduled on the pilot host (Task Scheduler on Windows, cron on Linux) is in
 [`nas-backup-target.md`](nas-backup-target.md).

@@ -7,7 +7,7 @@ import type {
   ReferenceDocumentSummary,
 } from '../src/features/documents/queries';
 import type { Notification } from '../src/features/notifications/queries';
-import type { Division, Section } from '../src/features/org/queries';
+import type { Division, DocumentType, Section } from '../src/features/org/queries';
 import type { MonthlyReport } from '../src/features/reports/queries';
 import type { SessionUser } from '../src/features/session/queries';
 
@@ -237,3 +237,13 @@ export const section = (overrides: Partial<Section> = {}): Section => ({
   active: true,
   ...overrides,
 });
+
+/** The document types migration `0016` seeds, as `GET /document-types` returns them. */
+export const documentTypes = (): DocumentType[] =>
+  [
+    ['MEMORANDUM', 'Memorandum'],
+    ['FOI_REQUEST', 'FOI request'],
+    ['SPECIAL_ORDER', 'Special order'],
+    ['LETTER', 'Letter'],
+    ['DENR_8888_ACTION_CENTER', 'DENR 8888 Action Center'],
+  ].map(([code, label]) => ({ id: `type-${code}`, code: code!, label: label!, active: true }));

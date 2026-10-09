@@ -134,7 +134,7 @@ export class ReportExportService {
         sanitizeSpreadsheetCell(row.title),
         sanitizeSpreadsheetCell(row.referenceNumber ?? ''),
         row.direction,
-        sanitizeSpreadsheetCell(row.type),
+        sanitizeSpreadsheetCell(row.typeLabel),
         sanitizeSpreadsheetCell(row.sender ?? ''),
         sanitizeSpreadsheetCell(row.recipients.join('; ')),
         sanitizeSpreadsheetCell(row.company ?? ''),
@@ -195,7 +195,7 @@ export class ReportExportService {
         pdf
           .fontSize(8)
           .fillColor('#68756f')
-          .text(`${row.direction} · ${row.type} · ${row.referenceNumber ?? 'No reference'}`);
+          .text(`${row.direction} · ${row.typeLabel} · ${row.referenceNumber ?? 'No reference'}`);
         if (row.recipients.length > 0)
           pdf
             .fontSize(8)
@@ -256,7 +256,7 @@ export class ReportExportService {
         ['Addressee', addressee ?? ''],
         ['Date/Time Received', stamp(document.createdAt)],
         ['Reference No.', document.referenceNumber ?? ''],
-        ['Type', document.type.replaceAll('_', ' ')],
+        ['Type', slip.typeLabel],
         ['Target Date', document.dueAt === null ? '' : stamp(document.dueAt)],
       ];
 

@@ -7,18 +7,41 @@
 #
 # `!reset` and `!override` need Docker Compose v2.24.4 or later (and Docker Engine 28+ for the loopback binding to hold on the local network): a plain `ports:` here would be
 # appended to the base file's list, not replace it.
+#
+# It also sets the restart policy. The base file has none, which is right for a laptop, but on a
+# server a crashed container or a rebooted host must bring the stack back without an operator.
+# `unless-stopped` restarts after a crash and when the Docker daemon starts, yet leaves alone a
+# service someone stopped on purpose. `migrate` is deliberately absent: it is a one-shot gate that
+# keeps `restart: 'no'` in the base file, and `api` re-waits for it on every `up`.
 services:
   postgres:
     ports: !reset []
+    restart: unless-stopped
   redis:
     ports: !reset []
+    restart: unless-stopped
   minio:
     ports: !reset []
+    restart: unless-stopped
   clamav:
     ports: !reset []
+    restart: unless-stopped
   api:
     ports: !override
       - '127.0.0.1:${API_HOST_PORT:-4001}:4000'
+    restart: unless-stopped
+  worker:
+    restart: unless-stopped
+    # `restart:` is applied by the Docker daemon, which ignores `depends_on`: after a reboot the
+    # worker would start beside Redis at once and spend its five job retries (about 15 seconds)
+    # before ClamAV, which takes minutes to load its definitions, answers. The attachment would sit
+    # at "scan pending" until an operator requeued it. So wait for what a job needs first; on a
+    # normal `up` Compose has already gated this on `api` and the wait is instant.
+    command:
+      - sh
+      - -c
+      - until nc -z postgres 5432 && nc -z redis 6379 && nc -z minio 9000 && nc -z clamav 3310; do sleep 2; done; exec node apps/api/dist/worker.js
   web:
     ports: !override
       - '127.0.0.1:${WEB_HOST_PORT:-3001}:3000'
+    restart: unless-stopped

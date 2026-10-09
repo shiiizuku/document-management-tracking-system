@@ -113,6 +113,33 @@ describe('REST /api/v1 public seam', () => {
     expect(afterAccept.body.data).toContain('COMPLY');
   });
 
+  it('refuses to register a document under a type the administrator has retired', async () => {
+    app
+      .get<InMemoryDocumentsRepository>(DocumentsRepository)
+      .retireDocumentTypeForTest('SPECIAL_ORDER');
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'records@dts.local', password: 'Records@1234!' })
+      .expect(201);
+
+    const refused = await request(app.getHttpServer())
+      .post('/api/v1/documents')
+      .set('Cookie', sessionCookie(login))
+      .send({
+        title: 'Old special order',
+        type: 'SPECIAL_ORDER',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'Citizen One',
+        divisionId: 'division-records',
+        sectionId: 'section-intake',
+      })
+      .expect(400);
+    expect(refused.body.error.message).toBe(
+      'That document type does not exist or has been retired',
+    );
+  });
+
   it('pages the registry by cursor: every document once, in order, and a foreign cursor refused', async () => {
     const login = await request(app.getHttpServer())
       .post('/api/v1/auth/login')

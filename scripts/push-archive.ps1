@@ -30,4 +30,11 @@ $code = $LASTEXITCODE
 # Robocopy exit codes 0-7 are success (bit flags for copied/extra/mismatched); 8 and up are failures.
 Add-Content $Log "$started rc=$code"
 if ($code -ge 8) { exit $code }
+
+# Proof that the whole copy finished: written only after robocopy reported success, so a push that
+# copied the markers and then failed on a later file leaves this one stale. Read by
+# scripts/check-backup-freshness.sh.
+$status = Join-Path $Destination '.status'
+New-Item -ItemType Directory -Force $status | Out-Null
+Set-Content -LiteralPath (Join-Path $status 'pushed') -Value $started
 exit 0
