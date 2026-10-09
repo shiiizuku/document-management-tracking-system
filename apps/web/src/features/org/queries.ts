@@ -1,13 +1,17 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import type {
   CreateDivisionInput,
+  CreateDocumentTypeInput,
   CreateSectionInput,
   HeadOfBureau,
   UpdateDivisionInput,
+  UpdateDocumentTypeInput,
   UpdateSectionInput,
 } from '@dts/contracts';
+import { documentTypeLabel } from '@/components/dts/status-badge';
 import { api } from '@/lib/api';
 
 /**
@@ -40,8 +44,17 @@ export interface Section {
   active: boolean;
 }
 
+/** A document type on the administrator's list. `code` is what a document stores. */
+export interface DocumentType {
+  id: string;
+  code: string;
+  label: string;
+  active: boolean;
+}
+
 const orgKeys = {
   headOfBureau: ['org', 'head-of-bureau'] as const,
+  documentTypes: ['org', 'document-types'] as const,
   divisions: ['org', 'divisions'] as const,
   sections: (divisionId: string) => ['org', 'sections', divisionId] as const,
 };
@@ -141,6 +154,67 @@ export function useUpdateSection() {
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: UpdateSectionInput }) =>
       api<Section>(`/sections/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    onSuccess: () => invalidateOrg(client),
+  });
+}
+
+/**
+ * The document types. Under `['org']` so a change made on the administration screen settles every
+ * picker through `invalidateOrg`. Administrators get retired types too; everyone else only the
+ * ones on offer.
+ */
+export function useDocumentTypes() {
+  return useQuery({
+    queryKey: orgKeys.documentTypes,
+    queryFn: () => api<DocumentType[]>('/document-types'),
+    staleTime: ORG_STALE_TIME,
+  });
+}
+
+/**
+ * The display name for a stored type code: the administrator's label when the list has it, the
+ * code tidied into words when it does not — while the list loads, or for a code another role's
+ * list leaves out.
+ */
+export function useDocumentTypeLabel(): (code: string) => string {
+  const types = useDocumentTypes();
+  const data = types.data;
+  return useCallback(
+    (code: string) => data?.find((type) => type.code === code)?.label ?? documentTypeLabel(code),
+    [data],
+  );
+}
+
+/**
+ * The types a document may be filed under now, for a type picker. `current` is kept in the list
+ * even when it is retired, or has not loaded yet, so a picker never shows a blank for the value it
+ * holds — editing a document filed under a retired type must not silently reclassify it.
+ */
+export function useOfferedDocumentTypes(current?: string): { code: string; label: string }[] {
+  const types = useDocumentTypes();
+  const labelOf = useDocumentTypeLabel();
+  const offered = (types.data ?? [])
+    .filter((type) => type.active)
+    .map(({ code, label }) => ({ code, label }));
+  if (current && !offered.some((type) => type.code === current))
+    offered.unshift({ code: current, label: labelOf(current) });
+  return offered;
+}
+
+export function useCreateDocumentType() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateDocumentTypeInput) =>
+      api<DocumentType>('/document-types', { method: 'POST', body: JSON.stringify(input) }),
+    onSuccess: () => invalidateOrg(client),
+  });
+}
+
+export function useUpdateDocumentType() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateDocumentTypeInput }) =>
+      api<DocumentType>(`/document-types/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     onSuccess: () => invalidateOrg(client),
   });
 }

@@ -42,6 +42,7 @@ import {
   officeSettings,
   referenceCounters,
   releaseCarriers,
+  documentTypes,
   releaseEvents,
   releaseMethods,
   sections,
@@ -1269,6 +1270,23 @@ export class DocumentsRepository {
       .from(releaseCarriers)
       .where(includeInactive ? undefined : eq(releaseCarriers.active, true))
       .orderBy(asc(releaseCarriers.sortOrder), asc(releaseCarriers.label));
+  }
+
+  /** Every type's label by code, retired ones included — for printing documents filed under them. */
+  async documentTypeLabels(): Promise<Map<string, string>> {
+    const rows = await this.database
+      .select({ code: documentTypes.code, label: documentTypes.label })
+      .from(documentTypes);
+    return new Map(rows.map((row) => [row.code, row.label]));
+  }
+
+  /** Whether a document type code is on the administrator's list and still offered. */
+  async isActiveDocumentType(code: string): Promise<boolean> {
+    const [row] = await this.database
+      .select({ id: documentTypes.id })
+      .from(documentTypes)
+      .where(and(eq(documentTypes.code, code), eq(documentTypes.active, true)));
+    return row !== undefined;
   }
 
   /** The active carrier for a code, or null, on the same terms as the method lookup above. */

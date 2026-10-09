@@ -44,14 +44,19 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog } from '@/components/dts/confirm-dialog';
-import { documentTypeLabel } from '@/components/dts/status-badge';
 import { useUploadAttachmentToDocument } from '@/features/attachments/queries';
-import { useDivisions, useHeadOfBureau, useSections } from '@/features/org/queries';
+import {
+  useDivisions,
+  useDocumentTypes,
+  useHeadOfBureau,
+  useOfferedDocumentTypes,
+  useSections,
+} from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { applyServerErrors } from '@/lib/forms';
 import { cn } from '@/lib/utils';
 import { dueDateToIso, isoToDueDate } from './due-date';
-import { DOCUMENT_TYPES, useCreateDocument } from './queries';
+import { useCreateDocument } from './queries';
 import { RecipientsField, SuggestInput } from './recipients-field';
 
 /** "Name, Title", tolerating a blank name and a setting that has not loaded yet. */
@@ -186,6 +191,23 @@ export function CreateDocumentDialog() {
   // Default to the user's own division once the list arrives, or to the only one there is. Doing
   // it here rather than in `defaultValues` is what covers the case where the session resolved
   // after the form was constructed.
+  /*
+   * `MEMORANDUM` is the default because it is what most mail is, but an administrator can retire
+   * it. Once the list is known, a default it no longer offers moves to the first type it does.
+   */
+  const documentTypes = useDocumentTypes();
+  const type = form.watch('type');
+  // The current value stands in only while the list loads; a failed load blocks registration
+  // instead, rather than filing everything under a default nobody chose.
+  const typeOptions = useOfferedDocumentTypes(documentTypes.isPending ? type : undefined);
+  const typesFailed = documentTypes.isError;
+  useEffect(() => {
+    const offered = documentTypes.data?.filter((option) => option.active);
+    if (offered === undefined || offered.some((option) => option.code === type)) return;
+    const first = offered[0];
+    if (first) form.setValue('type', first.code);
+  }, [documentTypes.data, type, form]);
+
   useEffect(() => {
     if (divisionId) return;
     const fallback = user?.divisionId ?? divisions.data?.[0]?.id;
@@ -338,13 +360,25 @@ export function CreateDocumentDialog() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {DOCUMENT_TYPES.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {documentTypeLabel(option)}
+                        {typeOptions.map((option) => (
+                          <SelectItem key={option.code} value={option.code}>
+                            {option.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {typesFailed ? (
+                      <p role="alert" className="text-sm text-destructive">
+                        Document types could not be loaded.{' '}
+                        <button
+                          type="button"
+                          className="underline"
+                          onClick={() => void documentTypes.refetch()}
+                        >
+                          Try again
+                        </button>
+                      </p>
+                    ) : null}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -650,7 +684,7 @@ export function CreateDocumentDialog() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={busy || typesFailed}>
                 {busy ? <Loader2 className="animate-spin" /> : null}
                 {uploadingIndex === null
                   ? 'Register document'

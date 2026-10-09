@@ -1,12 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
 import type { DatabaseExecutor } from '../../database/executor.js';
-import { divisions, officeSettings, sections } from '../../database/schema.js';
+import { divisions, documentTypes, officeSettings, sections } from '../../database/schema.js';
 
 export type DivisionRow = typeof divisions.$inferSelect;
 export type SectionRow = typeof sections.$inferSelect;
+export type DocumentTypeRow = typeof documentTypes.$inferSelect;
 
 // `exactOptionalPropertyTypes` is on, so a patch built from an optional Zod field carries
 // `| undefined` explicitly; Drizzle's `set` ignores undefined keys, which is the behaviour a
@@ -131,5 +132,38 @@ export class OrganizationRepository {
       .where(eq(sections.id, id))
       .returning();
     return section ?? null;
+  }
+
+  async listDocumentTypes(includeInactive = false): Promise<DocumentTypeRow[]> {
+    return this.database
+      .select()
+      .from(documentTypes)
+      .where(includeInactive ? undefined : eq(documentTypes.active, true))
+      .orderBy(asc(documentTypes.sortOrder), asc(documentTypes.label));
+  }
+
+  /** New types sort after every existing one, so adding a type never reorders the list. */
+  async insertDocumentType(values: { code: string; label: string }): Promise<DocumentTypeRow> {
+    const [{ next } = { next: 1 }] = await this.database
+      .select({ next: sql<number>`coalesce(max(${documentTypes.sortOrder}), 0) + 1` })
+      .from(documentTypes);
+    const [row] = await this.database
+      .insert(documentTypes)
+      .values({ ...values, sortOrder: next })
+      .returning();
+    if (!row) throw new Error('Insert of a document type returned no row');
+    return row;
+  }
+
+  async updateDocumentType(
+    id: string,
+    patch: { label?: string | undefined; active?: boolean | undefined },
+  ): Promise<DocumentTypeRow | null> {
+    const [row] = await this.database
+      .update(documentTypes)
+      .set(patch)
+      .where(eq(documentTypes.id, id))
+      .returning();
+    return row ?? null;
   }
 }

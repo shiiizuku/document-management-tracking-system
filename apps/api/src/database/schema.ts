@@ -86,6 +86,20 @@ export const releaseMethods = pgTable('release_methods', {
  * rows for the same reasons as the methods, and deactivated rather than deleted for the same
  * reason too — `release_events` cites them.
  */
+/**
+ * The document types records staff choose from at registration, maintained by the administrator.
+ * `documents.type` holds the code, deliberately without a foreign key: a type is retired by
+ * deactivating it, and the documents already filed under it keep their code (migration `0016`).
+ */
+export const documentTypes = pgTable('document_types', {
+  ...identityColumns(),
+  code: varchar('code', { length: 80 }).notNull().unique(),
+  label: varchar('label', { length: 120 }).notNull().unique(),
+  active: boolean('active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  ...timestampColumns(),
+});
+
 export const releaseCarriers = pgTable('release_carriers', {
   ...identityColumns(),
   code: varchar('code', { length: 40 }).notNull().unique(),

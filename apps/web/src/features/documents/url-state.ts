@@ -3,12 +3,7 @@ import {
   documentPrioritySchema,
   workflowStatusSchema,
 } from '@dts/contracts';
-import {
-  DEFAULT_DOCUMENT_FILTERS,
-  DOCUMENT_SORT_FIELDS,
-  DOCUMENT_TYPES,
-  type DocumentFilters,
-} from './queries';
+import { DEFAULT_DOCUMENT_FILTERS, DOCUMENT_SORT_FIELDS, type DocumentFilters } from './queries';
 
 /**
  * The registry's filter state, read from and written to the URL.
@@ -35,11 +30,20 @@ const oneOf = <T extends string>(allowed: readonly T[], raw: string | null): T |
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const asUuid = (raw: string | null): string => (raw !== null && UUID.test(raw) ? raw : '');
 
+/**
+ * Document types are rows the administrator maintains, and codes carried over by migration `0016`
+ * predate the code format new types must follow, so only the contract's length bound is checked.
+ */
+const asTypeCode = (raw: string | null): string => {
+  const value = raw?.trim() ?? '';
+  return value.length <= 80 ? value : '';
+};
+
 export const parseDocumentFilters = (params: URLSearchParams): DocumentFilters => ({
   search: params.get('search') ?? '',
   status: oneOf(workflowStatusSchema.options, params.get('status')),
   priority: oneOf(documentPrioritySchema.options, params.get('priority')),
-  type: oneOf(DOCUMENT_TYPES, params.get('type')),
+  type: asTypeCode(params.get('type')),
   direction: oneOf(documentDirectionSchema.options, params.get('direction')),
   divisionId: asUuid(params.get('divisionId')),
   // A section only means something inside a division, and the Section select is not rendered

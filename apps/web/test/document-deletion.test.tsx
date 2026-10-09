@@ -11,6 +11,16 @@ import { renderWithQuery } from './query-harness';
 
 const { apiMock, pushMock } = vi.hoisted(() => ({ apiMock: vi.fn(), pushMock: vi.fn() }));
 
+// Every request in this file answers with one fixture, so the type list the labels come from is
+// stubbed to the code-derived fallback rather than fed the fixture.
+vi.mock('../src/features/org/queries', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('../src/features/org/queries');
+  const { documentTypeLabel } = await vi.importActual<{
+    documentTypeLabel: (code: string) => string;
+  }>('../src/components/dts/status-badge');
+  return { ...actual, useDocumentTypeLabel: () => documentTypeLabel };
+});
+
 vi.mock('../src/lib/api', async () => {
   const actual = await vi.importActual<typeof ApiModule>('../src/lib/api');
   return { ...actual, api: apiMock };

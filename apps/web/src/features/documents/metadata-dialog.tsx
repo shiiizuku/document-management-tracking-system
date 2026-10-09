@@ -40,16 +40,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { documentTypeLabel } from '@/components/dts/status-badge';
+import { useOfferedDocumentTypes } from '@/features/org/queries';
 import { ApiError } from '@/lib/api';
 import { applyServerErrors } from '@/lib/forms';
 import { RecipientsField } from './recipients-field';
-import {
-  DOCUMENT_TYPES,
-  useMetadataRevisions,
-  useUpdateMetadata,
-  type DocumentDetail,
-} from './queries';
+import { useMetadataRevisions, useUpdateMetadata, type DocumentDetail } from './queries';
 
 /**
  * The editable half of a document's metadata, plus the record of who changed what.
@@ -116,6 +111,8 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
   const [showHistory, setShowHistory] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const update = useUpdateMetadata(document.id);
+  // The stored type stays selectable even once retired, so saving another field leaves it alone.
+  const typeOptions = useOfferedDocumentTypes(document.type);
   // Decision 169. The reference column holds the office's own identifier on an outgoing document
   // and the sender's on an incoming one, which changes both the label and whether it may be typed.
   const outgoing = document.direction === 'OUTGOING';
@@ -223,9 +220,9 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {DOCUMENT_TYPES.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {documentTypeLabel(option)}
+                      {typeOptions.map((option) => (
+                        <SelectItem key={option.code} value={option.code}>
+                          {option.label}
                         </SelectItem>
                       ))}
                     </SelectContent>

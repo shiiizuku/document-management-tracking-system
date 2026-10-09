@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CreateDocumentDialog } from '../src/features/documents/create-document-dialog';
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
-import { documentItem, sessionUser } from './fixtures';
+import { documentItem, documentTypes, sessionUser } from './fixtures';
 import { calledPaths, requestBody } from './mock-api';
 import { renderWithQuery } from './query-harness';
 
@@ -27,6 +27,7 @@ const serve = (onCreate: () => Promise<unknown>) =>
   apiMock.mockImplementation((path: string) => {
     if (path === '/auth/me') return Promise.resolve(sessionUser());
     if (path === '/divisions') return Promise.resolve(divisions);
+    if (path === '/document-types') return Promise.resolve(documentTypes());
     if (path.startsWith('/sections')) return Promise.resolve([]);
     if (path === '/office/head-of-bureau')
       return Promise.resolve({ name: 'Engr. Maria Santos', title: 'Regional Director' });
@@ -79,6 +80,21 @@ describe('CreateDocumentDialog', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Division')).toHaveTextContent('Records Division'),
     );
+  });
+
+  it('will not register while the document types failed to load', async () => {
+    serve(() => Promise.resolve(documentItem()));
+    const served = apiMock.getMockImplementation() as (path: string) => Promise<unknown>;
+    apiMock.mockImplementation((path: string) =>
+      path === '/document-types' ? Promise.reject(new Error('offline')) : served(path),
+    );
+    renderWithQuery(<CreateDocumentDialog />);
+    const dialog = await open();
+
+    expect(
+      await within(dialog).findByText(/Document types could not be loaded/, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Register document' })).toBeDisabled();
   });
 
   /*

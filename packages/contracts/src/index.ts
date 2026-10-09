@@ -318,6 +318,29 @@ export const updateDivisionSchema = z
 export const createSectionSchema = createDivisionSchema.extend({ divisionId: z.uuid() });
 export const updateSectionSchema = updateDivisionSchema;
 
+/**
+ * A document type the administrator adds. The code is what documents store and the registry
+ * filters on, so it is fixed once created; only the label and whether it is offered may change.
+ */
+export const createDocumentTypeSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(2)
+    .max(80)
+    .regex(/^[A-Z][A-Z0-9_]*$/, 'Code may contain uppercase letters, digits and underscores only'),
+  label: z.string().trim().min(2).max(120),
+});
+export const updateDocumentTypeSchema = z
+  .object({
+    label: z.string().trim().min(2).max(120).optional(),
+    active: z.boolean().optional(),
+  })
+  .refine(
+    (value) => value.label !== undefined || value.active !== undefined,
+    'At least one field must be supplied',
+  );
+
 export const listAccountRequestsQuerySchema = z.object({
   status: accountRequestStatusSchema.optional(),
 });
@@ -604,5 +627,7 @@ export type CreateDivisionInput = z.infer<typeof createDivisionSchema>;
 export type UpdateDivisionInput = z.infer<typeof updateDivisionSchema>;
 export type CreateSectionInput = z.infer<typeof createSectionSchema>;
 export type UpdateSectionInput = z.infer<typeof updateSectionSchema>;
+export type CreateDocumentTypeInput = z.infer<typeof createDocumentTypeSchema>;
+export type UpdateDocumentTypeInput = z.infer<typeof updateDocumentTypeSchema>;
 export type ListAccountRequestsQuery = z.infer<typeof listAccountRequestsQuerySchema>;
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;

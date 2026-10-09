@@ -6,7 +6,7 @@ import { RouteDialog } from '../src/features/documents/route-dialog';
 import type { RouteEntry } from '../src/features/documents/queries';
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
-import { documentDetail } from './fixtures';
+import { documentDetail, documentTypes } from './fixtures';
 import { requestBody } from './mock-api';
 import { renderWithQuery } from './query-harness';
 
@@ -22,12 +22,14 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const divisions = [
   { id: 'division-1', code: 'D1', name: 'Records Division', active: true },
   { id: 'division-2', code: 'D2', name: 'Legal Division', active: true },
+  { id: 'division-3', code: 'D3', name: 'Planning Division', active: true },
 ];
 
 /** Routes the org lookups, and lets a test decide what the write does. */
 const serve = (onWrite: (path: string) => Promise<unknown>) =>
   apiMock.mockImplementation((path: string) => {
     if (path === '/divisions') return Promise.resolve(divisions);
+    if (path === '/document-types') return Promise.resolve(documentTypes());
     if (path.startsWith('/sections')) return Promise.resolve([]);
     if (path.endsWith('/metadata-revisions')) return Promise.resolve([]);
     return onWrite(path);
@@ -194,13 +196,12 @@ describe('RouteDialog', () => {
         })}
       />,
     );
-    await open();
+    const dialog = await open();
 
-    await userEvent.click(screen.getByLabelText('Receiving division'));
     await waitFor(() =>
-      expect(screen.getByRole('option', { name: 'Legal Division' })).toBeInTheDocument(),
+      expect(within(dialog).getByLabelText('Legal Division')).toBeInTheDocument(),
     );
-    expect(screen.queryByRole('option', { name: 'Records Division' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Records Division')).not.toBeInTheDocument();
   });
 
   it('forwards with the version it was opened at', async () => {
@@ -208,8 +209,7 @@ describe('RouteDialog', () => {
     renderWithQuery(<RouteDialog document={documentDetail({ version: 3 })} />);
     const dialog = await open();
 
-    await userEvent.click(screen.getByLabelText('Receiving division'));
-    await userEvent.click(screen.getByRole('option', { name: 'Legal Division' }));
+    await userEvent.click(await within(dialog).findByLabelText('Legal Division'));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Forward document' }));
 
     await waitFor(() =>
@@ -226,24 +226,25 @@ describe('RouteDialog', () => {
   });
 
   /*
-   * A forward names one lead recipient and any number of divisions consulted for information
-   * (decisions 159–160). The lead leaves the copy list the moment it is chosen, because a division
-   * that both holds the document and is merely consulted is a contradiction the contract refuses.
+   * One list of divisions, but still one lead (decision 159): the first tick is the lead and every
+   * later one a copy for information (decision 160), so a division can never be both.
    */
-  it('copies other divisions in for information, never the lead', async () => {
+  it('makes the first ticked division the lead and copies the rest in', async () => {
     serve(() => Promise.resolve(documentDetail()));
-    // Sitting in Legal, so Records is the destination on offer and Legal is only consultable.
+    // Sitting in Planning, so both Records and Legal are on offer.
     renderWithQuery(
-      <RouteDialog document={documentDetail({ version: 2, divisionId: 'division-2' })} />,
+      <RouteDialog
+        document={documentDetail({
+          version: 2,
+          routes: [hop({ toDivisionId: 'division-3' })],
+        })}
+      />,
     );
     const dialog = await open();
 
+    await userEvent.click(await within(dialog).findByLabelText('Records Division'));
     await userEvent.click(within(dialog).getByLabelText('Legal Division'));
-    await userEvent.click(screen.getByLabelText('Receiving division'));
-    await userEvent.click(screen.getByRole('option', { name: 'Records Division' }));
-    // Legal is still consultable — Records is the lead now — and its tick survived.
-    expect(within(dialog).getByLabelText('Legal Division')).toBeChecked();
-    expect(within(dialog).queryByLabelText('Records Division')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('Lead')).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Forward document' }));
 
     await waitFor(() =>
@@ -254,22 +255,68 @@ describe('RouteDialog', () => {
     );
   });
 
-  it('drops a copied division that is then chosen as the lead', async () => {
+  it('swaps the lead with "Make lead"', async () => {
     serve(() => Promise.resolve(documentDetail()));
-    renderWithQuery(<RouteDialog document={documentDetail({ version: 2 })} />);
+    renderWithQuery(
+      <RouteDialog
+        document={documentDetail({ version: 2, routes: [hop({ toDivisionId: 'division-3' })] })}
+      />,
+    );
     const dialog = await open();
 
+    await userEvent.click(await within(dialog).findByLabelText('Records Division'));
     await userEvent.click(within(dialog).getByLabelText('Legal Division'));
-    await userEvent.click(screen.getByLabelText('Receiving division'));
-    await userEvent.click(screen.getByRole('option', { name: 'Legal Division' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Make lead' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Forward document' }));
+    await waitFor(() =>
+      expect(requestBody(apiMock, '/documents/doc-1/routes')).toMatchObject({
+        toDivisionId: 'division-2',
+        forInformationDivisionIds: ['division-1'],
+      }),
+    );
+  });
 
+  it('promotes the next ticked division when the lead is unticked', async () => {
+    serve(() => Promise.resolve(documentDetail()));
+    renderWithQuery(
+      <RouteDialog
+        document={documentDetail({ version: 2, routes: [hop({ toDivisionId: 'division-3' })] })}
+      />,
+    );
+    const dialog = await open();
+
+    await userEvent.click(await within(dialog).findByLabelText('Records Division'));
+    await userEvent.click(within(dialog).getByLabelText('Legal Division'));
+    await userEvent.click(within(dialog).getByLabelText('Records Division'));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Forward document' }));
     await waitFor(() =>
       expect(requestBody(apiMock, '/documents/doc-1/routes')).toMatchObject({
         toDivisionId: 'division-2',
         forInformationDivisionIds: [],
       }),
     );
+  });
+
+  it('stops taking copies at the contract limit', async () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({
+      id: `division-x${index}`,
+      code: `X${index}`,
+      name: `Extra Division ${index}`,
+      active: true,
+    }));
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/divisions') return Promise.resolve(many);
+      if (path.startsWith('/sections')) return Promise.resolve([]);
+      return Promise.resolve(documentDetail());
+    });
+    renderWithQuery(<RouteDialog document={documentDetail()} />);
+    const dialog = await open();
+
+    // A lead plus ten copies fills the list; the twelfth division can no longer be ticked.
+    for (let index = 0; index < 11; index += 1)
+      await userEvent.click(await within(dialog).findByLabelText(`Extra Division ${index}`));
+    expect(within(dialog).getByLabelText('Extra Division 11')).toBeDisabled();
+    expect(within(dialog).getByLabelText('Extra Division 10')).toBeChecked();
   });
 
   it('will not forward without a destination', async () => {
@@ -289,8 +336,7 @@ describe('RouteDialog', () => {
     renderWithQuery(<RouteDialog document={documentDetail()} />);
     const dialog = await open();
 
-    await userEvent.click(screen.getByLabelText('Receiving division'));
-    await userEvent.click(screen.getByRole('option', { name: 'Legal Division' }));
+    await userEvent.click(await within(dialog).findByLabelText('Legal Division'));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Forward document' }));
 
     await waitFor(() =>

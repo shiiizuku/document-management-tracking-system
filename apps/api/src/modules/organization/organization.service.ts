@@ -6,10 +6,12 @@ import {
 } from '@nestjs/common';
 import type {
   CreateDivisionInput,
+  CreateDocumentTypeInput,
   HeadOfBureau,
   CreateSectionInput,
   Role,
   UpdateDivisionInput,
+  UpdateDocumentTypeInput,
   UpdateSectionInput,
 } from '@dts/contracts';
 import type { RequestUser } from '../../common/request-user.js';
@@ -18,6 +20,7 @@ import { AuthorizationService } from '../authorization/authorization.service.js'
 import {
   OrganizationRepository,
   type DivisionRow,
+  type DocumentTypeRow,
   type SectionRow,
 } from './organization.repository.js';
 
@@ -175,6 +178,55 @@ export class OrganizationService {
       summary: { fields: Object.keys(patch), active: section.active },
     });
     return section;
+  }
+
+  async listDocumentTypes(actor: RequestUser): Promise<DocumentTypeRow[]> {
+    this.authorization.assert(actor, 'organization:read');
+    // Retired types included for everyone, unlike divisions: documents keep a retired type, so the
+    // registry filter and every label still need it. The register and edit pickers drop them.
+    return this.repository.listDocumentTypes(true);
+  }
+
+  async createDocumentType(
+    actor: RequestUser,
+    input: CreateDocumentTypeInput,
+  ): Promise<DocumentTypeRow> {
+    this.authorization.assert(actor, 'organization:create');
+    const type = await this.guardUniqueness(
+      () => this.repository.insertDocumentType({ code: input.code, label: input.label }),
+      'A document type with that code or name already exists',
+    );
+    await this.audit.write({
+      actorId: actor.id,
+      action: 'document-type.created',
+      targetType: 'document-type',
+      targetId: type.id,
+      outcome: 'SUCCESS',
+      summary: { code: type.code },
+    });
+    return type;
+  }
+
+  async updateDocumentType(
+    actor: RequestUser,
+    id: string,
+    patch: UpdateDocumentTypeInput,
+  ): Promise<DocumentTypeRow> {
+    this.authorization.assert(actor, 'organization:update');
+    const type = await this.guardUniqueness(
+      () => this.repository.updateDocumentType(id, patch),
+      'A document type with that name already exists',
+    );
+    if (type === null) throw new NotFoundException('Document type not found');
+    await this.audit.write({
+      actorId: actor.id,
+      action: 'document-type.updated',
+      targetType: 'document-type',
+      targetId: type.id,
+      outcome: 'SUCCESS',
+      summary: { fields: Object.keys(patch), active: type.active },
+    });
+    return type;
   }
 
   /**
