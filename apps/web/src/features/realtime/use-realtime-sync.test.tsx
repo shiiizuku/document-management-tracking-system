@@ -15,21 +15,47 @@ vi.mock('socket.io-client', () => ({
 describe('useRealtimeSync', () => {
   beforeEach(() => handlers.clear());
 
-  it('refetches inbox and documents on every connect, including the first', () => {
+  const setup = () => {
     const client = new QueryClient();
     const spy = vi.spyOn(client, 'invalidateQueries');
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
     renderHook(() => useRealtimeSync(), { wrapper });
+    return { client, spy };
+  };
 
+  it('refetches inbox and documents each time the server reports the socket ready', () => {
+    const { spy } = setup();
+
+    // `connect` fires before the server has joined the user room, so it is not the signal.
     handlers.get('connect')?.();
-    const firstKeys = spy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey[0]);
-    expect(firstKeys).toContain('documents');
+    expect(spy).not.toHaveBeenCalled();
+
+    handlers.get('ready')?.();
+    const keys = spy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey[0]);
+    expect(keys).toContain('documents');
     expect(spy.mock.calls.length).toBe(2);
 
     handlers.get('disconnect')?.();
     handlers.get('connect')?.();
+    handlers.get('ready')?.();
     expect(spy.mock.calls.length).toBe(4);
+  });
+
+  it('refetches once more after a query that was already fetching settles', async () => {
+    const { client, spy } = setup();
+    let finish: (value: string) => void = () => undefined;
+    const pending = client.fetchQuery({
+      queryKey: ['documents', 'slow'],
+      queryFn: () => new Promise<string>((resolve) => (finish = resolve)),
+    });
+
+    handlers.get('ready')?.();
+    expect(spy.mock.calls.length).toBe(2);
+
+    finish('stale');
+    await pending;
+    await vi.waitFor(() => expect(spy.mock.calls.length).toBe(4));
   });
 });

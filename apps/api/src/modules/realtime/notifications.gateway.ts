@@ -4,7 +4,7 @@ import type { Server, Socket } from 'socket.io';
 import { parseWebOrigins } from '../../config/environment.js';
 import { AuthService } from '../auth/auth.service.js';
 import { SessionService, SESSION_COOKIE } from '../auth/session.service.js';
-import { roomForUser } from './realtime.contract.js';
+import { READY_EVENT, roomForUser } from './realtime.contract.js';
 
 // Read at decoration time, before ConfigModule has run, so it parses the raw variable with the
 // same function the validated environment uses: the socket and the REST API share one allowlist.
@@ -62,6 +62,8 @@ export class NotificationsGateway implements OnGatewayConnection {
       // REST guard's "trust the database, not the token copy" rule.
       const user = await this.auth.getUser(claims.sub, claims.sv);
       await client.join(roomForUser(user.id));
+      // From here on pings reach this socket, so the client may safely fetch what it missed.
+      client.emit(READY_EVENT);
     } catch {
       // Never leak why: an unauthenticated socket is simply closed.
       client.disconnect(true);
