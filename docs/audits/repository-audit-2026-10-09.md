@@ -16,14 +16,14 @@ Updated after the audit baseline. Resolved items were matched against the merged
 | Profile photo UI (P3) | Resolved | `aae0152`, `50795cd`, `54310b5` (#139) |
 | "In process" label on pending custody (P2) | Resolved | `97b5baa` (#138): list rows carry `presentedStatus` |
 | Registry section filter (P2) | Resolved | `97b5baa`, `9a3045f` (#138): section picker scoped to the division, kept in the URL |
-| Offset paging (P2) | Resolved | `ed048ab` (#144): the registry pages by keyset cursor and scrolls continuously. My work stays unpaged on purpose: it is one person's queue |
-| Dashboard pending work not actionable in place (P2) | Resolved | `aa11771`: a "Waiting for acceptance" panel renders the server-offered actions and an assign picker |
+| Offset paging (P2) | Partly resolved | `ed048ab` (#144): the registry pages by keyset cursor and scrolls continuously. My work still loads its whole queue from the unpaged `/documents/assigned`, although decision 22 names it too; the queue is one person's, but it is unbounded |
+| Dashboard pending work not actionable in place (P2) | Partly resolved | `aa11771`: a "Waiting for acceptance" panel renders the server-offered actions and an assign picker. The picker assigns to a person (`/users/assignable`); decision 14 says assign to a section, which the dashboard does not offer |
 | Internal services published on every interface (P1) | Resolved in configuration | `73b702e` (#141), `801fbcb`, `bfee2f3` (#143): `docker-compose.production.yml` publishes nothing but API and web, on loopback only. The README step to check `config` and probe the ports from another machine has not been run on a server |
 | Restart policy (P2) | Fixed in an open PR | #151: `restart: unless-stopped` on the seven long-running services in the production overlay. A reboot has not been rehearsed |
 | Backup freshness alerting (P2) | Fixed in an open PR | #152: freshness markers and `scripts/check-backup-freshness.sh`. Not yet tried against a real NAS, Task Scheduler or webhook |
 | `format:check` line endings and embedded worktree | Resolved | #149: `* text=auto eol=lf` in `.gitattributes`, and `.claude` in `.prettierignore` |
 
-Open: none in code; 2 fixes await merge (#151, #152), and the deployment items still need a pilot-host check (the seed accounts on already-seeded servers, the port probe from another machine, a reboot, and an alert test). Not rerun since the baseline: lint, typecheck, tests and build.
+Open: the My work paging and the dashboard's section assignment (both partly resolved); restart policy and backup alerting are fixed only in open PRs (#151, #152), so they are still open on `main`. Deployment items also need a pilot-host check (the seed accounts on already-seeded servers, the port probe from another machine, a reboot, and an alert test). Not rerun since the baseline: lint, typecheck, tests and build.
 
 ## Standards and implementation integrity
 
