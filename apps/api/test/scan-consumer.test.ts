@@ -43,6 +43,18 @@ const harness = (opts: {
 };
 
 describe('scanUploadedVersion', () => {
+  it.each(['PENDING_RETRY', 'SCAN_FAILED'] as const)(
+    'scans a version stuck in %s, which has no verdict yet',
+    async (scanStatus) => {
+      const h = harness({ version: versionRow({ scanStatus }), verdict: 'CLEAN' });
+      expect(await scanUploadedVersion(h.deps, 'v1')).toEqual({
+        status: 'scanned',
+        verdict: 'CLEAN',
+      });
+      expect(h.recordScanStatus).toHaveBeenCalledWith('v1', 'CLEAN');
+    },
+  );
+
   it('records CLEAN for a benign upload and audits it', async () => {
     const h = harness({ version: versionRow(), verdict: 'CLEAN' });
     const outcome = await scanUploadedVersion(h.deps, 'v1');

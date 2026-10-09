@@ -17,6 +17,8 @@ export abstract class StoragePort {
   abstract put(key: string, bytes: Uint8Array): Promise<void>;
   /** Returns the stored bytes, or `null` if the key is unknown. */
   abstract get(key: string): Promise<Uint8Array | null>;
+  /** Removes an object; unknown keys are not an error. Used only to clear a failed upload's bytes. */
+  abstract delete(key: string): Promise<void>;
 }
 
 /**
@@ -37,5 +39,10 @@ export class InMemoryStorageAdapter extends StoragePort {
 
   get(key: string): Promise<Uint8Array | null> {
     return Promise.resolve(this.#objects.get(key) ?? null);
+  }
+
+  delete(key: string): Promise<void> {
+    this.#objects.delete(key);
+    return Promise.resolve();
   }
 }

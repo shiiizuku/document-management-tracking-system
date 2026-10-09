@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
@@ -20,6 +21,7 @@ import { DocumentsService } from '../documents/documents.service.js';
 import type { DocumentRow } from '../documents/documents.repository.js';
 import {
   FileVersionsRepository,
+  isFinalScanStatus,
   objectKeyFor,
   type FileScanStatus,
   type FileVersionRow,
@@ -84,6 +86,7 @@ export class AttachmentsService {
    * configuring 5 MiB used to validate at boot and then change nothing.
    */
   readonly #maxBytes: number;
+  private readonly logger = new Logger(AttachmentsService.name);
 
   constructor(
     @Inject(DATABASE) private readonly database: Database,
@@ -130,65 +133,112 @@ export class AttachmentsService {
     const checksumSha256 = createHash('sha256').update(file.buffer).digest('hex');
     const versionId = randomUUID();
 
-    const version = await this.database.transaction(async (tx) => {
-      const fileRecordId =
-        attachmentId ??
-        (
-          await this.versions.createRecord(
-            { documentId, displayName: file.originalName, createdById: actor.id },
-            tx,
-          )
-        ).id;
-      const versionNumber = await this.versions.nextVersionNumber(fileRecordId, tx);
-      return this.versions.createVersion(
-        {
-          id: versionId,
-          fileRecordId,
-          versionNumber,
-          objectKey: objectKeyFor(fileRecordId, versionNumber, versionId),
-          originalName: file.originalName,
-          mediaType: detected.mime,
-          sizeBytes: file.buffer.byteLength,
-          checksumSha256,
-          uploaderId: actor.id,
-        },
-        tx,
-      );
-    });
-    // Bytes land after the metadata commits, under the server-generated key (never overwritten).
-    await this.storage.put(version.objectKey, file.buffer);
+    // The object key is server-generated from ids that exist only in memory until the commit, so
+    // the bytes can land first. A failed commit then leaves an unreferenced object (garbage that
+    // no row points at) rather than metadata pointing at bytes that were never written.
+    const fileRecordId = attachmentId ?? randomUUID();
+    const versionNumber =
+      attachmentId === undefined ? 1 : await this.versions.nextVersionNumber(attachmentId);
+    const objectKey = objectKeyFor(fileRecordId, versionNumber, versionId);
+    await this.storage.put(objectKey, file.buffer);
 
-    // The newest upload becomes the document's current attachment and resets clean-state: a new
-    // version starts PENDING (so it is not downloadable and no longer matches a prior signature),
-    // which is exactly what the outgoing-release invariant checks. Bumping the row version guards
-    // against signing a document whose evidence changed underneath.
-    const document = await this.documents.setCurrentAttachment(documentId, version.id);
-    await this.audit.write({
-      actorId: actor.id,
-      action: 'attachment.uploaded',
-      targetType: 'document',
-      targetId: documentId,
-      outcome: 'SUCCESS',
-      summary: {
-        attachmentId: version.fileRecordId,
-        versionId: version.id,
-        versionNumber: version.versionNumber,
-        mediaType: version.mediaType,
-        sizeBytes: version.sizeBytes,
-      },
-    });
-    // Request a malware scan now that the bytes are stored. Enqueued after `put` (not inside the
-    // metadata transaction) so the worker never races ahead of the bytes it must read; the key
-    // makes a retried upload idempotent, and the version stays PENDING — undownloadable — until
-    // the worker records a result, so a lost event fails safe rather than leaking an unscanned file.
-    await this.outbox.enqueue({
-      aggregateType: 'file-version',
-      aggregateId: version.id,
-      eventType: 'attachment.uploaded',
-      payload: { documentId, versionId: version.id, objectKey: version.objectKey },
-      idempotencyKey: `attachment.uploaded:${version.id}`,
-    });
-    return this.toPublic(version, document);
+    try {
+      // One transaction: the version, the document's pointer to it, the audit record and the scan
+      // request commit together or not at all. The pointer update re-checks that the document is
+      // still editable, so a release or archive since the check above rolls everything back.
+      return await this.database.transaction(async (tx) => {
+        if (attachmentId === undefined)
+          await this.versions.createRecord(
+            {
+              id: fileRecordId,
+              documentId,
+              displayName: file.originalName,
+              createdById: actor.id,
+            },
+            tx,
+          );
+        // Another upload to the same attachment can take the number between the read above and
+        // here; the key must match the number the row gets, or the bytes would be unreachable.
+        if ((await this.versions.nextVersionNumber(fileRecordId, tx)) !== versionNumber)
+          throw new ConflictException({
+            code: 'UPLOAD_CONFLICT',
+            message: 'The attachment changed while uploading; try again',
+          });
+        const version = await this.versions.createVersion(
+          {
+            id: versionId,
+            fileRecordId,
+            versionNumber,
+            objectKey,
+            originalName: file.originalName,
+            mediaType: detected.mime,
+            sizeBytes: file.buffer.byteLength,
+            checksumSha256,
+            uploaderId: actor.id,
+          },
+          tx,
+        );
+        // The newest upload becomes the document's current attachment and resets clean-state: a
+        // new version starts PENDING (so it is not downloadable and no longer matches a prior
+        // signature), which is exactly what the outgoing-release invariant checks. Bumping the row
+        // version guards against signing a document whose evidence changed underneath.
+        const document = await this.documents.setCurrentAttachment(documentId, version.id, tx);
+        await this.audit.write(
+          {
+            actorId: actor.id,
+            action: 'attachment.uploaded',
+            targetType: 'document',
+            targetId: documentId,
+            outcome: 'SUCCESS',
+            summary: {
+              attachmentId: version.fileRecordId,
+              versionId: version.id,
+              versionNumber: version.versionNumber,
+              mediaType: version.mediaType,
+              sizeBytes: version.sizeBytes,
+            },
+          },
+          tx,
+        );
+        // The version stays PENDING (undownloadable) until the worker records a result, so a
+        // lost event fails safe rather than leaking an unscanned file. The key makes a retried
+        // upload idempotent.
+        await this.outbox.enqueue(
+          {
+            aggregateType: 'file-version',
+            aggregateId: version.id,
+            eventType: 'attachment.uploaded',
+            payload: { documentId, versionId: version.id, objectKey: version.objectKey },
+            idempotencyKey: `attachment.uploaded:${version.id}`,
+          },
+          tx,
+        );
+        return this.toPublic(version, document);
+      });
+    } catch (error) {
+      await this.discardUnreferencedObject(objectKey, versionId);
+      throw error;
+    }
+  }
+
+  /**
+   * Deletes the bytes of an upload whose transaction rejected, but only once a fresh read shows no
+   * version row for them. A rejection is not proof of a rollback (a connection can drop after the
+   * server applied COMMIT), and deleting bytes a committed version points at would make it
+   * permanently unreadable. If that read fails, the object is kept: garbage is recoverable, loss
+   * is not.
+   */
+  private async discardUnreferencedObject(objectKey: string, versionId: string): Promise<void> {
+    try {
+      if ((await this.versions.findVersionById(versionId)) !== null) return;
+      await this.storage.delete(objectKey);
+    } catch (cleanupError) {
+      this.logger.warn(
+        `kept object ${objectKey} after a failed upload: ${
+          cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+        }`,
+      );
+    }
   }
 
   async list(
@@ -270,32 +320,52 @@ export class AttachmentsService {
     return { fileName: version.originalName, mediaType: version.mediaType, bytes };
   }
 
-  async recordScan(
+  /**
+   * Asks the scanner to look at a version again. There is deliberately no way to *submit* a
+   * verdict: a result is only ever what ClamAV said about the stored bytes (policy P-07), so an
+   * operator whose scan was lost can requeue it but cannot declare the file clean.
+   *
+   * Any version still awaiting a verdict (pending, pending retry, scan failed) can be requeued. One
+   * that already has a final result is returned unchanged; the scan worker skips those too, so a
+   * repeated request is harmless.
+   */
+  async requestRescan(
     actor: RequestUser,
     documentId: string,
     versionId: string,
-    status: Exclude<FileScanStatus, 'PENDING'>,
   ): Promise<PublicAttachmentVersion> {
     const document = await this.documents.requireReadableDocument(actor, documentId);
     if (!actor.capabilities.includes('FILE_SCAN_RECORD'))
-      throw new ForbiddenException('Recording scan results is not allowed');
+      throw new ForbiddenException('Requesting a rescan is not allowed');
     const version = await this.versions.findVersionForDocument(documentId, versionId);
     if (version === null) throw new NotFoundException('Attachment not found');
-    // The repository enforces immutability of a final result and raises a 409 on a change.
-    const result = await this.versions.recordScanStatus(version.id, status);
-    await this.audit.write({
-      actorId: actor.id,
-      action: 'attachment.scan-recorded',
-      targetType: 'document',
-      targetId: documentId,
-      outcome: 'SUCCESS',
-      summary: {
-        versionId: version.id,
-        scanStatus: result.version.scanStatus,
-        changed: result.changed,
-      },
+    if (isFinalScanStatus(version.scanStatus)) return this.toPublic(version, document);
+    await this.database.transaction(async (tx) => {
+      // A fresh key per request: the upload's own key is already in the outbox and would be
+      // dropped as a duplicate.
+      await this.outbox.enqueue(
+        {
+          aggregateType: 'file-version',
+          aggregateId: version.id,
+          eventType: 'attachment.uploaded',
+          payload: { documentId, versionId: version.id, objectKey: version.objectKey },
+          idempotencyKey: `attachment.rescan:${version.id}:${randomUUID()}`,
+        },
+        tx,
+      );
+      await this.audit.write(
+        {
+          actorId: actor.id,
+          action: 'attachment.rescan-requested',
+          targetType: 'document',
+          targetId: documentId,
+          outcome: 'SUCCESS',
+          summary: { versionId: version.id },
+        },
+        tx,
+      );
     });
-    return this.toPublic(result.version, document);
+    return this.toPublic(version, document);
   }
 
   private toPublic(version: FileVersionRow, document: DocumentRow): PublicAttachmentVersion {

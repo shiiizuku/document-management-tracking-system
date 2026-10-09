@@ -74,7 +74,11 @@ In the drill this returned in 0.6 s, and both files were `CLEAN` within a second
 second time did nothing: a version that is already scanned is skipped, and no extra
 `attachment.scanned` audit event was written. It is safe to repeat.
 
-This requeues **every** failed outbox job, not only scans. Every other event type only pushes a
+To requeue one file instead, call `POST /api/v1/documents/<documentId>/attachments/<versionId>/rescan` as a
+records officer or administrator. It enqueues a fresh scan of a still-pending version and does nothing to a
+version that already has a result; there is no way to mark a file clean by hand.
+
+The command above requeues **every** failed outbox job, not only scans. Every other event type only pushes a
 live notification, so a late duplicate costs nothing.
 
 **4. Check that nothing is still pending.**

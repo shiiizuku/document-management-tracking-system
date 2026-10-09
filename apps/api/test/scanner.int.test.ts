@@ -221,13 +221,13 @@ describe('attachment scanning against real ClamAV, MinIO and Redis', () => {
       .set('Cookie', cookies)
       .expect(409);
 
-    // The verdict is final: nobody can talk the version back to CLEAN, so the download stays shut.
-    const conflict = await request(server())
+    // The verdict is final, and nobody can submit one: the old manual-verdict route is gone, so the
+    // download stays shut.
+    await request(server())
       .post(`/api/v1/documents/${doc.id}/attachments/${version.id}/scan`)
       .set('Cookie', cookies)
       .send({ status: 'CLEAN' })
-      .expect(409);
-    expect(conflict.body.error.code).toBe('SCAN_RESULT_CONFLICT');
+      .expect(404);
     expect(await scanStatusOf(doc.id, version.id)).toBe('INFECTED');
   }, 120_000);
 

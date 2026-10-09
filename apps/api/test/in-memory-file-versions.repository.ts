@@ -22,6 +22,7 @@ export class InMemoryFileVersionsRepository {
   private readonly versions = new Map<string, FileVersionRow>();
 
   createRecord(values: {
+    id?: string;
     documentId: string;
     displayName: string;
     createdById: string;

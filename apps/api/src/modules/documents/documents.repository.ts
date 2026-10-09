@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import {
   and,
   asc,
@@ -10,6 +10,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -1073,9 +1074,26 @@ export class DocumentsRepository {
     const [row] = await executor
       .update(documents)
       .set({ currentFileVersionId: versionId, version: sql`${documents.version} + 1` })
-      .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
+      .where(
+        and(
+          eq(documents.id, documentId),
+          isNull(documents.deletedAt),
+          // Re-checked here, in the same statement: `requireEditableDocument` ran earlier, and a
+          // release or archive in between must not gain a new current attachment.
+          notInArray(documents.status, ['RELEASED', 'ARCHIVED']),
+        ),
+      )
       .returning();
-    return row ?? null;
+    if (row) return row;
+    const [existing] = await executor
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)));
+    if (existing === undefined) return null;
+    throw new ConflictException({
+      code: 'DOCUMENT_NOT_EDITABLE',
+      message: 'Attachments cannot be added to a released or archived document',
+    });
   }
 
   async insertReleaseEvent(

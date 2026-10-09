@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, notInArray, sql } from 'drizzle-orm';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
 import type { DatabaseExecutor } from '../../database/executor.js';
@@ -22,8 +22,11 @@ export interface NewFileVersion {
   uploaderId: string;
 }
 
-const isFinalScanStatus = (status: FileScanStatus): boolean =>
-  status === 'CLEAN' || status === 'INFECTED';
+const FINAL_SCAN_STATUSES: FileScanStatus[] = ['CLEAN', 'INFECTED'];
+
+/** CLEAN and INFECTED are verdicts; every other status still awaits one (PENDING, PENDING_RETRY, SCAN_FAILED). */
+export const isFinalScanStatus = (status: FileScanStatus): boolean =>
+  FINAL_SCAN_STATUSES.includes(status);
 
 /** The server-owned quarantine key for a version; never derived from client input. */
 export const objectKeyFor = (
@@ -44,7 +47,7 @@ export class FileVersionsRepository {
   constructor(@Inject(DATABASE) private readonly database: Database) {}
 
   async createRecord(
-    values: { documentId: string; displayName: string; createdById: string },
+    values: { id?: string; documentId: string; displayName: string; createdById: string },
     executor: DatabaseExecutor = this.database,
   ): Promise<FileRecordRow> {
     const [row] = await executor.insert(fileRecords).values(values).returning();
@@ -143,13 +146,27 @@ export class FileVersionsRepository {
         code: 'SCAN_RESULT_CONFLICT',
         message: 'A final scan result cannot be changed',
       });
+    // Conditional on a non-final status: two writers can both pass the read above, and without this the
+    // later one could replace an INFECTED result with CLEAN.
     const [row] = await this.database
       .update(fileVersions)
       .set({ scanStatus: status })
-      .where(eq(fileVersions.id, versionId))
+      .where(
+        and(
+          eq(fileVersions.id, versionId),
+          notInArray(fileVersions.scanStatus, FINAL_SCAN_STATUSES),
+        ),
+      )
       .returning();
-    if (!row) throw new NotFoundException('Attachment not found');
-    return { version: row, changed: true };
+    if (row) return { version: row, changed: true };
+    // Lost the race (or the row vanished): the stored value decides what the loser sees.
+    const stored = await this.findVersionById(versionId);
+    if (stored === null) throw new NotFoundException('Attachment not found');
+    if (stored.scanStatus === status) return { version: stored, changed: false };
+    throw new ConflictException({
+      code: 'SCAN_RESULT_CONFLICT',
+      message: 'A final scan result cannot be changed',
+    });
   }
 
   async isClean(versionId: string): Promise<boolean> {

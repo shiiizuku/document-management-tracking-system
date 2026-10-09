@@ -113,7 +113,7 @@ read them before adding a list, a report or anything that resolves a reference.
 | Object storage (MinIO/S3)      | `StoragePort` + `MinioStorageAdapter` + `objectKey` columns | **Yes** — the running app writes bytes to MinIO (`minio` SDK), and the integration suites do too (CI starts MinIO from compose); only the unit suites override the port with the in-memory adapter. _(Local caveat: compose builds the vendored AGPL MinIO from `./minio` as `dts-minio:from-source`; a container still running the license-gated AIStor image will deny every S3 operation, so rebuild with `docker compose up --build`.)_ |
 | BullMQ / Redis                 | `outbox-queue.ts` (queue + worker factories)           | **Yes** — the worker runs a relay + BullMQ consumer against Redis; tested in CI's integration job |
 | Transactional outbox           | `outbox_events` + `OutboxWriter` + `OutboxRelay`       | **Writer + relay + consumer** — use cases enqueue in-tx; the relay leases (`FOR UPDATE SKIP LOCKED`) → BullMQ → mark published; the consumer fans out realtime notifications |
-| Antivirus scan                 | `ClamAvScanner` (INSTREAM) + scan consumer + `POST …/scan` override | **Yes** — the worker scans each upload via clamd and records the verdict; manual endpoint remains for re-scans |
+| Antivirus scan                 | `ClamAvScanner` (INSTREAM) + scan consumer + `POST …/rescan` | **Yes** — the worker scans each upload via clamd and records the verdict; `POST …/rescan` requeues a still-pending scan and cannot submit a verdict |
 | WebSockets                     | Socket.IO `NotificationsGateway` + Redis `RealtimeBridge` | **Yes** — authenticated per-user realtime delivery; worker publishes, each API instance relays |
 | Rate limiting                  | `ThrottlerModule`                                      | **Yes, globally** — `ThrottlerGuard` is an `APP_GUARD` with a 120/min default on every route, plus tight buckets on login (5/min) and account-request submission (3/min). Remaining: dedicated buckets for upload and report export |
 | Config validation              | `config/environment.ts` + `ConfigModule.forRoot`        | **Yes** — validated at boot, fails fast |
@@ -346,7 +346,7 @@ behind it.
       both run locally alongside the app. ✓ (minio built from source + clamav services defined; the
       app's MinIO adapter binding is the remaining backend piece above)
 - [x] (2h) Scan pipeline: the worker consumes an upload event, runs ClamAV, and records the result
-      (the manual `POST …/scan` stays as an override). _Done-when:_ uploads auto-transition to
+      (`POST …/rescan` requeues a pending scan; no route accepts a verdict). _Done-when:_ uploads auto-transition to
       CLEAN/INFECTED. ✓ — `upload` enqueues an `attachment.uploaded` outbox event; the worker's
       `scanUploadedVersion` streams the bytes to clamd (`ClamAvScanner`, INSTREAM) and records the
       verdict. Scanner verified against live clamd (EICAR→INFECTED, benign→CLEAN), and the whole
@@ -358,8 +358,8 @@ behind it.
       blocked as INFECTED. _Done-when:_ fail-closed proven against the real scanner. ✓ —
       `scanner.int.test.ts` drives the production path (upload → outbox relay → BullMQ →
       `scanUploadedVersion` → clamd INSTREAM) against the compose clamav and MinIO: the EICAR
-      upload is condemned `INFECTED`, download and preview both return `FILE_NOT_CLEAN`, a manual
-      `CLEAN` override is refused as `SCAN_RESULT_CONFLICT`, and a benign PDF passes and downloads
+      upload is condemned `INFECTED`, download and preview both return `FILE_NOT_CLEAN`, no route
+      accepts a manual `CLEAN` verdict (`POST …/scan` is a 404), and a benign PDF passes and downloads
       byte-identical. The payload is EICAR inside a PDF stream — plain text never reaches the
       scanner, because magic-byte sniffing refuses it first.
 
