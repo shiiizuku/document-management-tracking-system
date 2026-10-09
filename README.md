@@ -260,7 +260,8 @@ else **fails closed**. When every upload sits at "scan pending", one of these is
 
 ### Development accounts
 
-`npm run db:seed` creates four users (`apps/api/src/database/seed.ts`):
+Outside production, `npm run db:seed` creates four users (`apps/api/src/database/seed.ts`); with
+`NODE_ENV=production` only the administrator and the Director are created:
 
 | Role          | Email                | Password         | Placement                                      |
 | ------------- | -------------------- | ---------------- | ---------------------------------------------- |

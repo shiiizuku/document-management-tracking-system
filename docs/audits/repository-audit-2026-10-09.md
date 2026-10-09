@@ -2,6 +2,24 @@
 
 Baseline: `main` at `dadc2ae3e9ffdcac0f7461f60006b701b028d3ff`, with a clean working tree before this report. This is a risk-based review of the current codebase and its documented requirements, not a diff review or a penetration test. Findings below are observations from source and tests; concurrency scenarios are reasoned from the code and have not been reproduced against a running database. The `Improvement` column is the proposed next step, not a claim that a fix has landed.
 
+## Status update
+
+Updated after the audit baseline. Resolved items were matched against the merged commits and, for the scan-status race, the current `recordScanStatus`; the findings below are kept as written for the record.
+
+| Finding | Status | Resolved by |
+| --- | --- | --- |
+| Manual scan verdict makes unscanned bytes downloadable (P1) | Resolved | `f756f42`, `012501a` (#136): `POST .../scan` replaced by `POST .../rescan`, which requeues and cannot declare a file clean |
+| Competing scan writers replace a final verdict (P1) | Resolved | `f756f42` (#136): the status update is conditional on a non-final status |
+| Upload not atomic / races with document closure (P1) | Resolved | `f756f42`, `012501a` (#136): version, pointer, audit and scan enqueue commit in one transaction; the pointer update rechecks released/archived |
+| Production seed creates demo users with known passwords (P0) | Resolved in code | `d8ce8d4` (#137): `records@` and `staff@` are created only outside production. A server seeded earlier still has them; deactivate or change their passwords |
+| Missed realtime updates on reconnect (P1) | Resolved | `a14c5f0`: inbox and documents are refetched when the socket reconnects |
+| Profile photo UI (P3) | Resolved | `aae0152`, `50795cd`, `54310b5` (#139) |
+| Offset paging (P2), "In process" label (P2), dashboard actions (P2), registry section filter (P2) | Open | |
+| Published internal ports (P1), restart policy (P2), backup freshness alerting (P2) | Open | |
+| `format:check` line endings and embedded worktree | Open | |
+
+Open: 8 findings (worst: published internal ports, P1). Not rerun since the baseline: lint, typecheck, tests and build.
+
 ## Standards and implementation integrity
 
 | Priority | Finding and evidence | Improvement |
@@ -50,6 +68,6 @@ The production guide already requires TLS, unique secrets, an off-host backup de
 | `npm run build` | Passed: contracts, NestJS API, and Next.js production build. |
 | Docker Compose, integration and browser tests | Not run: `docker` is unavailable on this host. The concurrency issues above need targeted integration reproduction after a fix. |
 
-The report makes no code changes. All proposed improvements remain open.
+The report itself makes no code changes. See the status update above for which improvements have since landed.
 
 Finding counts: 3 implementation-integrity issues (worst: unsafe scan verdict and upload consistency, P1), 6 spec gaps (worst: reconnect catch-up, P1), and 4 local server deployment improvements (worst: production demo accounts, P0 before pilot).
