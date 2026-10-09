@@ -92,6 +92,13 @@ export interface PublicDocument {
   priority: DocumentRow['priority'];
   direction: DocumentRow['direction'];
   status: DocumentRow['status'];
+  /**
+   * The status as a reader should see it: `PENDING` while the lead hop is unaccepted, otherwise the
+   * stored status. Filters and sorts keep using `status`. Only list endpoints compute it from the
+   * routes; everywhere else it equals `status` (the detail screen derives its own from the routes it
+   * already carries).
+   */
+  presentedStatus: WorkflowStatus;
   sender: string | null;
   company: string | null;
   email: string | null;
@@ -273,6 +280,18 @@ export class DocumentsService {
     private readonly outbox: OutboxWriter,
   ) {}
 
+  /**
+   * A list of rows with the presented status resolved in one lookup for the whole page, so the
+   * registry and My work badge a document awaiting acceptance as Pending instead of In process.
+   */
+  private async toPublicList(rows: DocumentRow[]): Promise<PublicDocument[]> {
+    const pending = await this.repository.pendingLeadHopIds(rows.map((row) => row.id));
+    return rows.map((row) => ({
+      ...this.toPublic(row),
+      presentedStatus: pending.has(row.id) ? 'PENDING' : row.status,
+    }));
+  }
+
   // The row's file-version columns are aliased to the API's "attachment" vocabulary here.
   // `hasCleanCurrentAttachment` and `releaseMethod` are passed in only where they have been
   // loaded (single-document responses); list items leave them at their defaults to avoid an
@@ -292,6 +311,7 @@ export class DocumentsService {
       priority: row.priority,
       direction: row.direction,
       status: row.status,
+      presentedStatus: row.status,
       sender: row.sender,
       company: row.company,
       email: row.email,
@@ -450,7 +470,7 @@ export class DocumentsService {
   async search(actor: RequestUser, filters: DocumentSearchFilters): Promise<DocumentSearchResult> {
     const page = await this.repository.search(actor, filters);
     return {
-      items: page.items.map((row) => this.toPublic(row)),
+      items: await this.toPublicList(page.items),
       total: page.total,
       page: page.page,
       pageSize: page.pageSize,
@@ -1536,7 +1556,7 @@ export class DocumentsService {
   /** The actor's work queue: live documents they currently hold an active assignment on. */
   async assignedQueue(actor: RequestUser): Promise<PublicDocument[]> {
     const rows = await this.repository.listAssignedTo(actor.id);
-    return rows.map((row) => this.toPublic(row));
+    return this.toPublicList(rows);
   }
 
   /**

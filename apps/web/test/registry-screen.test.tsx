@@ -63,6 +63,18 @@ describe('RegistryScreen', () => {
     expect(screen.getByText('En route')).toBeInTheDocument();
   });
 
+  it('badges a document awaiting acceptance as pending, not by its stored status', async () => {
+    serve({
+      items: [documentItem({ status: 'IN_PROCESS', presentedStatus: 'PENDING' })],
+      total: 1,
+    });
+    renderWithQuery(<RegistryScreen />);
+
+    await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+    expect(screen.getByText('En route')).toBeInTheDocument();
+    expect(screen.queryByText('In process')).not.toBeInTheDocument();
+  });
+
   it('shows no rows and no empty state while the first page loads', () => {
     apiMock.mockReturnValue(new Promise(() => undefined));
     renderWithQuery(<RegistryScreen />);
@@ -127,6 +139,69 @@ describe('RegistryScreen', () => {
     await userEvent.click(screen.getByRole('option', { name: 'En route' }));
 
     expect(pushMock).toHaveBeenCalledWith('/documents?status=PENDING', { scroll: false });
+  });
+
+  describe('section filter', () => {
+    const DIVISION = '3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+    const SECTION = '7a9c1e2f-3b4d-4c5e-8f6a-1b2c3d4e5f6a';
+
+    const serveOrg = () => {
+      apiMock.mockImplementation((path: string) => {
+        if (path === '/auth/me') return Promise.resolve(sessionUser());
+        if (path.startsWith('/documents?'))
+          return Promise.resolve({ items: [documentItem()], total: 1, page: 1, pageSize: 20 });
+        if (path === '/divisions')
+          return Promise.resolve([
+            { id: DIVISION, code: 'LANDS', name: 'Lands Division', active: true },
+          ]);
+        if (path.startsWith('/sections'))
+          return Promise.resolve([
+            {
+              id: SECTION,
+              divisionId: DIVISION,
+              code: 'SURVEY',
+              name: 'Survey Section',
+              active: true,
+            },
+          ]);
+        return Promise.resolve([]);
+      });
+    };
+
+    it('offers no section until a division is chosen', async () => {
+      serveOrg();
+      renderWithQuery(<RegistryScreen />);
+      await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+
+      await openAdvanced();
+      expect(screen.queryByLabelText('Section')).not.toBeInTheDocument();
+    });
+
+    it('sends the division and section from the URL to the API', async () => {
+      searchParams.value = new URLSearchParams(`divisionId=${DIVISION}&sectionId=${SECTION}`);
+      serveOrg();
+      renderWithQuery(<RegistryScreen />);
+      await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+
+      const requested = calledPath(apiMock, (path) => path.startsWith('/documents?'));
+      expect(requested).toContain(`divisionId=${DIVISION}`);
+      expect(requested).toContain(`sectionId=${SECTION}`);
+      await openAdvanced();
+      expect(await screen.findByLabelText('Section')).toBeInTheDocument();
+    });
+
+    it('drops the section when the division changes', async () => {
+      searchParams.value = new URLSearchParams(`divisionId=${DIVISION}&sectionId=${SECTION}`);
+      serveOrg();
+      renderWithQuery(<RegistryScreen />);
+      await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+
+      await openAdvanced();
+      await userEvent.click(await screen.findByLabelText('Currently with'));
+      await userEvent.click(screen.getByRole('option', { name: 'Any division' }));
+
+      expect(pushMock).toHaveBeenCalledWith('/documents', { scroll: false });
+    });
   });
 
   it('returns to the first page when the filters change', async () => {

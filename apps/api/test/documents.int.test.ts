@@ -451,7 +451,21 @@ describe('document registry REST against a real database', () => {
       .expect(422);
     expect(refusedForRecords.body.error.code).toBe('ROUTE_NOT_FOR_ACTOR');
 
+    // The list badges the presented status, resolved from the lead hop in one query per page: the
+    // stored IN_PROCESS must not read as in hand while the hop is outstanding.
+    const presentedInList = async () => {
+      const listed = await request(server())
+        .get('/api/v1/documents?pageSize=100')
+        .set('Cookie', records.cookies)
+        .expect(200);
+      return dataOf<{ items: { id: string; presentedStatus: string }[] }>(listed).items.find(
+        (item) => item.id === created.id,
+      )?.presentedStatus;
+    };
+    expect(await presentedInList()).toBe('PENDING');
+
     const accepted = dataOf<DocumentPayload>(await accept(1).expect(201));
+    expect(await presentedInList()).toBe('IN_PROCESS');
     /*
      * Accepting stamps the route row, so the document itself is untouched: the status was already
      * IN_PROCESS from registration and the version does not move (ADR-0005). What changes is that

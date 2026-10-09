@@ -773,6 +773,33 @@ export class DocumentsRepository {
     return facts;
   }
 
+  /**
+   * Which of these documents have an unaccepted **lead** hop — the ones a reader should see badged
+   * Pending.
+   *
+   * Narrower than {@link documentIsPending}, on purpose: that predicate also counts an
+   * unacknowledged for-information copy, which suits a "what is outstanding" filter. A badge
+   * answers a custody question, and only the lead hop can (a copy is never waited on, decisions
+   * 159-160). Loaded for a page of ids in one query so a list costs one lookup, not one per row.
+   */
+  async pendingLeadHopIds(documentIds: readonly string[]): Promise<Set<string>> {
+    if (documentIds.length === 0) return new Set();
+    const rows = await this.database
+      .selectDistinctOn([documentRoutes.documentId], {
+        documentId: documentRoutes.documentId,
+        acceptedAt: documentRoutes.acceptedAt,
+      })
+      .from(documentRoutes)
+      .where(
+        and(
+          inArray(documentRoutes.documentId, [...documentIds]),
+          eq(documentRoutes.forInformation, false),
+        ),
+      )
+      .orderBy(documentRoutes.documentId, desc(documentRoutes.createdAt), desc(documentRoutes.id));
+    return new Set(rows.filter((row) => row.acceptedAt === null).map((row) => row.documentId));
+  }
+
   /** Live documents a user currently holds an active assignment on — their work queue. */
   async listAssignedTo(userId: string): Promise<DocumentRow[]> {
     return this.database

@@ -113,6 +113,56 @@ describe('REST /api/v1 public seam', () => {
     expect(afterAccept.body.data).toContain('COMPLY');
   });
 
+  // The stored status is IN_PROCESS from registration, so a list that badged it would show a
+  // document nobody has accepted as being in hand. The list carries the presented status instead.
+  it('presents a document as pending in the registry until its lead hop is accepted', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'records@dts.local', password: 'Records@1234!' })
+      .expect(201);
+    const cookie = sessionCookie(login);
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/documents')
+      .set('Cookie', cookie)
+      .send({
+        title: 'Presented status',
+        type: 'MEMORANDUM',
+        description: 'Awaiting acceptance.',
+        priority: 'NORMAL',
+        direction: 'INCOMING',
+        sender: 'Citizen Two',
+        company: 'Public',
+        referenceNumber: 'EXT-2026-PRESENTED',
+        divisionId: 'division-records',
+        sectionId: 'section-intake',
+      })
+      .expect(201);
+    const id = created.body.data.id as string;
+    const rowIn = (body: { data: { items: { id: string }[] } }) =>
+      body.data.items.find((item) => item.id === id);
+
+    const before = await request(app.getHttpServer())
+      .get('/api/v1/documents')
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(rowIn(before.body)).toMatchObject({ status: 'IN_PROCESS', presentedStatus: 'PENDING' });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/documents/${id}/actions/ACCEPT`)
+      .set('Cookie', cookie)
+      .send({ expectedVersion: 1 })
+      .expect(201);
+
+    const after = await request(app.getHttpServer())
+      .get('/api/v1/documents')
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(rowIn(after.body)).toMatchObject({
+      status: 'IN_PROCESS',
+      presentedStatus: 'IN_PROCESS',
+    });
+  });
+
   /*
    * The point of P-15: the list is data, and releasing asks two questions. Mailed is the one
    * method that takes a carrier, so it is the only one served with carriers, and every carrier

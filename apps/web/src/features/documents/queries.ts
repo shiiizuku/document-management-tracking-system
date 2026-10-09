@@ -57,6 +57,8 @@ export interface DocumentFilters {
   direction: string;
   /** A division id, as the dashboard's chart links through with. '' means every division. */
   divisionId: string;
+  /** A section id within `divisionId`. '' means every section; meaningless without a division. */
+  sectionId: string;
   /**
    * Only documents still open past their due date. The server owns the definition (one predicate
    * shared with the dashboard's Overdue tile), so this is a flag, not a date range.
@@ -73,6 +75,7 @@ export const DEFAULT_DOCUMENT_FILTERS: DocumentFilters = {
   type: '',
   direction: '',
   divisionId: '',
+  sectionId: '',
   overdue: false,
   sort: 'createdAt',
   order: 'desc',
@@ -92,6 +95,12 @@ export interface DocumentListItem {
   priority: DocumentPriority;
   direction: DocumentDirection;
   status: WorkflowStatus;
+  /**
+   * What a list row should badge: `PENDING` while the lead hop is unaccepted, else `status`. The
+   * server resolves it for list endpoints; elsewhere it equals `status`. Distinct from the
+   * {@link presentedStatus} function, which derives the same answer from a detail's routes.
+   */
+  presentedStatus: WorkflowStatus;
   sender: string | null;
   /** Addressees of an outgoing document, in the order entered; empty for an incoming one. */
   recipients: DocumentRecipient[];
@@ -277,6 +286,7 @@ export const documentsQueryString = (
   if (filters.type) params.set('type', filters.type);
   if (filters.direction) params.set('direction', filters.direction);
   if (filters.divisionId) params.set('divisionId', filters.divisionId);
+  if (filters.sectionId) params.set('sectionId', filters.sectionId);
   if (filters.overdue) params.set('overdue', 'true');
   params.set('sort', filters.sort);
   params.set('order', filters.order);

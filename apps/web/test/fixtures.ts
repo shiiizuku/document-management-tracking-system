@@ -53,6 +53,7 @@ export const documentItem = (overrides: Partial<DocumentListItem> = {}): Documen
   priority: 'NORMAL',
   direction: 'INCOMING',
   status: 'PENDING',
+  presentedStatus: 'PENDING',
   sender: 'Regional Office',
   company: 'Department of Finance',
   divisionId: 'division-1',

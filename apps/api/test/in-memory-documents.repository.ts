@@ -439,6 +439,19 @@ export class InMemoryDocumentsRepository {
     return Promise.resolve([...(this.shares.get(documentId) ?? [])]);
   }
 
+  /** The in-memory twin of `DocumentsRepository.pendingLeadHopIds`. */
+  pendingLeadHopIds(documentIds: readonly string[]): Promise<Set<string>> {
+    const pending = new Set<string>();
+    for (const id of documentIds) {
+      const lead = [...(this.routes.get(id) ?? [])]
+        .filter((route) => !route.forInformation)
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        .at(-1);
+      if (lead !== undefined && lead.acceptedAt === null) pending.add(id);
+    }
+    return Promise.resolve(pending);
+  }
+
   listAssignedTo(userId: string): Promise<DocumentRow[]> {
     return Promise.resolve(
       [...this.documents.values()].filter(
