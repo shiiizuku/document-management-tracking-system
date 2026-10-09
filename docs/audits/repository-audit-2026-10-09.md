@@ -17,10 +17,11 @@ Updated after the audit baseline. Resolved items were matched against the merged
 | "In process" label on pending custody (P2) | Resolved | `97b5baa` (#138): list rows carry `presentedStatus` |
 | Registry section filter (P2) | Resolved | `97b5baa`, `9a3045f` (#138): section picker scoped to the division, kept in the URL |
 | Offset paging (P2), dashboard actions (P2) | Open | |
-| Published internal ports (P1), restart policy (P2), backup freshness alerting (P2) | Open | |
+| Internal services published on every interface (P1) | Resolved in configuration | `73b702e` (#141), `801fbcb`, `bfee2f3` (#143): `docker-compose.production.yml` publishes nothing but API and web, on loopback only. The README step to check `config` and probe the ports from another machine has not been run on a server |
+| Restart policy (P2), backup freshness alerting (P2) | Open | |
 | `format:check` line endings and embedded worktree | Open | |
 
-Open: 6 findings (worst: published internal ports, P1). Not rerun since the baseline: lint, typecheck, tests and build.
+Open: 5 findings (worst: offset paging, P2). Not rerun since the baseline: lint, typecheck, tests and build.
 
 ## Standards and implementation integrity
 
