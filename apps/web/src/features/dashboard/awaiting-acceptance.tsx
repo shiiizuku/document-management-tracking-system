@@ -2,14 +2,19 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronUp, Inbox, Loader2, UserPlus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Inbox, Loader2, Network, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/dts/empty-state';
 import { PriorityLabel, StatusBadge } from '@/components/dts/status-badge';
 import { AssignDialog } from '@/features/documents/assign-dialog';
+import {
+  AssignSectionDialog,
+  canAssignToSection,
+} from '@/features/documents/assign-section-dialog';
 import { DocumentActions } from '@/features/documents/document-actions';
 import {
   DEFAULT_DOCUMENT_FILTERS,
+  currentCustody,
   useDocument,
   useDocuments,
   type DocumentListItem,
@@ -29,6 +34,10 @@ const PENDING_FILTERS = { ...DEFAULT_DOCUMENT_FILTERS, status: 'PENDING' };
  * detail is fetched only for the row the user opens, and its `allowedActions` are rendered by the
  * same component the document page uses — so there is no second copy of the transition rules here.
  * Assigning is offered to anyone holding the capability; the server decides per document.
+ *
+ * Assigning to a section is the forward-to-section route (decision 156), offered only where the
+ * document sits in the user's own division: a division hands work down to its own sections, and
+ * sending it elsewhere is the Forward dialog's job.
  */
 export function AwaitingAcceptance() {
   const pending = useDocuments(PENDING_FILTERS, 1);
@@ -70,8 +79,15 @@ export function AwaitingAcceptance() {
 function PendingRow({ row }: Readonly<{ row: DocumentListItem }>) {
   const [open, setOpen] = useState(false);
   const [assigning, setAssigning] = useState(false);
-  const { can } = useSession();
+  const [assigningSection, setAssigningSection] = useState(false);
+  const { can, user } = useSession();
   const detail = useDocument(row.id, open);
+  const canAssignSection =
+    can('DOCUMENT_ASSIGN') &&
+    detail.data !== undefined &&
+    canAssignToSection(detail.data) &&
+    user?.divisionId != null &&
+    currentCustody(detail.data).divisionId === user.divisionId;
 
   return (
     <li className="rounded-2xl border border-border bg-card p-4">
@@ -113,6 +129,17 @@ function PendingRow({ row }: Readonly<{ row: DocumentListItem }>) {
               Assign
             </Button>
           ) : null}
+          {canAssignSection ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setAssigningSection(true)}
+            >
+              <Network />
+              Assign to section
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -122,6 +149,14 @@ function PendingRow({ row }: Readonly<{ row: DocumentListItem }>) {
           trackingNumber={row.trackingNumber}
           open={assigning}
           onOpenChange={setAssigning}
+        />
+      ) : null}
+
+      {assigningSection && detail.data !== undefined ? (
+        <AssignSectionDialog
+          document={detail.data}
+          open={assigningSection}
+          onOpenChange={setAssigningSection}
         />
       ) : null}
     </li>
