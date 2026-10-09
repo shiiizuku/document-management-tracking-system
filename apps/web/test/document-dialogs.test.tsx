@@ -297,6 +297,28 @@ describe('RouteDialog', () => {
     );
   });
 
+  it('stops taking copies at the contract limit', async () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({
+      id: `division-x${index}`,
+      code: `X${index}`,
+      name: `Extra Division ${index}`,
+      active: true,
+    }));
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/divisions') return Promise.resolve(many);
+      if (path.startsWith('/sections')) return Promise.resolve([]);
+      return Promise.resolve(documentDetail());
+    });
+    renderWithQuery(<RouteDialog document={documentDetail()} />);
+    const dialog = await open();
+
+    // A lead plus ten copies fills the list; the twelfth division can no longer be ticked.
+    for (let index = 0; index < 11; index += 1)
+      await userEvent.click(await within(dialog).findByLabelText(`Extra Division ${index}`));
+    expect(within(dialog).getByLabelText('Extra Division 11')).toBeDisabled();
+    expect(within(dialog).getByLabelText('Extra Division 10')).toBeChecked();
+  });
+
   it('will not forward without a destination', async () => {
     serve(() => Promise.resolve(documentDetail()));
     renderWithQuery(<RouteDialog document={documentDetail()} />);

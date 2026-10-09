@@ -30,9 +30,14 @@ const oneOf = <T extends string>(allowed: readonly T[], raw: string | null): T |
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const asUuid = (raw: string | null): string => (raw !== null && UUID.test(raw) ? raw : '');
 
-/** Document types are rows the administrator maintains, so a type is checked for the code shape. */
-const TYPE_CODE = /^[A-Z][A-Z0-9_]{1,79}$/;
-const asTypeCode = (raw: string | null): string => (raw !== null && TYPE_CODE.test(raw) ? raw : '');
+/**
+ * Document types are rows the administrator maintains, and codes carried over by migration `0016`
+ * predate the code format new types must follow, so only the contract's length bound is checked.
+ */
+const asTypeCode = (raw: string | null): string => {
+  const value = raw?.trim() ?? '';
+  return value.length <= 80 ? value : '';
+};
 
 export const parseDocumentFilters = (params: URLSearchParams): DocumentFilters => ({
   search: params.get('search') ?? '',

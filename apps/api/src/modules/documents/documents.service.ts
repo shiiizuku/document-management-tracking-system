@@ -219,6 +219,10 @@ export interface RoutingSlipHop {
 }
 
 /** Everything the routing slip prints, with every id already resolved to a name. */
+/** A type's configured label, or its code spaced out when the list does not have it. */
+const typeLabelOf = (labels: ReadonlyMap<string, string>, code: string): string =>
+  labels.get(code) ?? code.replaceAll('_', ' ');
+
 export interface RoutingSlip {
   document: PublicDocument;
   /**
@@ -227,6 +231,8 @@ export interface RoutingSlip {
    * answer: it is the unit the registrar put the document in front of.
    */
   addressee: string | null;
+  /** The administrator's label for the document's type. */
+  typeLabel: string;
   hops: RoutingSlipHop[];
 }
 
@@ -515,17 +521,19 @@ export class DocumentsService {
    */
   async routingSlip(actor: RequestUser, id: string): Promise<RoutingSlip> {
     const row = await this.requireReadable(actor, id);
-    const [routes, timeline, release, clean, addressee] = await Promise.all([
+    const [routes, timeline, release, clean, addressee, typeLabels] = await Promise.all([
       this.repository.routingSlipRoutes(id),
       this.repository.listTimeline(id),
       this.repository.findReleaseMethod(id),
       this.cleanFlag(row),
       this.repository.divisionName(row.divisionId),
+      this.repository.documentTypeLabels(),
     ]);
 
     return {
       document: this.toPublic(row, release, clean),
       addressee,
+      typeLabel: typeLabelOf(typeLabels, row.type),
       hops: this.toRoutingSlipHops(routes, timeline),
     };
   }
@@ -1641,7 +1649,10 @@ export class DocumentsService {
     // Scope and confidentiality are already applied in SQL (`documentScopeFor`), so the rows
     // are exactly what this actor may see; the assignment/share arrays are only needed for the
     // read policy that has already run, hence left empty on the report projection.
-    const rows = await this.repository.listForReport(actor, year, month);
+    const [rows, typeLabels] = await Promise.all([
+      this.repository.listForReport(actor, year, month),
+      this.repository.documentTypeLabels(),
+    ]);
     const documents = rows.map((row) => ({
       id: row.id,
       title: row.title,
@@ -1650,6 +1661,7 @@ export class DocumentsService {
       recipients: row.recipients.map((recipient) => recipient.name),
       company: row.company,
       type: row.type,
+      typeLabel: typeLabelOf(typeLabels, row.type),
       direction: row.direction,
       createdAt: row.createdAt,
       divisionId: row.divisionId,

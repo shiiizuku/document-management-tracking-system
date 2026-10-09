@@ -197,7 +197,10 @@ export function CreateDocumentDialog() {
    */
   const documentTypes = useDocumentTypes();
   const type = form.watch('type');
-  const typeOptions = useOfferedDocumentTypes(documentTypes.data === undefined ? type : undefined);
+  // The current value stands in only while the list loads; a failed load blocks registration
+  // instead, rather than filing everything under a default nobody chose.
+  const typeOptions = useOfferedDocumentTypes(documentTypes.isPending ? type : undefined);
+  const typesFailed = documentTypes.isError;
   useEffect(() => {
     const offered = documentTypes.data?.filter((option) => option.active);
     if (offered === undefined || offered.some((option) => option.code === type)) return;
@@ -364,6 +367,18 @@ export function CreateDocumentDialog() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {typesFailed ? (
+                      <p role="alert" className="text-sm text-destructive">
+                        Document types could not be loaded.{' '}
+                        <button
+                          type="button"
+                          className="underline"
+                          onClick={() => void documentTypes.refetch()}
+                        >
+                          Try again
+                        </button>
+                      </p>
+                    ) : null}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -669,7 +684,7 @@ export function CreateDocumentDialog() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={busy || typesFailed}>
                 {busy ? <Loader2 className="animate-spin" /> : null}
                 {uploadingIndex === null
                   ? 'Register document'

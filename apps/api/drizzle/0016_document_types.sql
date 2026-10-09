@@ -6,7 +6,9 @@
 --
 -- The five codes the client used to hard-code are seeded with the labels it used to derive, and
 -- any other code already on a document is carried over with its code as its label, so no existing
--- document is left holding a type the list does not know.
+-- document is left holding a type the list does not know. A legacy code whose text is already a
+-- seeded label (a document typed `Memorandum` before the client sent `MEMORANDUM`) keeps its code
+-- and is labelled "<code> (legacy)", since labels are unique too.
 --
 -- Reversal: drop the table. Nothing references it.
 
@@ -30,5 +32,11 @@ VALUES
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 INSERT INTO "document_types" ("code", "label", "sort_order")
-SELECT DISTINCT "type", "type", 100 FROM "documents"
-ON CONFLICT DO NOTHING;
+SELECT "d"."type",
+  CASE WHEN EXISTS (SELECT 1 FROM "document_types" "t" WHERE "t"."label" = "d"."type")
+    THEN "d"."type" || ' (legacy)'
+    ELSE "d"."type"
+  END,
+  100
+FROM (SELECT DISTINCT "type" FROM "documents") "d"
+ON CONFLICT ("code") DO NOTHING;

@@ -24,6 +24,8 @@ export interface ReportDocument {
   recipients: string[];
   company: string | null;
   type: string;
+  /** The administrator's label for `type`, as the export prints it. */
+  typeLabel: string;
   direction: 'INCOMING' | 'OUTGOING';
   createdAt: Date;
   /** Where the document was registered — the report is a register, so this is the filing fact. */

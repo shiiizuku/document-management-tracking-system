@@ -5,7 +5,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertCircle, Loader2, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { routeDocumentSchema, type RouteDocumentInput } from '@dts/contracts';
+import {
+  FOR_INFORMATION_RECIPIENT_LIMIT,
+  routeDocumentSchema,
+  type RouteDocumentInput,
+} from '@dts/contracts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -107,6 +111,9 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
       copies.filter((id) => id !== divisionId),
     );
   };
+  // The contract caps the copies; at the cap, unticked divisions stop accepting a tick rather than
+  // letting the form fail on submit with an error on a field the list has no slot to show.
+  const copiesFull = toDivisionId !== '' && copies.length >= FOR_INFORMATION_RECIPIENT_LIMIT;
   const makeLead = (divisionId: string) =>
     setLead(divisionId, [toDivisionId, ...copies.filter((id) => id !== divisionId)]);
 
@@ -185,9 +192,10 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
                             key={division.id}
                             className="flex min-h-11 items-center gap-2 pr-2 hover:bg-accent"
                           >
-                            <label className="flex min-h-11 flex-1 cursor-pointer items-center gap-3 pl-3.5 text-[15px]">
+                            <label className="flex min-h-11 flex-1 cursor-pointer items-center gap-3 pl-3.5 text-[15px] has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
                               <Checkbox
                                 checked={lead || copied}
+                                disabled={copiesFull && !lead && !copied}
                                 onCheckedChange={(checked) => toggle(division.id, checked === true)}
                               />
                               {division.name}
@@ -212,7 +220,8 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
                   </div>
                   <FormDescription>
                     The lead takes custody and must accept it. Every other ticked division is copied
-                    in for information: it may read and remark, and never blocks the document.
+                    in for information (up to {FOR_INFORMATION_RECIPIENT_LIMIT}): it may read and
+                    remark, and never blocks the document.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

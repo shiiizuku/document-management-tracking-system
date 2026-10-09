@@ -82,6 +82,21 @@ describe('CreateDocumentDialog', () => {
     );
   });
 
+  it('will not register while the document types failed to load', async () => {
+    serve(() => Promise.resolve(documentItem()));
+    const served = apiMock.getMockImplementation() as (path: string) => Promise<unknown>;
+    apiMock.mockImplementation((path: string) =>
+      path === '/document-types' ? Promise.reject(new Error('offline')) : served(path),
+    );
+    renderWithQuery(<CreateDocumentDialog />);
+    const dialog = await open();
+
+    expect(
+      await within(dialog).findByText(/Document types could not be loaded/, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Register document' })).toBeDisabled();
+  });
+
   /*
    * The conditional rule the server enforces, applied by the same schema in the browser: an
    * incoming document has to name who sent it.

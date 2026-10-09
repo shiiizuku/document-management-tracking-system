@@ -182,8 +182,9 @@ export class OrganizationService {
 
   async listDocumentTypes(actor: RequestUser): Promise<DocumentTypeRow[]> {
     this.authorization.assert(actor, 'organization:read');
-    // As with divisions: administrators see what they retired, everyone else what is offered.
-    return this.repository.listDocumentTypes(this.authorization.can(actor, 'organization:update'));
+    // Retired types included for everyone, unlike divisions: documents keep a retired type, so the
+    // registry filter and every label still need it. The register and edit pickers drop them.
+    return this.repository.listDocumentTypes(true);
   }
 
   async createDocumentType(

@@ -1272,6 +1272,14 @@ export class DocumentsRepository {
       .orderBy(asc(releaseCarriers.sortOrder), asc(releaseCarriers.label));
   }
 
+  /** Every type's label by code, retired ones included — for printing documents filed under them. */
+  async documentTypeLabels(): Promise<Map<string, string>> {
+    const rows = await this.database
+      .select({ code: documentTypes.code, label: documentTypes.label })
+      .from(documentTypes);
+    return new Map(rows.map((row) => [row.code, row.label]));
+  }
+
   /** Whether a document type code is on the administrator's list and still offered. */
   async isActiveDocumentType(code: string): Promise<boolean> {
     const [row] = await this.database

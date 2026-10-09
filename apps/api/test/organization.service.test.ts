@@ -225,7 +225,7 @@ describe('OrganizationService document types', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('shows retired types to administrators only', async () => {
+  it('lists retired types to every reader, since documents keep them', async () => {
     const listDocumentTypes = vi.fn().mockResolvedValue([]);
     const { service } = serviceWith({ listDocumentTypes });
 
@@ -233,6 +233,6 @@ describe('OrganizationService document types', () => {
     await service.listDocumentTypes(actor('STAFF_MEMBER'));
 
     expect(listDocumentTypes).toHaveBeenNthCalledWith(1, true);
-    expect(listDocumentTypes).toHaveBeenNthCalledWith(2, false);
+    expect(listDocumentTypes).toHaveBeenNthCalledWith(2, true);
   });
 });
