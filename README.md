@@ -208,9 +208,19 @@ With `NODE_ENV=production` the seed creates only the administrator and the Direc
 the development `records@` and `staff@` accounts below are not created. A server seeded before this
 change may still have them: deactivate them, or change their passwords.
 
-**5. Put HTTPS in front.** Proxy the public hostname to `web` (`WEB_HOST_PORT`, default 3001) and
-`/api` to `api` (`API_HOST_PORT`, default 4001). Postgres, Redis, MinIO and ClamAV also publish
-host ports for development; firewall them, or delete their `ports:` lines, on a server.
+**5. Publish only the app, then put HTTPS in front.** Start the stack with the production overlay,
+which leaves Postgres, Redis, MinIO and ClamAV unpublished and binds `api` and `web` to 127.0.0.1
+only (needs Docker Compose v2.24+):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+```
+
+Check with `docker compose -f docker-compose.yml -f docker-compose.production.yml config`, which must
+show `ports:` only under `api` and `web`, each prefixed `127.0.0.1:`, and from another machine that
+ports 5433, 6380, 9002, 9003, 3311, 3001 and 4001 on the server refuse connections. Then proxy the
+public hostname to `web` (`WEB_HOST_PORT`, default 3001) and `/api` to `api` (`API_HOST_PORT`,
+default 4001) from the same host.
 
 **Upgrading:** pull, then run `docker compose up -d --build` again. `migrate` re-runs and `api`
 waits for it. Back up first with `scripts/backup.sh`, and make sure `BACKUP_PATH` is on another
