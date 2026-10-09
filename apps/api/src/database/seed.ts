@@ -1,7 +1,11 @@
 import { hash } from 'bcryptjs';
 import { config } from 'dotenv';
 import { createDatabase } from './client.js';
-import { validateDirectorAccount, validateSeedAdminPassword } from '../config/environment.js';
+import {
+  seedsDemoAccounts,
+  validateDirectorAccount,
+  validateSeedAdminPassword,
+} from '../config/environment.js';
 import { ORD_DIVISION_CODE } from '../modules/organization/organization.constants.js';
 import { divisions, sections, users } from './schema.js';
 
@@ -15,6 +19,9 @@ config({ path: new URL('../../../../.env', import.meta.url) });
 const director = validateDirectorAccount(process.env);
 // Likewise: unset in production throws, rather than seeding the README's administrator password.
 const seedAdminPassword = validateSeedAdminPassword(process.env);
+// The records and staff accounts below have passwords published in the README, so only a
+// development database gets them; a production one is staffed through the administrator.
+const demoAccounts = seedsDemoAccounts(process.env);
 
 const { db, pool } = createDatabase();
 try {
@@ -71,7 +78,7 @@ try {
       canAccessConfidential: true,
     })
     .onConflictDoNothing();
-  if (recordsSection)
+  if (demoAccounts && recordsSection)
     await db
       .insert(users)
       .values({
@@ -113,7 +120,7 @@ try {
       canAccessConfidential: true,
     })
     .onConflictDoNothing();
-  if (pilotSection)
+  if (demoAccounts && pilotSection)
     await db
       .insert(users)
       .values({

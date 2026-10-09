@@ -204,8 +204,9 @@ docker compose ps
 docker compose run --rm --no-deps migrate node dist/database/seed.js
 ```
 
-The seed also creates the two development accounts below. Deactivate them, or change their
-passwords, before anyone else can reach the site.
+With `NODE_ENV=production` the seed creates only the administrator and the Director you configured;
+the development `records@` and `staff@` accounts below are not created. A server seeded before this
+change may still have them: deactivate them, or change their passwords.
 
 **5. Put HTTPS in front.** Proxy the public hostname to `web` (`WEB_HOST_PORT`, default 3001) and
 `/api` to `api` (`API_HOST_PORT`, default 4001). Postgres, Redis, MinIO and ClamAV also publish
