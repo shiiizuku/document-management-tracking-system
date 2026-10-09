@@ -10,6 +10,7 @@ import { OutboxWriter } from '../src/modules/audit/outbox.writer.js';
 import { DATABASE } from '../src/database/database.constants.js';
 import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
 import { FileVersionsRepository } from '../src/modules/files/file-versions.repository.js';
+import { NotificationsRepository } from '../src/modules/notifications/notifications.repository.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 import { InMemoryAuditWriter } from './in-memory-audit.writer.js';
 import { InMemoryDocumentsRepository } from './in-memory-documents.repository.js';
@@ -41,6 +42,9 @@ describe('REST /api/v1 public seam', () => {
       .useClass(InMemoryFileVersionsRepository)
       .overrideProvider(OutboxWriter)
       .useClass(InMemoryOutboxWriter)
+      // Assigning writes an inbox row; this seam has no database for it and nothing here reads it.
+      .overrideProvider(NotificationsRepository)
+      .useValue({ insert: () => Promise.resolve() })
       .overrideProvider(DATABASE)
       .useValue(fakeTransactionalDatabase)
       .compile();
@@ -205,6 +209,94 @@ describe('REST /api/v1 public seam', () => {
     await request(app.getHttpServer())
       .get('/api/v1/documents?cursor=not-a-cursor')
       .set('Cookie', cookie)
+      .expect(400);
+  });
+
+  it('pages the work queue by cursor: each assigned document once, a late arrival neither repeated nor shifting the rest', async () => {
+    const login = async (email: string, password: string) =>
+      sessionCookie(
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/login')
+          .send({ email, password })
+          .expect(201),
+      );
+    const records = await login('records@dts.local', 'Records@1234!');
+    const staff = await login('staff@dts.local', 'Staff@12345!');
+    const staffId = (
+      await request(app.getHttpServer()).get('/api/v1/auth/me').set('Cookie', staff).expect(200)
+    ).body.data.id as string;
+
+    const assign = async (n: number) => {
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/documents')
+        .set('Cookie', records)
+        .send({
+          title: `Queue subject ${String(n)}`,
+          type: 'MEMORANDUM',
+          priority: 'NORMAL',
+          direction: 'INCOMING',
+          sender: 'Citizen',
+          referenceNumber: `EXT-2026-QUEUE-${String(n)}`,
+          divisionId: 'division-records',
+          sectionId: 'section-intake',
+        })
+        .expect(201);
+      const id = created.body.data.id as string;
+      await request(app.getHttpServer())
+        .post(`/api/v1/documents/${id}/assignments`)
+        .set('Cookie', records)
+        .send({ recipientUserId: staffId })
+        .expect(201);
+      return id;
+    };
+    const ids: string[] = [];
+    for (const n of [1, 2, 3, 4, 5]) ids.push(await assign(n));
+
+    const page = (cursor?: string) =>
+      request(app.getHttpServer())
+        .get(
+          `/api/v1/documents/assigned?pageSize=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+        )
+        .set('Cookie', staff);
+    const first = (await page().expect(200)).body.data as {
+      items: { id: string }[];
+      total: number;
+      nextCursor: string | null;
+    };
+    expect(first.items).toHaveLength(2);
+    expect(first.total).toBe(5);
+    expect(first.nextCursor).toBeTruthy();
+
+    // Newer than everything already shown, so it belongs above the cursor: it must not push a row
+    // down into the next page, and `total` follows the queue rather than the cursor.
+    const late = await assign(6);
+
+    const seen = first.items.map((item) => item.id);
+    let cursor = first.nextCursor;
+    let total = first.total;
+    while (cursor) {
+      const next = (await page(cursor).expect(200)).body.data as typeof first;
+      seen.push(...next.items.map((item) => item.id));
+      total = next.total;
+      cursor = next.nextCursor;
+    }
+    expect(new Set(seen).size).toBe(seen.length);
+    expect([...seen].sort()).toEqual([...ids].sort());
+    expect(seen).not.toContain(late);
+    expect(total).toBe(6);
+
+    // A cursor from a differently sorted list, or no cursor at all, is refused; so is a page size
+    // outside the cap.
+    const registry = await request(app.getHttpServer())
+      .get('/api/v1/documents?pageSize=2&sort=priority')
+      .set('Cookie', records)
+      .expect(200);
+    const foreign = await page(registry.body.data.nextCursor as string).expect(400);
+    expect(foreign.body.error.code).toBe('INVALID_CURSOR');
+    await page('not-a-cursor').expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/documents/assigned?pageSize=101')
+      .set('Cookie', staff)
       .expect(400);
   });
 

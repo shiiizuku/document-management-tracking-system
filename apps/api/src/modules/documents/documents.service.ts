@@ -249,6 +249,12 @@ export interface DashboardSummary extends DashboardCounts {
   recentActivity: DashboardActivityEntry[];
 }
 
+export interface AssignedQueueResult {
+  items: PublicDocument[];
+  total: number;
+  nextCursor: string | null;
+}
+
 export interface DocumentSearchResult {
   items: PublicDocument[];
   total: number;
@@ -1593,10 +1599,37 @@ export class DocumentsService {
     });
   }
 
-  /** The actor's work queue: live documents they currently hold an active assignment on. */
-  async assignedQueue(actor: RequestUser): Promise<PublicDocument[]> {
-    const rows = await this.repository.listAssignedTo(actor.id);
-    return this.toPublicList(rows);
+  /**
+   * The actor's work queue: live documents they currently hold an active assignment on, newest
+   * first, a cursor page at a time. `total` is the whole queue, which is what the dashboard's
+   * "Your move" strip counts without loading every page.
+   */
+  async assignedQueue(
+    actor: RequestUser,
+    cursor?: string,
+    pageSize?: number,
+  ): Promise<AssignedQueueResult> {
+    let after: { value: string; id: string } | undefined;
+    if (cursor !== undefined) {
+      // Issued under the queue's fixed order; anything else (a registry cursor sorted by priority)
+      // would resume from a position that does not exist here.
+      const decoded = decodeDocumentCursor(cursor);
+      if (decoded === null || decoded.sort !== 'createdAt' || decoded.order !== 'desc')
+        throw new BadRequestException({
+          code: 'INVALID_CURSOR',
+          message: 'The cursor does not belong to this list. Reload it from the top.',
+        });
+      after = { value: decoded.value, id: decoded.id };
+    }
+    const page = await this.repository.listAssignedTo(actor.id, { after, pageSize });
+    return {
+      items: await this.toPublicList(page.items),
+      total: page.total,
+      nextCursor:
+        page.next === null
+          ? null
+          : encodeDocumentCursor({ sort: 'createdAt', order: 'desc', ...page.next }),
+    };
   }
 
   /**

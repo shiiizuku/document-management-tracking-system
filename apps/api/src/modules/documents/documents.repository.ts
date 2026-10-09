@@ -212,6 +212,14 @@ export interface DocumentSearchPage {
   next?: { value: string; id: string } | null;
 }
 
+export interface AssignedPage {
+  items: DocumentRow[];
+  /** The whole queue, whatever page this is. */
+  total: number;
+  /** Where the next page starts, or `null` on the last. */
+  next: { value: string; id: string } | null;
+}
+
 export interface NewWorkflowEvent {
   documentId: string;
   sequence: number;
@@ -855,21 +863,67 @@ export class DocumentsRepository {
     return new Set(rows.filter((row) => row.acceptedAt === null).map((row) => row.documentId));
   }
 
-  /** Live documents a user currently holds an active assignment on — their work queue. */
-  async listAssignedTo(userId: string): Promise<DocumentRow[]> {
-    return this.database
-      .select({ document: documents })
+  /**
+   * One keyset page of the live documents a user currently holds an active assignment on, newest
+   * first with the id as tie-break. `total` counts the whole queue, not what is left after `after`.
+   *
+   * The assignment is an `exists`, not a join: nothing in the schema makes (document, user, active)
+   * unique, and a join would repeat a document, which a keyset page cannot tolerate.
+   */
+  async listAssignedTo(
+    userId: string,
+    options: {
+      after?: { value: string; id: string } | undefined;
+      pageSize?: number | undefined;
+    } = {},
+  ): Promise<AssignedPage> {
+    const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, options.pageSize ?? DEFAULT_PAGE_SIZE));
+    const where = and(
+      isNull(documents.deletedAt),
+      exists(
+        this.database
+          .select({ one: sql`1` })
+          .from(documentAssignments)
+          .where(
+            and(
+              eq(documentAssignments.documentId, documents.id),
+              eq(documentAssignments.userId, userId),
+              eq(documentAssignments.active, true),
+            ),
+          ),
+      ),
+    );
+    const [{ total } = { total: 0 }] = await this.database
+      .select({ total: count() })
       .from(documents)
-      .innerJoin(documentAssignments, eq(documentAssignments.documentId, documents.id))
+      .where(where);
+
+    // The cursor's value is cast back to timestamptz so the comparison keeps its microseconds.
+    const after = options.after;
+    const rows = await this.database
+      .select({ document: documents, sortKey: sql<string>`${documents.createdAt}::text` })
+      .from(documents)
       .where(
-        and(
-          eq(documentAssignments.userId, userId),
-          eq(documentAssignments.active, true),
-          isNull(documents.deletedAt),
-        ),
+        after === undefined
+          ? where
+          : and(
+              where,
+              sql`(${documents.createdAt}, ${documents.id}) < (${after.value}::timestamptz, ${after.id}::uuid)`,
+            ),
       )
-      .orderBy(desc(documents.createdAt))
-      .then((rows) => rows.map((row) => row.document));
+      .orderBy(desc(documents.createdAt), desc(documents.id))
+      .limit(pageSize + 1);
+
+    const pageRows = rows.slice(0, pageSize);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map((row) => row.document),
+      total,
+      next:
+        rows.length > pageSize && last !== undefined
+          ? { value: last.sortKey, id: last.document.id }
+          : null,
+    };
   }
 
   /**
