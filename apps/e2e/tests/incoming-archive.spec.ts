@@ -52,12 +52,12 @@ test('an incoming letter is registered, accepted, forwarded, complied with and a
     // in the truncation list.
     await expect(records.getByText(`DTS-${YEAR}-000001`)).toBeVisible();
     /*
-     * Pending, not In process. Decision 154: creating a document writes an unaccepted handoff to
+     * En route (PENDING), not In process. Decision 154: creating a document writes an unaccepted handoff to
      * the unit it was registered for, and `PENDING` is derived from the existence of that row
      * (ADR-0005) rather than stored. A document that read as In process here would be one nobody
      * had taken responsibility for.
      */
-    await expect(status(records)).toHaveText('Pending');
+    await expect(status(records)).toHaveText('En route');
   });
 
   await test.step('1.2 nothing moves before the holding unit takes it on', async () => {
@@ -115,7 +115,7 @@ test('an incoming letter is registered, accepted, forwarded, complied with and a
     await expect(dialog).toBeHidden();
 
     await expect(currentlyWith(records)).toHaveText('Pilot Division');
-    await expect(status(records)).toHaveText('Pending');
+    await expect(status(records)).toHaveText('En route');
 
     /*
      * Exactly one recipient leads and takes custody; the rest are consulted and never waited on
