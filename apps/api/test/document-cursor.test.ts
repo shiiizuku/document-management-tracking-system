@@ -42,7 +42,43 @@ describe('document cursor', () => {
       'an oversized id',
       Buffer.from(JSON.stringify({ ...cursor, id: 'x'.repeat(65) })).toString('base64url'),
     ],
+    [
+      'an id that is not a uuid',
+      Buffer.from(JSON.stringify({ ...cursor, id: 'invalid' })).toString('base64url'),
+    ],
+    [
+      'a date sort value that is not a timestamp',
+      Buffer.from(JSON.stringify({ ...cursor, value: 'invalid' })).toString('base64url'),
+    ],
+    [
+      'a priority that is not one',
+      Buffer.from(JSON.stringify({ ...cursor, sort: 'priority', value: 'SOON' })).toString(
+        'base64url',
+      ),
+    ],
+    [
+      'an unknown list',
+      Buffer.from(JSON.stringify({ ...cursor, list: 'registry' })).toString('base64url'),
+    ],
   ])('refuses %s', (_label, raw) => {
     expect(decodeDocumentCursor(raw)).toBeNull();
+  });
+
+  it('keeps the list it was issued for', () => {
+    const queue: DocumentCursor = { ...cursor, list: 'assigned' };
+    expect(decodeDocumentCursor(encodeDocumentCursor(queue))).toEqual(queue);
+  });
+
+  it('accepts the timestamp and enum values the repository emits', () => {
+    for (const value of ['2026-10-09 07:02:47+00', '2026-10-09 07:02:47.5-07:30'])
+      expect(decodeDocumentCursor(encodeDocumentCursor({ ...cursor, value }))).not.toBeNull();
+    expect(
+      decodeDocumentCursor(encodeDocumentCursor({ ...cursor, sort: 'priority', value: 'URGENT' })),
+    ).not.toBeNull();
+    expect(
+      decodeDocumentCursor(
+        encodeDocumentCursor({ ...cursor, sort: 'status', value: 'FOR_RELEASE' }),
+      ),
+    ).not.toBeNull();
   });
 });

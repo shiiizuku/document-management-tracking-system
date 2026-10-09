@@ -925,7 +925,7 @@ describe('document registry REST against a real database', () => {
       .get('/api/v1/documents/assigned')
       .set('Cookie', staff.cookies)
       .expect(200);
-    const ids = dataOf<DocumentPayload[]>(queue).map((doc) => doc.id);
+    const ids = dataOf<{ items: DocumentPayload[] }>(queue).items.map((doc) => doc.id);
     expect(ids).toContain(created.id);
   }, 30_000);
 
@@ -1175,4 +1175,65 @@ describe('document registry REST against a real database', () => {
       expect(paged).toEqual(everything);
     }
   }, 30_000);
+
+  // Same promise as the registry's: a document assigned, or one leaving the queue, between two
+  // requests must not repeat a row or skip one.
+  it('pages the work queue by cursor while documents join and leave it', async () => {
+    const assign = async (n: number) => {
+      const created = dataOf<DocumentPayload>(
+        await registerDocument(records, {
+          title: `Queue keyset ${String(n)}`,
+          type: 'LETTER',
+          priority: 'NORMAL',
+          direction: 'INCOMING',
+          sender: 'External',
+          divisionId: DIV_B,
+          sectionId: SEC_B,
+        }).expect(201),
+      );
+      await request(server())
+        .post(`/api/v1/documents/${created.id}/assignments`)
+        .set('Cookie', records.cookies)
+        .set('x-csrf-token', records.csrf)
+        .send({ recipientUserId: staffId })
+        .expect(201);
+      return created.id;
+    };
+    const queue = async (cursor?: string) =>
+      dataOf<{ items: { id: string; title: string }[]; total: number; nextCursor: string | null }>(
+        await request(server())
+          .get(
+            `/api/v1/documents/assigned?pageSize=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+          )
+          .set('Cookie', staff.cookies)
+          .expect(200),
+      );
+    const original: string[] = [];
+    for (const n of [1, 2, 3, 4, 5]) original.push(await assign(n));
+
+    const everything = await request(server())
+      .get('/api/v1/documents/assigned?pageSize=100')
+      .set('Cookie', staff.cookies)
+      .expect(200);
+    const expected = dataOf<{ items: { id: string; title: string }[] }>(everything)
+      .items.filter((item) => item.title.startsWith('Queue keyset'))
+      .map((item) => item.id);
+
+    const first = await queue();
+    // A newer document joins after page one; it must not shift what the cursor continues from.
+    const late = await assign(6);
+    const seen = first.items.map((item) => item.id);
+    let cursor = first.nextCursor;
+    while (cursor) {
+      const next = await queue(cursor);
+      seen.push(...next.items.map((item) => item.id));
+      cursor = next.nextCursor;
+    }
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen).not.toContain(late);
+    expect(seen.filter((id) => original.includes(id))).toEqual(
+      expected.filter((id) => original.includes(id)),
+    );
+    expect(first.total).toBeGreaterThanOrEqual(5);
+  }, 60_000);
 });

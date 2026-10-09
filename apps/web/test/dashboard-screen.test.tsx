@@ -55,10 +55,17 @@ const summary = (overrides: Partial<DashboardSummary> = {}): DashboardSummary =>
   ...overrides,
 });
 
-const serve = (payload: DashboardSummary | Error, assigned: unknown[] = []) =>
+const serve = (
+  payload: DashboardSummary | Error,
+  assigned: { items: unknown[]; total: number; nextCursor: string | null } = {
+    items: [],
+    total: 0,
+    nextCursor: null,
+  },
+) =>
   apiMock.mockImplementation((path: string) => {
     if (path === '/auth/me') return Promise.resolve(sessionUser());
-    // The "Your move" strip counts the My work queue.
+    // The "Your move" strip reads the My work queue's total.
     if (path === '/documents/assigned') return Promise.resolve(assigned);
     return payload instanceof Error ? Promise.reject(payload) : Promise.resolve(payload);
   });
@@ -131,7 +138,11 @@ describe('DashboardScreen', () => {
   });
 
   it('shows the Your move strip with the size of the My work queue', async () => {
-    serve(summary(), [{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+    serve(summary(), {
+      items: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      total: 3,
+      nextCursor: null,
+    });
     renderWithQuery(<DashboardScreen />);
 
     const strip = await screen.findByRole('region', { name: 'Your move' });
@@ -139,8 +150,21 @@ describe('DashboardScreen', () => {
     expect(screen.getByRole('link', { name: 'Open my work' })).toHaveAttribute('href', '/my-work');
   });
 
+  // The queue is paged and the strip loads only the first page: its count is the server's total for
+  // the whole queue, so a queue longer than a page must not read as just the page.
+  it('counts the whole queue in the Your move strip, not the page that was loaded', async () => {
+    serve(summary(), { items: [{ id: 'a' }, { id: 'b' }], total: 57, nextCursor: 'next-1' });
+    renderWithQuery(<DashboardScreen />);
+
+    const strip = await screen.findByRole('region', { name: 'Your move' });
+    expect(strip).toHaveTextContent('Your move: 57 documents are assigned to you.');
+    expect(
+      apiMock.mock.calls.filter(([path]) => String(path).startsWith('/documents/assigned')),
+    ).toHaveLength(1);
+  });
+
   it('hides the Your move strip when nothing is assigned', async () => {
-    serve(summary(), []);
+    serve(summary());
     renderWithQuery(<DashboardScreen />);
 
     await waitFor(() => expect(screen.getByText('Awaiting acceptance')).toBeInTheDocument());

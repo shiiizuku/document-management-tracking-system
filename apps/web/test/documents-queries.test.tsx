@@ -83,7 +83,7 @@ describe('invalidateDocument', () => {
   // dashboard is open must refetch the queue its "Your move" strip counts — not wait for a refocus.
   it('refetches the assigned queue, so the dashboard count follows an assignment', async () => {
     const { client, wrapper } = harness();
-    apiMock.mockResolvedValue([]);
+    apiMock.mockResolvedValue({ items: [], total: 0, nextCursor: null });
     const { result } = renderHook(() => useAssignedDocuments(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
