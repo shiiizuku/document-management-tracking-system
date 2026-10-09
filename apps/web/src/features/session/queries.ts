@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import type { Capability, ChangePasswordInput, LoginInput, Role } from '@dts/contracts';
-import { api, inlineContent, upload } from '@/lib/api';
+import { api, inlineContent, upload, type InlineContent } from '@/lib/api';
 
 /**
  * Who is signed in, and what they may do.
@@ -153,16 +153,42 @@ export const PROFILE_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as 
 
 const photoStampKey = ['session', 'photo-stamp'] as const;
 
+const watchedClients = new WeakSet<QueryClient>();
+
+/**
+ * Revokes a photo's object URL when its cache entry is removed.
+ *
+ * Registered once per client rather than per component: the removal happens *after* the last
+ * consumer has unmounted, so a subscription owned by a component would already be gone. Releasing
+ * twice is harmless, which is why a repeated removal needs no bookkeeping.
+ */
+const releaseOnRemoval = (client: QueryClient): void => {
+  if (watchedClients.has(client)) return;
+  watchedClients.add(client);
+  client.getQueryCache().subscribe((event) => {
+    const { queryKey } = event.query as { queryKey: readonly unknown[] };
+    if (event.type !== 'removed' || queryKey[0] !== 'session' || queryKey[1] !== 'photo') return;
+    (event.query.state.data as InlineContent | undefined)?.release();
+  });
+};
+
 /**
  * The signed-in user's photo as an object URL, or `null` when they have none.
  *
  * Fetched through `inlineContent` rather than pointed at by an `<img src>`: the API is a different
  * origin in development and the photo needs the session cookie, which an image request to another
- * site does not carry. The URL is revoked when the photo changes or the avatar unmounts.
- * The cache key carries an upload stamp, so a replaced photo is fetched again rather than served
- * from the 5-minute browser cache.
+ * site does not carry. The cache key carries an upload stamp, so a replaced photo is fetched again.
+ *
+ * The object URL belongs to the cache entry, not to the component: the shell mounts this hook twice
+ * on a phone (the desktop menu stays mounted under the navigation sheet), and revoking from one
+ * consumer's cleanup would break the other's image. It is revoked when the entry is removed — which
+ * `gcTime: 0` does as soon as the last consumer goes, and `client.clear()` does on sign-out.
+ * The bytes are fetched with `no-store` because `/me/photo` is one URL for every user: the browser's
+ * own cache is not partitioned by session, so a second person on the same browser could be served
+ * the first one's photo.
  */
 export function useProfilePhotoUrl(): string | null {
+  const client = useQueryClient();
   const stamp = useQuery({
     queryKey: photoStampKey,
     queryFn: () => 0,
@@ -181,14 +207,17 @@ export function useProfilePhotoUrl(): string | null {
   const enabled = has.data === true;
   const query = useQuery({
     queryKey: ['session', 'photo', stamp] as const,
-    queryFn: () => inlineContent('/me/photo'),
+    queryFn: async () => {
+      const content = await inlineContent('/me/photo', { cache: 'no-store' });
+      releaseOnRemoval(client);
+      return content;
+    },
     enabled,
     staleTime: Infinity,
     gcTime: 0,
     retry: false,
   });
   const content = query.data;
-  useEffect(() => () => content?.release(), [content]);
   return enabled && content !== undefined ? content.url : null;
 }
 

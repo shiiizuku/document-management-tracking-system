@@ -583,7 +583,9 @@ function AccountMenu({
             )}
           >
             <Avatar className="size-9">
-              {photoUrl === null ? null : <AvatarImage src={photoUrl} alt="" />}
+              {photoUrl === null ? null : (
+                <AvatarImage src={photoUrl} alt="" className="object-cover" />
+              )}
               <AvatarFallback
                 className={cn(
                   'text-xs font-semibold',

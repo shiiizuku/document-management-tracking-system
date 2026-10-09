@@ -30,7 +30,7 @@ describe('useProfilePhotoUrl', () => {
     const { result } = renderHook(() => useProfilePhotoUrl(), { wrapper });
 
     await waitFor(() => expect(result.current).toBe('blob:photo'));
-    expect(inlineMock).toHaveBeenCalledWith('/me/photo');
+    expect(inlineMock).toHaveBeenCalledTimes(1);
   });
 
   it('stays empty, with no image request, for an account without a photo', async () => {
@@ -43,15 +43,37 @@ describe('useProfilePhotoUrl', () => {
     expect(inlineMock).not.toHaveBeenCalled();
   });
 
-  it('releases the object URL when the avatar goes away', async () => {
+  it('fetches the bytes past the browser cache, which is not partitioned by session', async () => {
+    apiMock.mockResolvedValue({ hasPhoto: true });
+    inlineMock.mockResolvedValue({ url: 'blob:photo', mediaType: 'image/png', release: vi.fn() });
+
+    const { result } = renderHook(() => useProfilePhotoUrl(), { wrapper });
+    await waitFor(() => expect(result.current).toBe('blob:photo'));
+
+    expect(inlineMock).toHaveBeenCalledWith('/me/photo', { cache: 'no-store' });
+  });
+
+  it('releases the object URL once the last avatar using it is gone', async () => {
     const release = vi.fn();
     apiMock.mockResolvedValue({ hasPhoto: true });
     inlineMock.mockResolvedValue({ url: 'blob:photo', mediaType: 'image/png', release });
 
-    const { result, unmount } = renderHook(() => useProfilePhotoUrl(), { wrapper });
-    await waitFor(() => expect(result.current).toBe('blob:photo'));
-    unmount();
+    // Two consumers on one cache, as on a phone where the desktop menu stays mounted under the
+    // navigation sheet.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const shared = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const first = renderHook(() => useProfilePhotoUrl(), { wrapper: shared });
+    const second = renderHook(() => useProfilePhotoUrl(), { wrapper: shared });
+    await waitFor(() => expect(second.result.current).toBe('blob:photo'));
 
-    expect(release).toHaveBeenCalled();
+    second.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(release).not.toHaveBeenCalled();
+    expect(first.result.current).toBe('blob:photo');
+
+    first.unmount();
+    await waitFor(() => expect(release).toHaveBeenCalled());
   });
 });
