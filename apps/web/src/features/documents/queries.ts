@@ -43,14 +43,6 @@ export const DOCUMENT_PAGE_SIZE = 20;
  * server-side refuses a value outside it. Adding a class is a one-line change here; removing one
  * does not retire the documents already filed under it.
  */
-export const DOCUMENT_TYPES = [
-  'MEMORANDUM',
-  'FOI_REQUEST',
-  'SPECIAL_ORDER',
-  'LETTER',
-  'DENR_8888_ACTION_CENTER',
-] as const;
-
 /** Fields the API will sort by. Anything else is rejected server-side, so this list is the truth. */
 export const DOCUMENT_SORT_FIELDS = ['createdAt', 'priority', 'status'] as const;
 export type DocumentSortField = (typeof DOCUMENT_SORT_FIELDS)[number];

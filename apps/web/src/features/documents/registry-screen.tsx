@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowDownLeft, ArrowUpRight, FileSearch, Lock } from 'lucide-react';
@@ -17,10 +17,14 @@ import {
   PRIORITY_LABELS,
   PriorityLabel,
   StatusBadge,
-  documentTypeLabel,
   statusLabel,
 } from '@/components/dts/status-badge';
-import { useDivisions, useSections } from '@/features/org/queries';
+import {
+  useDivisions,
+  useDocumentTypeLabel,
+  useDocumentTypes,
+  useSections,
+} from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { CreateDocumentDialog } from './create-document-dialog';
 import { DeletedDocumentsDialog } from './deleted-documents-dialog';
@@ -28,7 +32,6 @@ import { DocumentList, ListViewControl } from './document-list';
 import { useListView } from './list-view';
 import {
   DOCUMENT_PAGE_SIZE,
-  DOCUMENT_TYPES,
   type DocumentListItem,
   type DocumentSortField,
   useInfiniteDocuments,
@@ -56,12 +59,6 @@ const STATIC_FILTER_SELECTS = [
     })),
   },
   {
-    id: 'type',
-    label: 'Type',
-    anyLabel: 'Any type',
-    options: DOCUMENT_TYPES.map((value) => ({ value, label: documentTypeLabel(value) })),
-  },
-  {
     id: 'direction',
     label: 'Direction',
     anyLabel: 'Either direction',
@@ -72,7 +69,10 @@ const STATIC_FILTER_SELECTS = [
   },
 ] as const;
 
-const columns: readonly DataTableColumn<DocumentListItem>[] = [
+/** Built per render so the type column reads the administrator's labels. */
+const columnsFor = (
+  typeLabel: (code: string) => string,
+): readonly DataTableColumn<DocumentListItem>[] => [
   {
     id: 'title',
     header: 'Document',
@@ -100,7 +100,7 @@ const columns: readonly DataTableColumn<DocumentListItem>[] = [
         </div>
         <div className="mt-0.5 text-xs text-muted-foreground">
           <span className="tracking-number">{row.trackingNumber}</span>
-          {` · ${documentTypeLabel(row.type)}`}
+          {` · ${typeLabel(row.type)}`}
           {row.referenceNumber === null ? '' : ` · ${row.referenceNumber}`}
         </div>
       </div>
@@ -179,8 +179,21 @@ export function RegistryScreen() {
   // Offered only once a division is chosen: a section belongs to one division, so there is nothing
   // meaningful to pick before that, and a stale section would silently empty the list.
   const sections = useSections(filters.divisionId || null);
+  // Every type, retired ones included, because the registry still holds documents filed under them.
+  const documentTypes = useDocumentTypes();
+  const typeLabel = useDocumentTypeLabel();
+  const columns = useMemo(() => columnsFor(typeLabel), [typeLabel]);
+  const [statusSelect, prioritySelect, directionSelect] = STATIC_FILTER_SELECTS;
   const filterSelects = [
-    ...STATIC_FILTER_SELECTS,
+    statusSelect,
+    prioritySelect,
+    {
+      id: 'type',
+      label: 'Type',
+      anyLabel: 'Any type',
+      options: (documentTypes.data ?? []).map((type) => ({ value: type.code, label: type.label })),
+    },
+    directionSelect,
     {
       id: 'divisionId',
       /*

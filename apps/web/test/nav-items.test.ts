@@ -70,7 +70,7 @@ describe('navigation grouping', () => {
       holding('AUDIT_VIEW', 'ACCOUNT_REQUEST_REVIEW', 'USER_MANAGE', 'ORG_MANAGE'),
     );
     expect(groups.filter((group) => group.section === ADMIN_SECTION)).toHaveLength(1);
-    expect(groups.find((group) => group.section === ADMIN_SECTION)?.items).toHaveLength(4);
+    expect(groups.find((group) => group.section === ADMIN_SECTION)?.items).toHaveLength(5);
   });
 
   it('loses no visible item to the grouping', () => {

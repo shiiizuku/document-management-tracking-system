@@ -466,6 +466,17 @@ export class InMemoryDocumentsRepository {
     return Promise.resolve(row === undefined ? null : { ...row });
   }
 
+  /** Every code is offered unless a test retires it. */
+  private readonly retiredDocumentTypes = new Set<string>();
+
+  retireDocumentTypeForTest(code: string): void {
+    this.retiredDocumentTypes.add(code);
+  }
+
+  isActiveDocumentType(code: string): Promise<boolean> {
+    return Promise.resolve(!this.retiredDocumentTypes.has(code));
+  }
+
   hasActiveAssignment(documentId: string, userId: string): Promise<boolean> {
     return Promise.resolve(this.assignments.get(documentId)?.has(userId) ?? false);
   }

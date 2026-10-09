@@ -381,6 +381,7 @@ export class DocumentsService {
       input.sectionId ?? null,
     );
     if (!placement.ok) throw new BadRequestException(placement.reason);
+    await this.assertOfferedType(input.type);
     const year = new Date().getUTCFullYear();
 
     const row = await this.database.transaction(async (tx) => {
@@ -732,6 +733,10 @@ export class DocumentsService {
         code: 'NO_METADATA_CHANGE',
         message: 'The supplied metadata matches the current values',
       });
+    // Only a change of type is checked: a document keeps a type that has since been retired, and
+    // editing its title must not force someone to reclassify it.
+    if (input.type !== undefined && input.type !== current.type)
+      await this.assertOfferedType(input.type);
 
     const updated = await this.database.transaction(async (tx) => {
       const row = await this.repository.updateMetadata(id, input.expectedVersion, patch, tx);
@@ -1825,6 +1830,15 @@ export class DocumentsService {
       sharedUserIds: facts.sharedUserIds,
       confidential: row.confidential,
     };
+  }
+
+  /** A document may only be filed under a type the administrator currently offers. */
+  private async assertOfferedType(type: string): Promise<void> {
+    if (!(await this.repository.isActiveDocumentType(type)))
+      throw new BadRequestException({
+        code: 'DOCUMENT_TYPE_NOT_OFFERED',
+        message: 'That document type does not exist or has been retired',
+      });
   }
 
   /**

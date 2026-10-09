@@ -9,9 +9,9 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { EmptyState } from '@/components/dts/empty-state';
 import { DetailSkeleton } from '@/components/dts/skeletons';
-import { PriorityLabel, StatusBadge, documentTypeLabel } from '@/components/dts/status-badge';
+import { PriorityLabel, StatusBadge } from '@/components/dts/status-badge';
 import { AttachmentsSection } from '@/features/attachments/attachments-section';
-import { useDivisions } from '@/features/org/queries';
+import { useDivisions, useDocumentTypeLabel } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -46,6 +46,7 @@ const isClosed = (document: DocumentDetail) =>
  * column, where the eye had no edge to find the attachments or the timeline by.
  */
 export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: string }>) {
+  const typeLabel = useDocumentTypeLabel();
   const document = useDocument(documentId);
   const { can } = useSession();
 
@@ -80,7 +81,7 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
             <header className="flex flex-wrap items-start gap-x-4 gap-y-2">
               <div className="min-w-0 flex-1">
                 <p className="eyebrow">
-                  {detail.trackingNumber} · {documentTypeLabel(detail.type)} ·{' '}
+                  {detail.trackingNumber} · {typeLabel(detail.type)} ·{' '}
                   {detail.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}
                 </p>
                 <h1 className="mt-2 flex items-start gap-2 font-display text-[2.5rem] leading-[1.1] font-normal text-foreground">

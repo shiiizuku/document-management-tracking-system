@@ -1,14 +1,18 @@
 import { Body, Controller, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import {
   createDivisionSchema,
+  createDocumentTypeSchema,
   createSectionSchema,
   headOfBureauSchema,
   updateDivisionSchema,
+  updateDocumentTypeSchema,
   updateSectionSchema,
   type CreateDivisionInput,
+  type CreateDocumentTypeInput,
   type CreateSectionInput,
   type HeadOfBureau,
   type UpdateDivisionInput,
+  type UpdateDocumentTypeInput,
   type UpdateSectionInput,
 } from '@dts/contracts';
 import { AuthGuard } from '../../common/auth.guard.js';
@@ -78,5 +82,27 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(updateSectionSchema)) patch: UpdateSectionInput,
   ) {
     return { data: await this.organization.updateSection(actor, id, patch) };
+  }
+
+  @Get('document-types')
+  async documentTypes(@CurrentUser() actor: RequestUser) {
+    return { data: await this.organization.listDocumentTypes(actor) };
+  }
+
+  @Post('document-types')
+  async createDocumentType(
+    @CurrentUser() actor: RequestUser,
+    @Body(new ZodValidationPipe(createDocumentTypeSchema)) input: CreateDocumentTypeInput,
+  ) {
+    return { data: await this.organization.createDocumentType(actor, input) };
+  }
+
+  @Patch('document-types/:id')
+  async updateDocumentType(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(updateDocumentTypeSchema)) patch: UpdateDocumentTypeInput,
+  ) {
+    return { data: await this.organization.updateDocumentType(actor, id, patch) };
   }
 }

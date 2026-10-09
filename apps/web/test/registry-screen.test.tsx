@@ -324,7 +324,7 @@ describe('RegistryScreen', () => {
   it('offers registration only to a user who may register', async () => {
     apiMock.mockImplementation((path: string) => {
       if (path === '/auth/me') return Promise.resolve(sessionUser({ capabilities: [] }));
-      if (path === '/divisions') return Promise.resolve([]);
+      if (path === '/divisions' || path === '/document-types') return Promise.resolve([]);
       return Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 });
     });
     renderWithQuery(<RegistryScreen />);

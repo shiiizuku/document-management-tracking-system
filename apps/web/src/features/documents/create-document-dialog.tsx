@@ -44,14 +44,19 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog } from '@/components/dts/confirm-dialog';
-import { documentTypeLabel } from '@/components/dts/status-badge';
 import { useUploadAttachmentToDocument } from '@/features/attachments/queries';
-import { useDivisions, useHeadOfBureau, useSections } from '@/features/org/queries';
+import {
+  useDivisions,
+  useDocumentTypes,
+  useHeadOfBureau,
+  useOfferedDocumentTypes,
+  useSections,
+} from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { applyServerErrors } from '@/lib/forms';
 import { cn } from '@/lib/utils';
 import { dueDateToIso, isoToDueDate } from './due-date';
-import { DOCUMENT_TYPES, useCreateDocument } from './queries';
+import { useCreateDocument } from './queries';
 import { RecipientsField, SuggestInput } from './recipients-field';
 
 /** "Name, Title", tolerating a blank name and a setting that has not loaded yet. */
@@ -186,6 +191,20 @@ export function CreateDocumentDialog() {
   // Default to the user's own division once the list arrives, or to the only one there is. Doing
   // it here rather than in `defaultValues` is what covers the case where the session resolved
   // after the form was constructed.
+  /*
+   * `MEMORANDUM` is the default because it is what most mail is, but an administrator can retire
+   * it. Once the list is known, a default it no longer offers moves to the first type it does.
+   */
+  const documentTypes = useDocumentTypes();
+  const type = form.watch('type');
+  const typeOptions = useOfferedDocumentTypes(documentTypes.data === undefined ? type : undefined);
+  useEffect(() => {
+    const offered = documentTypes.data?.filter((option) => option.active);
+    if (offered === undefined || offered.some((option) => option.code === type)) return;
+    const first = offered[0];
+    if (first) form.setValue('type', first.code);
+  }, [documentTypes.data, type, form]);
+
   useEffect(() => {
     if (divisionId) return;
     const fallback = user?.divisionId ?? divisions.data?.[0]?.id;
@@ -338,9 +357,9 @@ export function CreateDocumentDialog() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {DOCUMENT_TYPES.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {documentTypeLabel(option)}
+                        {typeOptions.map((option) => (
+                          <SelectItem key={option.code} value={option.code}>
+                            {option.label}
                           </SelectItem>
                         ))}
                       </SelectContent>

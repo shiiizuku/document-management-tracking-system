@@ -9,10 +9,11 @@ import { EmptyState } from '@/components/dts/empty-state';
 import { ListShell } from '@/components/dts/list-shell';
 import { CardsSkeleton } from '@/components/dts/skeletons';
 import { PageHeader } from '@/components/dts/page-header';
-import { PriorityLabel, StatusBadge, documentTypeLabel } from '@/components/dts/status-badge';
+import { PriorityLabel, StatusBadge } from '@/components/dts/status-badge';
 import { cn } from '@/lib/utils';
 import { dueLabel, isPastDue } from './due-date';
 import { useAssignedDocuments, type DocumentListItem } from './queries';
+import { useDocumentTypeLabel } from '@/features/org/queries';
 
 /**
  * The documents assigned to the signed-in user, as a list of rows to work through.
@@ -89,6 +90,7 @@ const isOpen = (row: DocumentListItem) => row.status !== 'RELEASED' && row.statu
  * title link and the Open button are the keyboard's way in, so the row itself is not a tab stop.
  */
 function WorkRow({ row, onOpen }: Readonly<{ row: DocumentListItem; onOpen: () => void }>) {
+  const typeLabel = useDocumentTypeLabel();
   const overdue = row.dueAt !== null && isOpen(row) && isPastDue(row.dueAt);
   const due = dueLabel(row.dueAt);
   const stop = (event: { stopPropagation: () => void }) => event.stopPropagation();
@@ -113,7 +115,7 @@ function WorkRow({ row, onOpen }: Readonly<{ row: DocumentListItem; onOpen: () =
           <PriorityLabel priority={row.priority} />
           <span className="text-xs text-muted-foreground">
             <span className="tracking-number">{row.trackingNumber}</span>
-            {` · ${documentTypeLabel(row.type)} · ${row.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}`}
+            {` · ${typeLabel(row.type)} · ${row.direction === 'INCOMING' ? 'Incoming' : 'Outgoing'}`}
           </span>
         </div>
         <p className="flex items-start gap-1.5">

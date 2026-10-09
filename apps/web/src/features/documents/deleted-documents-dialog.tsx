@@ -15,9 +15,10 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/dts/empty-state';
-import { StatusBadge, documentTypeLabel } from '@/components/dts/status-badge';
+import { StatusBadge } from '@/components/dts/status-badge';
 import { ApiError } from '@/lib/api';
 import { useDeletedDocuments, useRestoreDocument, type DocumentListItem } from './queries';
+import { useDocumentTypeLabel } from '@/features/org/queries';
 
 /**
  * The deleted documents, and the way back.
@@ -101,6 +102,7 @@ export function DeletedDocumentsDialog() {
 }
 
 function DeletedRow({ document }: Readonly<{ document: DocumentListItem }>) {
+  const typeLabel = useDocumentTypeLabel();
   const restore = useRestoreDocument();
 
   const onRestore = () =>
@@ -130,7 +132,7 @@ function DeletedRow({ document }: Readonly<{ document: DocumentListItem }>) {
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-foreground">{document.title}</div>
         <div className="text-xs text-muted-foreground">
-          {document.trackingNumber} · {documentTypeLabel(document.type)}
+          {document.trackingNumber} · {typeLabel(document.type)}
         </div>
       </div>
       <StatusBadge status={document.status} />

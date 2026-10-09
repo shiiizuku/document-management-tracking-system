@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type { RequestUser } from '../src/common/request-user.js';
 import type { Role } from '../src/modules/authorization/authorization.policy.js';
@@ -7,6 +7,7 @@ import { capabilitiesByRole } from '../src/modules/authorization/role-capabiliti
 import { OrganizationService } from '../src/modules/organization/organization.service.js';
 import type {
   DivisionRow,
+  DocumentTypeRow,
   OrganizationRepository,
   SectionRow,
 } from '../src/modules/organization/organization.repository.js';
@@ -175,5 +176,63 @@ describe('OrganizationService head of bureau', () => {
       name: '',
       title: 'Regional Director',
     });
+  });
+});
+
+describe('OrganizationService document types', () => {
+  const documentType = (overrides: Partial<DocumentTypeRow> = {}): DocumentTypeRow => ({
+    id: 'type-1',
+    code: 'NOTICE_OF_VIOLATION',
+    label: 'Notice of violation',
+    active: true,
+    sortOrder: 6,
+    createdAt: new Date('2026-10-09T00:00:00.000Z'),
+    updatedAt: new Date('2026-10-09T00:00:00.000Z'),
+    ...overrides,
+  });
+
+  it('lets an administrator add a type, and audits it', async () => {
+    const insertDocumentType = vi.fn().mockResolvedValue(documentType());
+    const { service, write } = serviceWith({ insertDocumentType });
+
+    const created = await service.createDocumentType(actor('ADMINISTRATOR'), {
+      code: 'NOTICE_OF_VIOLATION',
+      label: 'Notice of violation',
+    });
+
+    expect(created.code).toBe('NOTICE_OF_VIOLATION');
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'document-type.created', targetId: 'type-1' }),
+    );
+  });
+
+  it('refuses a non-administrator', async () => {
+    const insertDocumentType = vi.fn();
+    const { service } = serviceWith({ insertDocumentType });
+
+    await expect(
+      service.createDocumentType(actor('RECORDS_STAFF'), { code: 'X_TYPE', label: 'X type' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(insertDocumentType).not.toHaveBeenCalled();
+  });
+
+  it('turns a duplicate code or name into a conflict', async () => {
+    const insertDocumentType = vi.fn().mockRejectedValue({ code: '23505' });
+    const { service } = serviceWith({ insertDocumentType });
+
+    await expect(
+      service.createDocumentType(actor('ADMINISTRATOR'), { code: 'LETTER', label: 'Letter' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('shows retired types to administrators only', async () => {
+    const listDocumentTypes = vi.fn().mockResolvedValue([]);
+    const { service } = serviceWith({ listDocumentTypes });
+
+    await service.listDocumentTypes(actor('ADMINISTRATOR'));
+    await service.listDocumentTypes(actor('STAFF_MEMBER'));
+
+    expect(listDocumentTypes).toHaveBeenNthCalledWith(1, true);
+    expect(listDocumentTypes).toHaveBeenNthCalledWith(2, false);
   });
 });

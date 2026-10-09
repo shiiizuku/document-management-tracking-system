@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CreateDocumentDialog } from '../src/features/documents/create-document-dialog';
 import { MetadataDialog } from '../src/features/documents/metadata-dialog';
 import type * as ApiModule from '../src/lib/api';
-import { division, documentDetail, section, sessionUser } from './fixtures';
+import { division, documentDetail, documentTypes, section, sessionUser } from './fixtures';
 import { requestBody } from './mock-api';
 import { renderWithQuery } from './query-harness';
 
@@ -36,6 +36,7 @@ const serve = () => {
   apiMock.mockImplementation((path: string) => {
     if (path === '/auth/me') return Promise.resolve(sessionUser());
     if (path === '/divisions') return Promise.resolve([division()]);
+    if (path === '/document-types') return Promise.resolve(documentTypes());
     if (path.startsWith('/divisions/')) return Promise.resolve([section()]);
     if (path.startsWith('/documents/suggestions')) return Promise.resolve([]);
     if (path === '/office/head-of-bureau')

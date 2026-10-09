@@ -40,7 +40,11 @@ const renderShell = (capabilities: Capability[], content: ReactNode = <p>Route c
   const user = sessionUser(capabilities);
   apiMock.mockImplementation((path: string) =>
     Promise.resolve(
-      path === '/divisions' ? [{ id: 'div-1', name: 'Records Division', code: 'RD' }] : user,
+      path === '/divisions'
+        ? [{ id: 'div-1', name: 'Records Division', code: 'RD' }]
+        : path === '/document-types'
+          ? []
+          : user,
     ),
   );
   return renderWithQuery(<AppShell user={user}>{content}</AppShell>);
