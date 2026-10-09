@@ -93,6 +93,11 @@ describe('writing registry filters to the URL', () => {
     expect(new URLSearchParams(query).get('priority')).toBeNull();
   });
 
+  it('ignores a section that arrives without a division', () => {
+    const section = '7a9c1e2f-3b4d-4c5e-8f6a-1b2c3d4e5f6a';
+    expect(parseDocumentFilters(new URLSearchParams(`sectionId=${section}`)).sectionId).toBe('');
+  });
+
   it('round-trips every filter it writes', () => {
     const filters = {
       search: 'budget',

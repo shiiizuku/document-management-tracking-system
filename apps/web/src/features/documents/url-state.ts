@@ -42,7 +42,9 @@ export const parseDocumentFilters = (params: URLSearchParams): DocumentFilters =
   type: oneOf(DOCUMENT_TYPES, params.get('type')),
   direction: oneOf(documentDirectionSchema.options, params.get('direction')),
   divisionId: asUuid(params.get('divisionId')),
-  sectionId: asUuid(params.get('sectionId')),
+  // A section only means something inside a division, and the Section select is not rendered
+  // without one, so a stray `sectionId` would narrow the list with no control or chip to remove.
+  sectionId: asUuid(params.get('divisionId')) === '' ? '' : asUuid(params.get('sectionId')),
   // Only the exact value the dashboard links with; anything else is no filter, not an error.
   overdue: params.get('overdue') === 'true',
   // Unlike the filters, a missing or invalid sort falls back to a value rather than to "none":
