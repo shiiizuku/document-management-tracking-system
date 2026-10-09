@@ -42,6 +42,7 @@ export const parseDocumentFilters = (params: URLSearchParams): DocumentFilters =
   type: oneOf(DOCUMENT_TYPES, params.get('type')),
   direction: oneOf(documentDirectionSchema.options, params.get('direction')),
   divisionId: asUuid(params.get('divisionId')),
+  sectionId: asUuid(params.get('sectionId')),
   // Only the exact value the dashboard links with; anything else is no filter, not an error.
   overdue: params.get('overdue') === 'true',
   // Unlike the filters, a missing or invalid sort falls back to a value rather than to "none":
@@ -71,6 +72,7 @@ export const documentFiltersToParams = (filters: DocumentFilters, page: number):
   if (filters.type) params.set('type', filters.type);
   if (filters.direction) params.set('direction', filters.direction);
   if (filters.divisionId) params.set('divisionId', filters.divisionId);
+  if (filters.sectionId) params.set('sectionId', filters.sectionId);
   if (filters.overdue) params.set('overdue', 'true');
   if (filters.sort !== DEFAULT_DOCUMENT_FILTERS.sort) params.set('sort', filters.sort);
   if (filters.order !== DEFAULT_DOCUMENT_FILTERS.order) params.set('order', filters.order);
@@ -86,4 +88,5 @@ export const hasActiveDocumentFilters = (filters: DocumentFilters): boolean =>
   filters.type !== '' ||
   filters.direction !== '' ||
   filters.divisionId !== '' ||
+  filters.sectionId !== '' ||
   filters.overdue;

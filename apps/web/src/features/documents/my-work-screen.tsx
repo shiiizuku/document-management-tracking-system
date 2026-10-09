@@ -109,7 +109,7 @@ function WorkRow({ row, onOpen }: Readonly<{ row: DocumentListItem; onOpen: () =
     >
       <div className="min-w-0 flex-[1_1_320px] space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge status={row.status} />
+          <StatusBadge status={row.presentedStatus} />
           <PriorityLabel priority={row.priority} />
           <span className="text-xs text-muted-foreground">
             <span className="tracking-number">{row.trackingNumber}</span>

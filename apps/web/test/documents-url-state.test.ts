@@ -101,6 +101,7 @@ describe('writing registry filters to the URL', () => {
       type: 'SPECIAL_ORDER',
       direction: 'OUTGOING',
       divisionId: '3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
+      sectionId: '7a9c1e2f-3b4d-4c5e-8f6a-1b2c3d4e5f6a',
       overdue: true,
       sort: 'status',
       order: 'asc',
@@ -127,7 +128,7 @@ describe('hasActiveDocumentFilters', () => {
     expect(hasActiveDocumentFilters({ ...DEFAULT_DOCUMENT_FILTERS, search: '   ' })).toBe(false);
   });
 
-  it.each(['status', 'priority', 'type', 'direction', 'divisionId'] as const)(
+  it.each(['status', 'priority', 'type', 'direction', 'divisionId', 'sectionId'] as const)(
     'notices a %s filter',
     (field) => {
       expect(hasActiveDocumentFilters({ ...DEFAULT_DOCUMENT_FILTERS, [field]: 'X' })).toBe(true);

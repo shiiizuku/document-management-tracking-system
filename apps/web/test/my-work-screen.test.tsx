@@ -38,6 +38,17 @@ describe('MyWorkScreen', () => {
     );
   });
 
+  // The stored status says In process for a document nobody has accepted yet; the row must show
+  // what the detail page shows, or the same document reads two ways on two screens.
+  it('badges a document awaiting acceptance as pending, not by its stored status', async () => {
+    apiMock.mockResolvedValue([documentItem({ status: 'IN_PROCESS', presentedStatus: 'PENDING' })]);
+    renderWithQuery(<MyWorkScreen />);
+
+    await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+    expect(screen.getByText('En route')).toBeInTheDocument();
+    expect(screen.queryByText('In process')).not.toBeInTheDocument();
+  });
+
   it('counts the queue beside the heading', async () => {
     apiMock.mockResolvedValue([documentItem(), documentItem({ id: 'doc-2' })]);
     renderWithQuery(<MyWorkScreen />);

@@ -20,7 +20,7 @@ import {
   documentTypeLabel,
   statusLabel,
 } from '@/components/dts/status-badge';
-import { useDivisions } from '@/features/org/queries';
+import { useDivisions, useSections } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { CreateDocumentDialog } from './create-document-dialog';
 import { DeletedDocumentsDialog } from './deleted-documents-dialog';
@@ -111,7 +111,7 @@ const columns: readonly DataTableColumn<DocumentListItem>[] = [
     id: 'status',
     header: 'Status',
     sortable: true,
-    cell: (row) => <StatusBadge status={row.status} />,
+    cell: (row) => <StatusBadge status={row.presentedStatus} />,
   },
   {
     id: 'priority',
@@ -174,6 +174,9 @@ export function RegistryScreen() {
    * control, the user would arrive at a filtered registry with no indication of what narrowed it.
    */
   const divisions = useDivisions();
+  // Offered only once a division is chosen: a section belongs to one division, so there is nothing
+  // meaningful to pick before that, and a stale section would silently empty the list.
+  const sections = useSections(filters.divisionId || null);
   const filterSelects = [
     ...STATIC_FILTER_SELECTS,
     {
@@ -191,6 +194,19 @@ export function RegistryScreen() {
         label: division.name,
       })),
     },
+    ...(filters.divisionId === ''
+      ? []
+      : [
+          {
+            id: 'sectionId',
+            label: 'Section',
+            anyLabel: 'Any section',
+            options: (sections.data ?? []).map((section) => ({
+              value: section.id,
+              label: section.name,
+            })),
+          },
+        ]),
   ];
 
   // The draft follows the URL rather than owning it, so arriving at a filtered link — or pressing
@@ -246,8 +262,12 @@ export function RegistryScreen() {
           type: filters.type,
           direction: filters.direction,
           divisionId: filters.divisionId,
+          sectionId: filters.sectionId,
         }}
-        onSelectChange={(id, value) => applyFilters({ [id]: value })}
+        // Changing the division drops the section: it belonged to the old one.
+        onSelectChange={(id, value) =>
+          applyFilters(id === 'divisionId' ? { divisionId: value, sectionId: '' } : { [id]: value })
+        }
         // The overdue flag is not a select, so its chip is supplied here; it counts toward the
         // badge like any other filter.
         extraChips={
