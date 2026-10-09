@@ -17,6 +17,7 @@ import {
   linkReferenceDocumentSchema,
   listDocumentsQuerySchema,
   recordReleaseCarrierSchema,
+  nameSuggestionsQuerySchema,
   routeDocumentSchema,
   shareDocumentSchema,
   updateDocumentMetadataSchema,
@@ -26,6 +27,7 @@ import {
   type CreateDocumentInput,
   type LinkReferenceDocumentInput,
   type ListDocumentsQuery,
+  type NameSuggestionsQuery,
   type RecordReleaseCarrierInput,
   type RouteDocumentInput,
   type ShareDocumentInput,
@@ -88,6 +90,15 @@ export class DocumentsController {
   @Get('assigned')
   assigned(@CurrentUser() actor: RequestUser) {
     return this.documents.assignedQueue(actor).then((data) => ({ data }));
+  }
+
+  // Also before `:id`, and for the same reason.
+  @Get('suggestions')
+  suggestions(
+    @CurrentUser() actor: RequestUser,
+    @Query(new ZodValidationPipe(nameSuggestionsQuerySchema)) query: NameSuggestionsQuery,
+  ) {
+    return this.documents.suggestNames(actor, query).then((data) => ({ data }));
   }
 
   // Also before `:id`, and for the same reason.

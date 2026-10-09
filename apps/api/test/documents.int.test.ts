@@ -255,6 +255,86 @@ describe('document registry REST against a real database', () => {
     expect(dataOf<DocumentPayload>(fetched).trackingNumber).toBe(incoming.trackingNumber);
   }, 30_000);
 
+  it('sends outgoing mail in the Head of the Bureau’s name and suggests recipients from real rows', async () => {
+    await request(server())
+      .put('/api/v1/office/head-of-bureau')
+      .set('Cookie', admin.cookies)
+      .set('x-csrf-token', admin.csrf)
+      .send({ name: 'Engr. Maria Santos', title: 'Regional Director' })
+      .expect(200);
+
+    const outgoing = dataOf<DocumentPayload & { sender: string; recipients: unknown[] }>(
+      await registerDocument(records, {
+        title: 'Letter to the Governor',
+        type: 'LETTER',
+        priority: 'NORMAL',
+        direction: 'OUTGOING',
+        sender: 'Ignored by the server',
+        recipients: [
+          { name: 'Provincial Governor of Pampanga', emails: ['gov@pampanga.gov.ph'] },
+          { name: 'DENR Region III' },
+        ],
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201),
+    );
+    expect(outgoing.sender).toBe('Engr. Maria Santos, Regional Director');
+    expect(outgoing.recipients).toEqual([
+      { name: 'Provincial Governor of Pampanga', emails: ['gov@pampanga.gov.ph'] },
+      { name: 'DENR Region III', emails: [] },
+    ]);
+
+    // Round-trips through the jsonb column on a plain read.
+    const fetched = await request(server())
+      .get(`/api/v1/documents/${outgoing.id}`)
+      .set('Cookie', records.cookies)
+      .expect(200);
+    expect(dataOf<{ recipients: unknown[] }>(fetched).recipients).toHaveLength(2);
+
+    const suggestions = await request(server())
+      .get('/api/v1/documents/suggestions?kind=recipient&q=governor')
+      .set('Cookie', records.cookies)
+      .expect(200);
+    expect(dataOf<string[]>(suggestions)).toEqual(['Provincial Governor of Pampanga']);
+
+    // The registry search reaches an outgoing document through its recipients, in real SQL.
+    const found = await request(server())
+      .get('/api/v1/documents?search=pampanga')
+      .set('Cookie', records.cookies)
+      .expect(200);
+    expect(dataOf<{ items: Array<{ id: string }> }>(found).items.map((item) => item.id)).toContain(
+      outgoing.id,
+    );
+
+    // A confidential document's addressees are never offered, and a wildcard is not a pattern.
+    await registerDocument(records, {
+      title: 'Confidential letter',
+      type: 'LETTER',
+      priority: 'NORMAL',
+      direction: 'OUTGOING',
+      confidential: true,
+      recipients: [{ name: 'Secret Addressee' }],
+      divisionId: DIV_A,
+      sectionId: SEC_A,
+    }).expect(201);
+    const secret = await request(server())
+      .get('/api/v1/documents/suggestions?kind=recipient&q=secret')
+      .set('Cookie', records.cookies)
+      .expect(200);
+    expect(dataOf<string[]>(secret)).toEqual([]);
+    const wildcard = await request(server())
+      .get('/api/v1/documents/suggestions?kind=recipient&q=%25%25')
+      .set('Cookie', records.cookies)
+      .expect(200);
+    expect(dataOf<string[]>(wildcard)).toEqual([]);
+
+    const senders = await request(server())
+      .get('/api/v1/documents/suggestions?kind=sender&q=external')
+      .set('Cookie', records.cookies)
+      .expect(200);
+    expect(dataOf<string[]>(senders)).toContain('External Office');
+  }, 30_000);
+
   it('allocates a unique reference number to every one of many concurrent outgoing creates', async () => {
     const parallel = 12;
     const responses = await Promise.all(

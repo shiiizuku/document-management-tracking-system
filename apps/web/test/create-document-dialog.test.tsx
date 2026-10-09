@@ -5,7 +5,7 @@ import { CreateDocumentDialog } from '../src/features/documents/create-document-
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
 import { documentItem, sessionUser } from './fixtures';
-import { requestBody } from './mock-api';
+import { calledPaths, requestBody } from './mock-api';
 import { renderWithQuery } from './query-harness';
 
 const { apiMock, pushMock } = vi.hoisted(() => ({ apiMock: vi.fn(), pushMock: vi.fn() }));
@@ -28,8 +28,18 @@ const serve = (onCreate: () => Promise<unknown>) =>
     if (path === '/auth/me') return Promise.resolve(sessionUser());
     if (path === '/divisions') return Promise.resolve(divisions);
     if (path.startsWith('/sections')) return Promise.resolve([]);
+    if (path === '/office/head-of-bureau')
+      return Promise.resolve({ name: 'Engr. Maria Santos', title: 'Regional Director' });
+    if (path.startsWith('/documents/suggestions')) return Promise.resolve([]);
     return onCreate();
   });
+
+/** Registering asks first; this answers the question the way a clerk who means it would. */
+const confirmRegister = async () => {
+  const confirm = await screen.findByRole('heading', { name: 'Register this document?' });
+  const modal = confirm.closest('[role="dialog"]') as HTMLElement;
+  await userEvent.click(within(modal).getByRole('button', { name: 'Register' }));
+};
 
 const open = async () => {
   await userEvent.click(screen.getByRole('button', { name: /Register document/ }));
@@ -49,6 +59,7 @@ describe('CreateDocumentDialog', () => {
     await userEvent.type(screen.getByLabelText('Title'), 'Quarterly submission');
     await userEvent.type(screen.getByLabelText('Sender'), 'Regional Office');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
+    await confirmRegister();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/documents/doc-1'));
     expect(requestBody(apiMock, '/documents')).toMatchObject({
@@ -88,7 +99,57 @@ describe('CreateDocumentDialog', () => {
     expect(apiMock).not.toHaveBeenCalledWith('/documents', expect.anything());
   });
 
-  it('accepts an outgoing document with no sender', async () => {
+  it('sends an outgoing document in the Head of the Bureau’s name, to its recipients', async () => {
+    serve(() => Promise.resolve(documentItem({ direction: 'OUTGOING' })));
+    renderWithQuery(<CreateDocumentDialog />);
+    const dialog = await open();
+
+    await userEvent.type(screen.getByLabelText('Title'), 'Outgoing memorandum');
+    await userEvent.click(screen.getByLabelText('Direction'));
+    await userEvent.click(screen.getByRole('option', { name: 'Outgoing' }));
+
+    // The sender is shown and cannot be typed over.
+    const sender = await screen.findByDisplayValue('Engr. Maria Santos, Regional Director');
+    expect(sender).toHaveAttribute('readonly');
+
+    await userEvent.type(screen.getByLabelText('Recipient 1'), 'DENR Region III');
+    await userEvent.click(screen.getByRole('button', { name: 'Add email address' }));
+    await userEvent.type(screen.getByLabelText('Email 1 for recipient 1'), 'records@denr.gov.ph');
+    await userEvent.click(screen.getByRole('button', { name: 'Add recipient' }));
+    await userEvent.type(screen.getByLabelText('Recipient 2'), 'Provincial Governor');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
+    await confirmRegister();
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/documents/doc-1'));
+    expect(requestBody(apiMock, '/documents')).toMatchObject({
+      direction: 'OUTGOING',
+      recipients: [
+        { name: 'DENR Region III', emails: ['records@denr.gov.ph'] },
+        { name: 'Provincial Governor', emails: [] },
+      ],
+    });
+  }, 20_000);
+
+  it('treats an email row left empty as no email, not as an invalid one', async () => {
+    serve(() => Promise.resolve(documentItem({ direction: 'OUTGOING' })));
+    renderWithQuery(<CreateDocumentDialog />);
+    const dialog = await open();
+
+    await userEvent.type(screen.getByLabelText('Title'), 'Outgoing memorandum');
+    await userEvent.click(screen.getByLabelText('Direction'));
+    await userEvent.click(screen.getByRole('option', { name: 'Outgoing' }));
+    await userEvent.type(screen.getByLabelText('Recipient 1'), 'DENR Region III');
+    await userEvent.click(screen.getByRole('button', { name: 'Add email address' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
+    await confirmRegister();
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/documents/doc-1'));
+    expect(requestBody(apiMock, '/documents')).toMatchObject({
+      recipients: [{ name: 'DENR Region III', emails: [] }],
+    });
+  }, 20_000);
+
+  it('refuses an outgoing document with no recipient named', async () => {
     serve(() => Promise.resolve(documentItem({ direction: 'OUTGOING' })));
     renderWithQuery(<CreateDocumentDialog />);
     const dialog = await open();
@@ -98,8 +159,29 @@ describe('CreateDocumentDialog', () => {
     await userEvent.click(screen.getByRole('option', { name: 'Outgoing' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
 
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/documents/doc-1'));
-    expect(requestBody(apiMock, '/documents')).toMatchObject({ direction: 'OUTGOING' });
+    expect(await screen.findByText('Enter the recipient')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Register this document?' })).toBeNull();
+    expect(calledPaths(apiMock)).not.toContain('/documents');
+  });
+
+  it('asks before registering, and sends nothing if the clerk declines', async () => {
+    serve(() => Promise.resolve(documentItem()));
+    renderWithQuery(<CreateDocumentDialog />);
+    const dialog = await open();
+
+    await userEvent.type(screen.getByLabelText('Title'), 'Quarterly submission');
+    await userEvent.type(screen.getByLabelText('Sender'), 'Regional Office');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
+
+    const heading = await screen.findByRole('heading', { name: 'Register this document?' });
+    const modal = heading.closest('[role="dialog"]') as HTMLElement;
+    expect(within(modal).getByText('Quarterly submission')).toBeInTheDocument();
+    await userEvent.click(within(modal).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Register this document?' })).toBeNull(),
+    );
+    expect(calledPaths(apiMock)).not.toContain('/documents');
   });
 
   it('puts a server-rejected field back on its own input', async () => {
@@ -119,6 +201,7 @@ describe('CreateDocumentDialog', () => {
     await userEvent.type(screen.getByLabelText('Title'), 'Quarterly submission');
     await userEvent.type(screen.getByLabelText('Sender'), 'Regional Office');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
+    await confirmRegister();
 
     await waitFor(() =>
       expect(screen.getByText('Enter a valid email address')).toBeInTheDocument(),
@@ -154,6 +237,7 @@ describe('CreateDocumentDialog', () => {
     await userEvent.type(screen.getByLabelText('Title'), 'Quarterly submission');
     await userEvent.type(screen.getByLabelText('Sender'), 'Regional Office');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
+    await confirmRegister();
 
     await waitFor(() => expect(screen.getByLabelText(/Email address/)).toBeInTheDocument());
   });
@@ -166,6 +250,7 @@ describe('CreateDocumentDialog', () => {
     await userEvent.type(screen.getByLabelText('Title'), 'Quarterly submission');
     await userEvent.type(screen.getByLabelText('Sender'), 'Regional Office');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Register document' }));
+    await confirmRegister();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/documents/doc-1'));
     // The defaults the fold relies on are really sent, not dropped with the hidden inputs.

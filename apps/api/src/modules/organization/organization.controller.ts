@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import {
   createDivisionSchema,
   createSectionSchema,
+  headOfBureauSchema,
   updateDivisionSchema,
   updateSectionSchema,
   type CreateDivisionInput,
   type CreateSectionInput,
+  type HeadOfBureau,
   type UpdateDivisionInput,
   type UpdateSectionInput,
 } from '@dts/contracts';
@@ -20,6 +22,19 @@ import { OrganizationService } from './organization.service.js';
 @UseGuards(AuthGuard, CsrfGuard)
 export class OrganizationController {
   constructor(private readonly organization: OrganizationService) {}
+
+  @Get('office/head-of-bureau')
+  async headOfBureau(@CurrentUser() actor: RequestUser) {
+    return { data: await this.organization.getHeadOfBureau(actor) };
+  }
+
+  @Put('office/head-of-bureau')
+  async setHeadOfBureau(
+    @CurrentUser() actor: RequestUser,
+    @Body(new ZodValidationPipe(headOfBureauSchema)) input: HeadOfBureau,
+  ) {
+    return { data: await this.organization.setHeadOfBureau(actor, input) };
+  }
 
   @Get('divisions')
   async divisions(@CurrentUser() actor: RequestUser) {

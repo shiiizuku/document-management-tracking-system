@@ -1,5 +1,9 @@
 import { relations, sql } from 'drizzle-orm';
-import { storedWorkflowStatusSchema, type StoredWorkflowStatus } from '@dts/contracts';
+import {
+  storedWorkflowStatusSchema,
+  type DocumentRecipient,
+  type StoredWorkflowStatus,
+} from '@dts/contracts';
 import {
   boolean,
   check,
@@ -214,6 +218,24 @@ export const documentSequences = pgTable('document_sequences', {
   value: integer('value').notNull().default(0),
 });
 
+/*
+ * Office-wide settings, one row (`id` is pinned to 1). Holds who the Head of the Bureau is, because
+ * every outgoing document is sent in that name and it must be changeable without a deploy.
+ */
+export const officeSettings = pgTable(
+  'office_settings',
+  {
+    id: integer('id').primaryKey().default(1),
+    headOfBureauName: varchar('head_of_bureau_name', { length: 160 }).notNull().default(''),
+    headOfBureauTitle: varchar('head_of_bureau_title', { length: 160 })
+      .notNull()
+      .default('Regional Director'),
+    updatedById: uuid('updated_by_id').references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [check('office_settings_single_row', sql`${table.id} = 1`)],
+);
+
 export const documents = pgTable(
   'documents',
   {
@@ -240,6 +262,15 @@ export const documents = pgTable(
      * correspondent share an email address as a matter of course.
      */
     email: varchar('email', { length: 240 }),
+    /*
+     * The addressees of an outgoing document, in the order they were entered: a name and any number
+     * of optional email addresses each. Free text because most recipients are outside the system.
+     * Empty for an incoming document, whose correspondent is `sender`.
+     */
+    recipients: jsonb('recipients')
+      .$type<DocumentRecipient[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     divisionId: uuid('division_id')
       .notNull()
       .references(() => divisions.id),

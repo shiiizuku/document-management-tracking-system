@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
 import type { DatabaseExecutor } from '../../database/executor.js';
-import { divisions, sections } from '../../database/schema.js';
+import { divisions, officeSettings, sections } from '../../database/schema.js';
 
 export type DivisionRow = typeof divisions.$inferSelect;
 export type SectionRow = typeof sections.$inferSelect;
@@ -19,6 +19,40 @@ export interface OrganizationPatch {
 @Injectable()
 export class OrganizationRepository {
   constructor(@Inject(DATABASE) private readonly database: Database) {}
+
+  /** The Head of the Bureau. The row is created by migration `0015`; a missing one reads as blank. */
+  async getHeadOfBureau(): Promise<{ name: string; title: string }> {
+    const [row] = await this.database.select().from(officeSettings).where(eq(officeSettings.id, 1));
+    return {
+      name: row?.headOfBureauName ?? '',
+      title: row?.headOfBureauTitle ?? 'Regional Director',
+    };
+  }
+
+  /**
+   * Saves the Head of the Bureau and runs `audit` in the same transaction, so a change cannot
+   * commit without its audit event or the reverse.
+   */
+  async setHeadOfBureau(
+    value: { name: string; title: string },
+    updatedById: string,
+    audit: (executor: DatabaseExecutor) => Promise<void>,
+  ): Promise<{ name: string; title: string }> {
+    const set = {
+      headOfBureauName: value.name,
+      headOfBureauTitle: value.title,
+      updatedById,
+      updatedAt: new Date(),
+    };
+    await this.database.transaction(async (tx) => {
+      await tx
+        .insert(officeSettings)
+        .values({ id: 1, ...set })
+        .onConflictDoUpdate({ target: officeSettings.id, set });
+      await audit(tx);
+    });
+    return value;
+  }
 
   async listDivisions(includeInactive = false): Promise<DivisionRow[]> {
     return this.database

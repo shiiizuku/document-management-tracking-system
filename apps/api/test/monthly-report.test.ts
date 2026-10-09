@@ -12,6 +12,7 @@ const row = (overrides: Partial<ReportDocument>): ReportDocument => ({
   title: 'Quarterly update',
   referenceNumber: 'REF-1',
   sender: 'Citizen',
+  recipients: [],
   company: 'Public',
   type: 'MEMORANDUM',
   direction: 'INCOMING',

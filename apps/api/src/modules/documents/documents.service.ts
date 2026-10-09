@@ -39,7 +39,13 @@ import {
   type RouteCustody,
 } from '../workflow/workflow.service.js';
 // The presented vocabulary, which includes the derived `PENDING`; see `TimelineEntry`.
-import type { ReleaseCarrier, ReleaseMethod, WorkflowStatus } from '@dts/contracts';
+import type {
+  DocumentRecipient,
+  NameSuggestionsQuery,
+  ReleaseCarrier,
+  ReleaseMethod,
+  WorkflowStatus,
+} from '@dts/contracts';
 import {
   DocumentsRepository,
   type DashboardActivityEntry,
@@ -88,6 +94,7 @@ export interface PublicDocument {
   sender: string | null;
   company: string | null;
   email: string | null;
+  recipients: DocumentRecipient[];
   divisionId: string;
   sectionId: string | null;
   createdById: string;
@@ -245,6 +252,7 @@ const METADATA_FIELDS = [
   'company',
   'referenceNumber',
   'email',
+  'recipients',
   'confidential',
   'dueAt',
 ] as const;
@@ -286,6 +294,7 @@ export class DocumentsService {
       sender: row.sender,
       company: row.company,
       email: row.email,
+      recipients: row.recipients,
       divisionId: row.divisionId,
       sectionId: row.sectionId,
       createdById: row.createdById,
@@ -330,6 +339,13 @@ export class DocumentsService {
       : false;
   }
 
+  // ------------------------------------------------------------------- suggestions
+
+  /** Autocomplete for the create form. Any signed-in reader may ask; scope is applied in SQL. */
+  suggestNames(actor: RequestUser, input: NameSuggestionsQuery): Promise<string[]> {
+    return this.repository.suggestNames(actor, input.kind, input.q);
+  }
+
   // ------------------------------------------------------------------- create
 
   async create(actor: RequestUser, input: CreateDocumentInput): Promise<PublicDocument> {
@@ -365,7 +381,13 @@ export class DocumentsService {
           priority: input.priority,
           direction: input.direction,
           status: 'IN_PROCESS',
-          sender: input.sender ?? null,
+          // An outgoing document is always sent in the Head of the Bureau's name, whatever the
+          // client put in `sender`; recipients belong to outgoing mail only.
+          sender:
+            input.direction === 'OUTGOING'
+              ? await this.repository.headOfBureauSender(tx)
+              : (input.sender ?? null),
+          recipients: input.direction === 'OUTGOING' ? input.recipients : [],
           company: input.company ?? null,
           email: input.email ?? null,
           divisionId: input.divisionId,
@@ -638,6 +660,22 @@ export class DocumentsService {
         code: 'REFERENCE_NUMBER_READ_ONLY',
         message:
           "An outgoing document's reference number is issued by the system and cannot be edited",
+      });
+
+    /*
+     * The sender of an outgoing document is the Head of the Bureau, stamped at registration, and
+     * recipients exist only on outgoing mail. Both are refused here, not just hidden in the dialog.
+     */
+    if (current.direction === 'OUTGOING' && input.sender !== undefined)
+      throw new BadRequestException({
+        code: 'SENDER_READ_ONLY',
+        message:
+          'An outgoing document is always sent by the Head of the Bureau; its sender cannot be edited',
+      });
+    if (current.direction === 'INCOMING' && input.recipients !== undefined)
+      throw new BadRequestException({
+        code: 'RECIPIENTS_NOT_APPLICABLE',
+        message: 'Only outgoing documents have recipients',
       });
 
     const { patch, before, after } = this.diffMetadata(current, input);
@@ -1556,6 +1594,7 @@ export class DocumentsService {
       title: row.title,
       referenceNumber: row.referenceNumber,
       sender: row.sender,
+      recipients: row.recipients.map((recipient) => recipient.name),
       company: row.company,
       type: row.type,
       direction: row.direction,
@@ -1845,9 +1884,14 @@ export class DocumentsService {
       const next =
         field === 'dueAt' && typeof incoming === 'string' ? new Date(incoming) : incoming;
       const existing = current[field];
-      const existingComparable = existing instanceof Date ? existing.getTime() : existing;
-      const nextComparable = next instanceof Date ? next.getTime() : next;
-      if (existingComparable === nextComparable) continue;
+      // Dates by instant and the recipient list by value; everything else is a primitive.
+      const comparable = (value: unknown): unknown =>
+        value instanceof Date
+          ? value.getTime()
+          : Array.isArray(value)
+            ? JSON.stringify(value)
+            : value;
+      if (comparable(existing) === comparable(next)) continue;
       (patch as Record<string, unknown>)[field] = next;
       before[field] = existing instanceof Date ? existing.toISOString() : existing;
       after[field] = next instanceof Date ? next.toISOString() : next;

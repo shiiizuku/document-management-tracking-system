@@ -5,6 +5,7 @@ import type {
   CreateDocumentInput,
   DocumentDirection,
   DocumentPriority,
+  DocumentRecipient,
   ReleaseMethod,
   ReleaseMethodCode,
   WorkflowAction,
@@ -92,6 +93,8 @@ export interface DocumentListItem {
   direction: DocumentDirection;
   status: WorkflowStatus;
   sender: string | null;
+  /** Addressees of an outgoing document, in the order entered; empty for an incoming one. */
+  recipients: DocumentRecipient[];
   company: string | null;
   divisionId: string;
   sectionId: string | null;
@@ -600,6 +603,22 @@ export function useUnlinkReference(id: string) {
         method: 'DELETE',
       }),
     onSuccess: () => invalidateDocument(client, id),
+  });
+}
+
+/**
+ * Names already used as a sender (incoming) or a recipient (outgoing), for the form's
+ * autocomplete. Idle below two characters, which is also the server's floor. The result is kept
+ * for a minute so backspacing through a name does not refetch each step.
+ */
+export function useNameSuggestions(kind: 'sender' | 'recipient', query: string) {
+  const trimmed = query.trim();
+  return useQuery({
+    queryKey: ['documents', 'suggestions', kind, trimmed.toLowerCase()],
+    queryFn: () =>
+      api<string[]>(`/documents/suggestions?kind=${kind}&q=${encodeURIComponent(trimmed)}`),
+    enabled: trimmed.length >= 2,
+    staleTime: 60_000,
   });
 }
 

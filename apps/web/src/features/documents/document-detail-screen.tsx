@@ -122,6 +122,29 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
         <Panel>
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
             <Field label="Sender" value={detail.sender} />
+            {detail.direction === 'OUTGOING' && detail.recipients.length > 0 ? (
+              <div className="col-span-2 min-w-0 sm:col-span-4">
+                <dt className="text-xs font-bold tracking-[0.05em] text-foreground-secondary uppercase">
+                  Recipients
+                </dt>
+                <dd>
+                  <ul className="mt-1 space-y-1 text-sm">
+                    {detail.recipients.map((recipient, index) => (
+                      // Recipients have no id; the list is displayed in the order it was entered.
+                      <li key={index} className="break-words">
+                        {recipient.name}
+                        {recipient.emails.length === 0 ? null : (
+                          <span className="text-muted-foreground">
+                            {' '}
+                            · {recipient.emails.join(', ')}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            ) : null}
             <Field label="Company / agency" value={detail.company} />
             <ReferenceNumberField document={detail} />
             <Field label="Email address" value={detail.email} />

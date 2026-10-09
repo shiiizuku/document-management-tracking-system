@@ -37,6 +37,9 @@ const serve = () => {
     if (path === '/auth/me') return Promise.resolve(sessionUser());
     if (path === '/divisions') return Promise.resolve([division()]);
     if (path.startsWith('/divisions/')) return Promise.resolve([section()]);
+    if (path.startsWith('/documents/suggestions')) return Promise.resolve([]);
+    if (path === '/office/head-of-bureau')
+      return Promise.resolve({ name: '', title: 'Regional Director' });
     if (path.startsWith('/documents/') && path.endsWith('/metadata'))
       return Promise.resolve(documentDetail());
     return Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 });
@@ -104,6 +107,33 @@ describe('the reference number in the metadata dialog (169)', () => {
     await waitFor(() => {
       const body = requestBody(apiMock, '/documents/doc-1/metadata', 'PATCH');
       expect(Object.keys(body)).not.toContain('referenceNumber');
+    });
+  });
+
+  it("offers an outgoing document's recipients instead of a sender, and sends no sender", async () => {
+    serve();
+    renderWithQuery(
+      <MetadataDialog
+        document={documentDetail({
+          direction: 'OUTGOING',
+          sender: 'Engr. Maria Santos, Regional Director',
+          recipients: [{ name: 'DENR Region III', emails: [] }],
+        })}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Edit/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByLabelText('Sender')).not.toBeInTheDocument();
+    const recipient = within(dialog).getByLabelText('Recipient 1');
+    expect(recipient).toHaveValue('DENR Region III');
+    await userEvent.type(recipient, ' (ORD)');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Save/i }));
+
+    await waitFor(() => {
+      const body = requestBody(apiMock, '/documents/doc-1/metadata', 'PATCH');
+      expect(Object.keys(body)).not.toContain('sender');
+      expect(body.recipients).toEqual([{ name: 'DENR Region III (ORD)', emails: [] }]);
     });
   });
 });

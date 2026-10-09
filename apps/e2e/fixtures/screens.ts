@@ -92,6 +92,8 @@ export interface RegistrationFields {
   /** A section's name. Omitted registers at division level, which is not the same thing. */
   section?: string;
   sender?: string;
+  /** Who an outgoing document is addressed to; the form needs at least one. */
+  recipient?: string;
 }
 
 /**
@@ -118,12 +120,22 @@ export const registerDocument = async (page: Page, fields: RegistrationFields): 
     // Exact: the optional section also has a `Sender’s reference` field.
     await dialog.getByLabel('Sender', { exact: true }).fill(fields.sender);
 
+  // The sender is not asked for on an outgoing document (the server stamps the Head of the Bureau),
+  // but at least one recipient is.
+  if (fields.direction === 'Outgoing')
+    await dialog.getByLabel('Recipient 1').fill(fields.recipient ?? 'Department of Finance');
+
   if (fields.section !== undefined) {
     await dialog.getByRole('button', { name: /More details/ }).click();
     await chooseOption(dialog, 'Section', fields.section);
   }
 
   await dialog.getByRole('button', { name: 'Register document' }).click();
+  // The tracking number goes on paper, so the form reads the document back before it registers.
+  await page
+    .getByRole('dialog', { name: 'Register this document?' })
+    .getByRole('button', { name: 'Register', exact: true })
+    .click();
   await page.waitForURL(/\/documents\/[0-9a-f-]{36}$/);
 };
 

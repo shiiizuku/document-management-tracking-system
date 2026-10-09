@@ -132,3 +132,48 @@ describe('OrganizationService authorization', () => {
     expect(listDivisions).toHaveBeenLastCalledWith(false);
   });
 });
+
+describe('OrganizationService head of bureau', () => {
+  it('lets an administrator name the Head of the Bureau and audits it', async () => {
+    // Runs the audit callback the way the repository does, inside its transaction.
+    const setHeadOfBureau = vi
+      .fn()
+      .mockImplementation(
+        async (value: unknown, _by: string, audit: (tx: never) => Promise<void>) => {
+          await audit({} as never);
+          return value;
+        },
+      );
+    const { service, write } = serviceWith({ setHeadOfBureau });
+
+    const saved = await service.setHeadOfBureau(actor('ADMINISTRATOR'), {
+      name: 'Engr. Maria Santos',
+      title: 'Regional Director',
+    });
+
+    expect(saved).toEqual({ name: 'Engr. Maria Santos', title: 'Regional Director' });
+    expect(setHeadOfBureau).toHaveBeenCalledWith(saved, 'actor-1', expect.any(Function));
+    // Recorded without the personal name, and inside the same transaction as the change.
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'office.head-of-bureau-updated',
+        outcome: 'SUCCESS',
+        summary: { fields: ['name', 'title'] },
+      }),
+      {},
+    );
+  });
+
+  it('refuses everyone else, who may read it but not change it', async () => {
+    const getHeadOfBureau = vi.fn().mockResolvedValue({ name: '', title: 'Regional Director' });
+    const { service } = serviceWith({ getHeadOfBureau, setHeadOfBureau: vi.fn() });
+
+    await expect(
+      service.setHeadOfBureau(actor('RECORDS_STAFF'), { name: 'X', title: 'Y' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.getHeadOfBureau(actor('RECORDS_STAFF'))).resolves.toEqual({
+      name: '',
+      title: 'Regional Director',
+    });
+  });
+});

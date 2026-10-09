@@ -341,6 +341,43 @@ export const listDocumentsQuerySchema = z.looseObject({
 });
 export type ListDocumentsQuery = z.infer<typeof listDocumentsQuerySchema>;
 
+/**
+ * One addressee of an outgoing document: a person or agency by name, and any email addresses to
+ * copy the document to. Emails are optional because most correspondence still goes by post or hand.
+ */
+export const DOCUMENT_RECIPIENT_LIMIT = 20;
+export const RECIPIENT_EMAIL_LIMIT = 10;
+export const documentRecipientSchema = z.object({
+  name: z.string().trim().min(1, 'Enter the recipient').max(240),
+  emails: z
+    .array(z.string().trim().max(240).email('Enter a valid email address'))
+    .max(RECIPIENT_EMAIL_LIMIT)
+    .default([]),
+});
+export type DocumentRecipient = z.infer<typeof documentRecipientSchema>;
+
+/** Who signs every outgoing document. Set once by an administrator (`PUT /office/head-of-bureau`). */
+export const SENDER_LENGTH_LIMIT = 240;
+export const headOfBureauSchema = z
+  .object({
+    name: z.string().trim().max(160),
+    title: z.string().trim().min(1, 'Enter a title').max(160),
+  })
+  // Joined as "Name, Title" into `documents.sender`, a varchar(240): a pair that fits each limit
+  // but not the column would make every outgoing registration fail until it was shortened.
+  .refine((value) => `${value.name}, ${value.title}`.length <= SENDER_LENGTH_LIMIT, {
+    path: ['title'],
+    message: `The name and title together may be at most ${SENDER_LENGTH_LIMIT} characters`,
+  });
+export type HeadOfBureau = z.infer<typeof headOfBureauSchema>;
+
+/** Autocomplete for a sender or recipient name, drawn from documents the caller may already read. */
+export const nameSuggestionsQuerySchema = z.object({
+  kind: z.enum(['sender', 'recipient']),
+  q: z.string().trim().min(2).max(80),
+});
+export type NameSuggestionsQuery = z.infer<typeof nameSuggestionsQuerySchema>;
+
 export const createDocumentSchema = z
   .object({
     title: z.string().trim().min(1).max(240),
@@ -348,7 +385,10 @@ export const createDocumentSchema = z
     description: z.string().trim().max(5000).optional(),
     priority: documentPrioritySchema,
     direction: documentDirectionSchema,
+    /** Ignored for an outgoing document: the server sends it in the Head of the Bureau's name. */
     sender: z.string().trim().max(240).optional(),
+    /** Outgoing documents only. */
+    recipients: z.array(documentRecipientSchema).max(DOCUMENT_RECIPIENT_LIMIT).default([]),
     company: z.string().trim().max(240).optional(),
     referenceNumber: z.string().trim().max(120).optional(),
     /*
@@ -420,6 +460,8 @@ export const updateDocumentMetadataSchema = z
     company: z.string().trim().max(240).nullable().optional(),
     referenceNumber: z.string().trim().max(120).nullable().optional(),
     email: z.string().trim().max(240).email('Enter a valid email address').nullable().optional(),
+    /** Outgoing documents only; replaces the whole list. */
+    recipients: z.array(documentRecipientSchema).min(1).max(DOCUMENT_RECIPIENT_LIMIT).optional(),
     confidential: z.boolean().optional(),
     dueAt: z.string().datetime().nullable().optional(),
   })
