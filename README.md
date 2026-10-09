@@ -186,7 +186,8 @@ because it would trust an address the client wrote itself.
 Postgres, Redis, MinIO and ClamAV on every host interface, and the overlay leaves them unpublished and
 binds `api` and `web` to 127.0.0.1 only. To make every `docker compose` command on this host (including
 the runbooks') use it, add `COMPOSE_FILE=docker-compose.yml:docker-compose.production.yml` to `.env`
-(`COMPOSE_PATH_SEPARATOR=;` on Windows); the commands below spell it out.
+(on Windows the separator is `;`: `COMPOSE_FILE=docker-compose.yml;docker-compose.production.yml`);
+the commands below spell it out.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
