@@ -27,6 +27,9 @@ mkdir -p "$ARCHIVE_ROOT/wal" "$ARCHIVE_ROOT/base" "$ARCHIVE_ROOT/objects"
 docker compose exec -T postgres pg_basebackup \
   -U "${POSTGRES_USER:-dts}" -D /archive/base/"$STAMP" -Fp -X none -c fast
 
+# Marker for scripts/check-backup-freshness.sh; reached only if pg_basebackup succeeded (`set -e`).
+touch "$ARCHIVE_ROOT/.status/base" 2>/dev/null || { mkdir -p "$ARCHIVE_ROOT/.status" && touch "$ARCHIVE_ROOT/.status/base"; }
+
 # The object store is mirrored by its own script, which also runs every 3 minutes on its own so
 # attachments meet the database's recovery point rather than this job's nightly one.
 bash "$(dirname "$0")/mirror-objects.sh"

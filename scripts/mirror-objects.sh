@@ -26,4 +26,8 @@ export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 # a real key. Deletions are not propagated; see the runbook.
 docker compose exec -T minio sh -c 'mkdir -p /archive/objects && cp -au /data/. /archive/objects/'
 
+# The freshness marker: touched only after the copy succeeded (`set -e`), so its age is the age of
+# the last good pass. scripts/check-backup-freshness.sh reads it here and on the NAS (the push copies it).
+mkdir -p "${BACKUP_PATH:-./backups}/.status" && touch "${BACKUP_PATH:-./backups}/.status/objects"
+
 printf '%s\n' "Objects mirrored to ${BACKUP_PATH:-./backups}/objects at $(date -u +%Y-%m-%dT%H:%M:%SZ)."
