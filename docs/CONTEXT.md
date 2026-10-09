@@ -42,17 +42,17 @@ The DTS replaces paper routing slips and fragmented email tracking with one acco
 
 **Document**: The tracked business record and its metadata, workflow state, custody, participants, immutable file versions, and event history. It is not merely an uploaded file.
 
-**Incoming document**: Correspondence received from outside the organization; it retains the sender’s reference number when supplied.
+**Incoming document**: Correspondence received from outside the organization; it retains the sender’s reference number when supplied. **Amended 2026-10-09 (decision 181):** the sender's reference number is no longer captured or shown.
 
 **Outgoing document**: Correspondence issued by the organization; it receives a unique division-based reference number and cannot be released without a required attachment and signature.
 
 **Tracking number**: The system-generated stable identifier for a Document.
 
-**Sender's reference number**: The reference the originating office put on an *incoming* letter. Free text, supplied at registration, never generated. Retained verbatim; it is how a reply is matched to the letter it answers. Shown only on incoming documents.
+**Sender's reference number**: Retired. The reference an originating office put on an *incoming* letter used to be typed in at registration; it is no longer offered. Values already stored are kept but not shown. A reply or compliance letter names the incoming Document it answers as a Reference Document instead.
 
 **Reference number**: The organization-issued identifier for an *outgoing* Document, allocated per division per year from the division's code. Server-generated and read-only — a user cannot type it. Shown only on outgoing documents.
 
-**Reference Document**: An *incoming* Document that an outgoing Document answers, recorded as a link to that Document rather than as text. Outgoing-only, and may name more than one incoming Document. The inverse relation is read from the incoming side as its replies. Distinct from both reference numbers above: those are strings, this is a relationship.
+**Reference Document**: An *incoming* Document that an outgoing Document answers, recorded as a link to that Document rather than as text. Outgoing-only, and may name more than one incoming Document. The inverse relation is read from the incoming side as its replies. Distinct from both reference numbers above: those are strings, this is a relationship. Labelled "Reference an incoming document" in the interface.
 
 **Attachment**: A logical file associated with a Document.
 
@@ -150,7 +150,7 @@ The wording below is normalized for implementation. Decisions 1–75 retain the 
 30. Each Document exposes its full authorized timeline.
 31. Timeline entries identify actor and timestamp.
 32. Transition remarks are preserved and shown in context.
-33. Incoming registration retains the sender’s reference number.
+33. Incoming registration retains the sender’s reference number. **Amended 2026-10-09 (decision 181):** the sender's reference number is no longer captured or shown.
 34. Outgoing registration generates a unique division-based reference number.
 35. Incoming correspondence has a dedicated records view.
 36. Outgoing correspondence has a division-grouped view.
@@ -299,7 +299,7 @@ Agreed 2026-10-02. This round **amends** decisions 22, 24, 27, 38, 40, 49, 58 an
 165. An outgoing document may name one or more incoming documents as Reference Documents, and the incoming document shows the replies that name it.
 166. A Reference Document resolves through the reader's own authorization scope; a reference the reader may not read is indistinguishable from one that does not exist.
 167. A Reference Document opens as a modal showing the referenced record and its attachments, with file preview inline in that same modal.
-168. Incoming documents retain the sender's reference number as free text, enterable at registration rather than only afterwards.
+168. Incoming documents retain the sender's reference number as free text, enterable at registration rather than only afterwards. **Amended 2026-10-09 (decision 181):** the sender's reference number is no longer captured or shown.
 169. The outgoing reference number is server-generated and read-only in the interface.
 170. The routing slip opens inline for preview instead of downloading. Viewing and exporting it are audited as distinct actions.
 171. The routing slip layout follows the bureau form: a header block, an eight-row metadata table, and a routing table with FROM / DATE-TIME RECEIVED / TO / DATE-TIME RELEASED / ACTION TAKEN, carrying the approved seal.
@@ -313,6 +313,7 @@ Agreed 2026-10-02. This round **amends** decisions 22, 24, 27, 38, 40, 49, 58 an
 178. The Reference Document set freezes when an outgoing document is released. Linking is gated by the same rule that refuses any other edit to a released or archived record, so what a letter answered is fixed at the moment the letter goes out — a reference added afterwards would rewrite the record of a document already sent. The consequence is that the interface must offer linking before Prepare Release, not after.
 179. Linking or unlinking a Reference Document does not bump the document's version and takes no expected version. Nothing on the document row changes, the relation is a separate table whose unique pair makes the write idempotent, and bumping would invalidate every open form on a document because someone attached a reply to it. The same reasoning as acceptance, which stamps a route row and leaves the document untouched.
 180. A forward addressed to a division as a whole, naming no section, makes every section in that division a reader, not only the division head. It matches who the forward notifies (every active member of the receiving division), since a notification its recipient cannot open is a dead link. A copy for information stays with the head (decision 160): being consulted is not being handed the document. A forward to a named section still reaches that section and the head, not its sibling sections.
+181. The sender's reference number is retired (2026-10-09). Incoming documents no longer offer it at registration or in metadata edits, and no screen shows it: the detail page, registry and monthly report show a reference number only on outgoing documents. Values already stored are kept and never sent back by an edit. Metadata revision history hides past edits to it as well, and drops a revision that changed nothing else; the revisions themselves are still stored. A reply or compliance letter names the incoming document it answers as a Reference Document, labelled "Reference an incoming document".
 
 ## MVP acceptance boundary
 

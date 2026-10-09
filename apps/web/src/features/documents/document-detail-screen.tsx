@@ -147,7 +147,9 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
               </div>
             ) : null}
             <Field label="Company / agency" value={detail.company} />
-            <ReferenceNumberField document={detail} />
+            {detail.direction === 'OUTGOING' ? (
+              <Field label="Reference number" value={detail.referenceNumber} />
+            ) : null}
             <Field label="Email address" value={detail.email} />
             <Field label="Registered" value={new Date(detail.createdAt).toLocaleDateString()} />
             <DueField document={detail} />
@@ -314,23 +316,6 @@ function LocationBlock({ document }: Readonly<{ document: DocumentDetail }>) {
         <p className="mt-0.5 text-sm text-foreground">{name ?? '—'}</p>
       </div>
     </section>
-  );
-}
-
-/**
- * The reference number, which is two different fields wearing one column (decisions 168, 169).
- *
- * On an outgoing document it is the office's own `ORD-2026-00014`, allocated from
- * `reference_counters` inside the create transaction; on an incoming one it is whatever the
- * sending office printed on their letter. Labelling both "External reference" was wrong in both
- * directions — the outgoing one is not external, and the incoming one is not ours.
- */
-function ReferenceNumberField({ document }: Readonly<{ document: DocumentDetail }>) {
-  return (
-    <Field
-      label={document.direction === 'OUTGOING' ? 'Reference number' : "Sender's reference"}
-      value={document.referenceNumber}
-    />
   );
 }
 

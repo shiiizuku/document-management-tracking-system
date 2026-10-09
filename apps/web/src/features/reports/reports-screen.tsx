@@ -219,7 +219,10 @@ export function ReportsScreen() {
                         {entry.title}
                       </Link>
                       <div className="text-xs text-muted-foreground">
-                        {entry.referenceNumber ?? entry.sender ?? entry.company ?? '—'}
+                        {(entry.direction === 'OUTGOING' ? entry.referenceNumber : null) ??
+                          entry.sender ??
+                          entry.company ??
+                          '—'}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">

@@ -117,7 +117,7 @@ export const registerDocument = async (page: Page, fields: RegistrationFields): 
   // Only on an incoming document: the field is hidden on an outgoing one, where a sender has no
   // meaning (`createDocumentSchema` requires it for incoming and nothing else).
   if (fields.sender !== undefined)
-    // Exact: the optional section also has a `Sender’s reference` field.
+    // Exact: `Sender` is a prefix of other labels in the dialog.
     await dialog.getByLabel('Sender', { exact: true }).fill(fields.sender);
 
   // The sender is not asked for on an outgoing document (the server stamps the Head of the Bureau),

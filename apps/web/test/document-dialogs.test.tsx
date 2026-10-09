@@ -130,7 +130,7 @@ describe('MetadataDialog', () => {
           status: 422,
           code: 'VALIDATION_FAILED',
           message: 'Validation failed',
-          details: { fieldErrors: { referenceNumber: ['Already used by another document'] } },
+          details: { fieldErrors: { email: ['Not a valid email address'] } },
         }),
       ),
     );
@@ -139,9 +139,7 @@ describe('MetadataDialog', () => {
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
 
-    await waitFor(() =>
-      expect(screen.getByText('Already used by another document')).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText('Not a valid email address')).toBeInTheDocument());
   });
 
   it('loads the revision history only when it is asked for', async () => {

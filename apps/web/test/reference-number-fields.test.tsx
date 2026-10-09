@@ -11,11 +11,9 @@ import { renderWithQuery } from './query-harness';
 /**
  * The two strings that have shared one column (decisions 168, 169).
  *
- * An incoming document keeps the reference the sending office printed on its letter — free text,
- * and now enterable at registration rather than only by reopening the record afterwards. An
- * outgoing one carries the office's own identifier, allocated inside the create transaction, which
- * nobody may type. "External reference" was wrong about both: the outgoing one is not external and
- * the incoming one is not ours.
+ * An outgoing document carries the office's own identifier, allocated inside the create
+ * transaction, which nobody may type. Incoming documents no longer offer the sender's reference: a
+ * reply or compliance letter names the incoming document it answers as a Reference Document.
  */
 
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
@@ -32,6 +30,25 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
+const revision = (id: string, before: object, after: object) => ({
+  id,
+  actorId: 'user-1',
+  before,
+  after,
+  occurredAt: '2026-10-01T08:00:00.000Z',
+});
+
+const revisions = [
+  // Only the sender's reference changed: dropped entirely on an incoming document.
+  revision('rev-1', { referenceNumber: null }, { referenceNumber: 'DPWH-2026-0412' }),
+  // Both changed: the title stays, the reference goes.
+  revision(
+    'rev-2',
+    { title: 'Old title', referenceNumber: 'DPWH-2026-0412' },
+    { title: 'New title', referenceNumber: 'DPWH-2026-0413' },
+  ),
+];
+
 const serve = () => {
   apiMock.mockImplementation((path: string) => {
     if (path === '/auth/me') return Promise.resolve(sessionUser());
@@ -41,6 +58,7 @@ const serve = () => {
     if (path.startsWith('/documents/suggestions')) return Promise.resolve([]);
     if (path === '/office/head-of-bureau')
       return Promise.resolve({ name: '', title: 'Regional Director' });
+    if (path.endsWith('/metadata-revisions')) return Promise.resolve(revisions);
     if (path.startsWith('/documents/') && path.endsWith('/metadata'))
       return Promise.resolve(documentDetail());
     return Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 });
@@ -51,16 +69,15 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("the sender's reference at registration (168)", () => {
-  it('offers the field on an incoming document and withdraws it on an outgoing one', async () => {
+describe("no sender's reference on incoming documents", () => {
+  it('is not offered at registration, in either direction', async () => {
     serve();
     renderWithQuery(<CreateDocumentDialog />);
     await userEvent.click(screen.getByRole('button', { name: /Register/i }));
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByLabelText(/Sender.s reference/)).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/Sender.s reference/)).not.toBeInTheDocument();
 
-    // Switching to outgoing withdraws it: that document's reference is the server's to issue.
     await userEvent.click(within(dialog).getByLabelText('Direction'));
     await userEvent.click(await screen.findByRole('option', { name: 'Outgoing' }));
     await waitFor(() =>
@@ -70,14 +87,41 @@ describe("the sender's reference at registration (168)", () => {
 });
 
 describe('the reference number in the metadata dialog (169)', () => {
-  it("labels an incoming document's reference as the sender's, and lets it be typed", async () => {
+  it("neither shows nor sends an incoming document's stored reference", async () => {
     serve();
-    renderWithQuery(<MetadataDialog document={documentDetail({ direction: 'INCOMING' })} />);
+    renderWithQuery(
+      <MetadataDialog
+        document={documentDetail({ direction: 'INCOMING', referenceNumber: 'DPWH-2026-0412' })}
+      />,
+    );
     await userEvent.click(screen.getByRole('button', { name: /Edit/i }));
 
     const dialog = await screen.findByRole('dialog');
-    const field = within(dialog).getByLabelText(/Sender.s reference/);
-    expect(field).not.toHaveAttribute('readonly');
+    expect(within(dialog).queryByLabelText(/Sender.s reference/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Reference number')).not.toBeInTheDocument();
+
+    const title = within(dialog).getByLabelText('Title');
+    await userEvent.type(title, ' (revised)');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Save/i }));
+
+    // Omitted, not nulled: a `null` would erase what an older record stored.
+    await waitFor(() => {
+      const body = requestBody(apiMock, '/documents/doc-1/metadata', 'PATCH');
+      expect(Object.keys(body)).not.toContain('referenceNumber');
+    });
+  });
+
+  it("hides an incoming document's reference edits from its revision history", async () => {
+    serve();
+    renderWithQuery(<MetadataDialog document={documentDetail({ direction: 'INCOMING' })} />);
+    await userEvent.click(screen.getByRole('button', { name: /Edit/i }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Revision history/ }));
+
+    await waitFor(() => expect(within(dialog).getByText('title')).toBeInTheDocument());
+    expect(within(dialog).queryByText('referenceNumber')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/DPWH-2026/)).not.toBeInTheDocument();
+    expect(within(dialog).getAllByRole('time')).toHaveLength(1);
   });
 
   it("shows an outgoing document's own reference read-only, and never sends it back", async () => {
