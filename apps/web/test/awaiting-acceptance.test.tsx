@@ -25,6 +25,7 @@ const serve = (options: {
   userDivisionId?: string;
   routeStatus?: number;
   routes?: unknown[];
+  status?: string;
 }) =>
   apiMock.mockImplementation((path: string, init?: { method?: string }) => {
     if (path === '/auth/me')
@@ -41,6 +42,8 @@ const serve = (options: {
         page: 1,
         pageSize: 20,
       });
+    if (path === '/documents/doc-1/actions/ACCEPT' && init?.method === 'POST')
+      return Promise.resolve(documentItem({ version: 4 }));
     if (path === '/documents/doc-1/routes' && init?.method === 'POST')
       return options.routeStatus === 409
         ? Promise.reject(new ApiError({ status: 409, code: 'STALE_VERSION', message: 'Stale' }))
@@ -70,6 +73,7 @@ const serve = (options: {
         documentDetail({
           allowedActions: (options.allowedActions ?? ['ACCEPT']) as never,
           routes: (options.routes ?? []) as never,
+          ...(options.status === undefined ? {} : { status: options.status as never }),
         }),
       );
     if (path === '/users/assignable')
@@ -174,11 +178,86 @@ describe('AwaitingAcceptance', () => {
 
       await waitFor(() =>
         expect(requestBody(apiMock, '/documents/doc-1/routes', 'POST')).toEqual({
-          expectedVersion: 3,
+          expectedVersion: 4,
           toDivisionId: 'division-1',
           toSectionId: 'sec-3',
         }),
       );
+    });
+
+    it('accepts the division hop first, then routes on the version the accept returned', async () => {
+      serve({ items: [documentItem()] });
+      renderWithQuery(<AwaitingAcceptance />);
+      const dialog = await openDialog();
+      await userEvent.click(within(dialog).getByRole('combobox'));
+      await userEvent.click(await screen.findByRole('option', { name: 'Lands Section' }));
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Assign to section' }));
+
+      await waitFor(() => expect(calledPaths(apiMock)).toContain('/documents/doc-1/routes'));
+      const paths = calledPaths(apiMock);
+      expect(paths.indexOf('/documents/doc-1/actions/ACCEPT')).toBeGreaterThan(-1);
+      expect(paths.indexOf('/documents/doc-1/actions/ACCEPT')).toBeLessThan(
+        paths.indexOf('/documents/doc-1/routes'),
+      );
+      expect(requestBody(apiMock, '/documents/doc-1/actions/ACCEPT', 'POST')).toEqual({
+        expectedVersion: 3,
+      });
+    });
+
+    it('does not accept again when the holding hop is already accepted', async () => {
+      serve({
+        items: [documentItem()],
+        allowedActions: [],
+        routes: [
+          {
+            id: 'r1',
+            toDivisionId: 'division-1',
+            toSectionId: null,
+            forInformation: false,
+            acceptedAt: '2026-09-01T09:00:00.000Z',
+          },
+        ],
+      });
+      renderWithQuery(<AwaitingAcceptance />);
+      const dialog = await openDialog();
+      await userEvent.click(within(dialog).getByRole('combobox'));
+      await userEvent.click(await screen.findByRole('option', { name: 'Lands Section' }));
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Assign to section' }));
+
+      await waitFor(() => expect(calledPaths(apiMock)).toContain('/documents/doc-1/routes'));
+      expect(calledPaths(apiMock)).not.toContain('/documents/doc-1/actions/ACCEPT');
+    });
+
+    it('is not offered when the holding hop is unaccepted and the user cannot accept it', async () => {
+      serve({
+        items: [documentItem()],
+        allowedActions: [],
+        routes: [
+          {
+            id: 'r1',
+            toDivisionId: 'division-1',
+            toSectionId: null,
+            forInformation: false,
+            acceptedAt: null,
+          },
+        ],
+      });
+      renderWithQuery(<AwaitingAcceptance />);
+      await screen.findByText('Incoming budget letter');
+      await userEvent.click(screen.getByRole('button', { name: /Take action/ }));
+
+      await screen.findByRole('button', { name: 'Assign' });
+      expect(screen.queryByRole('button', { name: 'Assign to section' })).not.toBeInTheDocument();
+    });
+
+    it('is not offered for a closed record that is only pending on an information copy', async () => {
+      serve({ items: [documentItem()], status: 'RELEASED', allowedActions: [] });
+      renderWithQuery(<AwaitingAcceptance />);
+      await screen.findByText('Incoming budget letter');
+      await userEvent.click(screen.getByRole('button', { name: /Take action/ }));
+
+      await screen.findByRole('button', { name: 'Assign' });
+      expect(screen.queryByRole('button', { name: 'Assign to section' })).not.toBeInTheDocument();
     });
 
     it('does not offer the section the document already sits in', async () => {

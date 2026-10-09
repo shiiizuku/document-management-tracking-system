@@ -7,7 +7,10 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/dts/empty-state';
 import { PriorityLabel, StatusBadge } from '@/components/dts/status-badge';
 import { AssignDialog } from '@/features/documents/assign-dialog';
-import { AssignSectionDialog } from '@/features/documents/assign-section-dialog';
+import {
+  AssignSectionDialog,
+  canAssignToSection,
+} from '@/features/documents/assign-section-dialog';
 import { DocumentActions } from '@/features/documents/document-actions';
 import {
   DEFAULT_DOCUMENT_FILTERS,
@@ -82,6 +85,7 @@ function PendingRow({ row }: Readonly<{ row: DocumentListItem }>) {
   const canAssignSection =
     can('DOCUMENT_ASSIGN') &&
     detail.data !== undefined &&
+    canAssignToSection(detail.data) &&
     user?.divisionId != null &&
     currentCustody(detail.data).divisionId === user.divisionId;
 

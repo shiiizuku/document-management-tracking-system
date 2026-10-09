@@ -22,7 +22,24 @@ import {
 } from '@/components/ui/select';
 import { useSections } from '@/features/org/queries';
 import { ApiError } from '@/lib/api';
-import { currentCustody, useRouteDocument, type DocumentDetail } from './queries';
+import { currentCustody, useRouteDocument, useRunAction, type DocumentDetail } from './queries';
+
+/**
+ * Whether a section assignment can be offered for this document.
+ *
+ * Never on a closed record: a forward would reopen custody of a released or archived document, and
+ * the detail screen hides Forward for the same reason. And never while the holding unit's own hop is
+ * unaccepted unless this user can accept it: a section hop stacked on an unaccepted division hop
+ * leaves the stale hop for the next Accept to stamp, so the section would need two acceptances and
+ * the wrong hop would record who took it. The dialog accepts the division hop first (below).
+ */
+export const canAssignToSection = (document: DocumentDetail): boolean => {
+  if (document.status === 'RELEASED' || document.status === 'ARCHIVED') return false;
+  const hops = document.routes.filter((hop) => !hop.forInformation);
+  const lead = hops[hops.length - 1];
+  const outstanding = lead !== undefined && lead.acceptedAt === null;
+  return !outstanding || document.allowedActions.includes('ACCEPT');
+};
 
 /**
  * Hands a document to one of the sections of the division that holds it (decision 14).
@@ -30,7 +47,8 @@ import { currentCustody, useRouteDocument, type DocumentDetail } from './queries
  * "Assigning to a section" is not a separate act: it is a forward whose lead hop stays in the same
  * division and names a section (decision 156 — each section accepts what its division assigned), so
  * this posts to the same `/documents/:id/routes` the Forward dialog uses and inherits its
- * authorization, notification and audit. The sections offered are the custody division's, minus the
+ * authorization, notification and audit. A division hop still waiting on this user is accepted first,
+ * so the division takes custody before it hands the document down (decision 156). The sections offered are the custody division's, minus the
  * one it already sits in; the server re-checks the capability and the document's version, so a
  * stale or hand-edited choice is refused there.
  */
@@ -47,6 +65,9 @@ export function AssignSectionDialog({
   const custody = currentCustody(document);
   const sections = useSections(open ? custody.divisionId : null);
   const route = useRouteDocument(document.id);
+  const accept = useRunAction(document.id);
+
+  const pending = route.isPending || accept.isPending;
 
   const choices = (sections.data ?? []).filter(
     (section) => section.active && section.id !== custody.sectionId,
@@ -57,39 +78,41 @@ export function AssignSectionDialog({
     onOpenChange(next);
   };
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (sectionId === '') return;
-    route.mutate(
-      {
-        expectedVersion: document.version,
+    try {
+      let expectedVersion = document.version;
+      if (document.allowedActions.includes('ACCEPT')) {
+        // Both calls are the server's own: it re-checks the capability and the version on each.
+        const accepted = await accept.mutateAsync({ action: 'ACCEPT', expectedVersion });
+        expectedVersion = accepted.version;
+      }
+      await route.mutateAsync({
+        expectedVersion,
         toDivisionId: custody.divisionId,
         toSectionId: sectionId,
-      },
-      {
-        onSuccess: () => {
-          close(false);
-          toast.success('Document assigned to the section', {
-            description: `${document.trackingNumber} now waits for the section to accept it.`,
-          });
-        },
-        onError: (error) =>
-          toast.error('Could not assign the document', {
-            description:
-              error instanceof ApiError && error.isConflict
-                ? 'This document changed — review it and try again.'
-                : error instanceof Error
-                  ? error.message
-                  : 'Please try again.',
-          }),
-      },
-    );
+      });
+      close(false);
+      toast.success('Document assigned to the section', {
+        description: `${document.trackingNumber} now waits for the section to accept it.`,
+      });
+    } catch (error) {
+      toast.error('Could not assign the document', {
+        description:
+          error instanceof ApiError && error.isConflict
+            ? 'This document changed — review it and try again.'
+            : error instanceof Error
+              ? error.message
+              : 'Please try again.',
+      });
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={close}>
       <DialogContent className="sm:max-w-md">
-        <form onSubmit={submit}>
+        <form onSubmit={(event) => void submit(event)}>
           <DialogHeader>
             <DialogTitle>Assign {document.trackingNumber} to a section</DialogTitle>
             <DialogDescription>
@@ -124,8 +147,8 @@ export function AssignSectionDialog({
             <Button type="button" variant="outline" onClick={() => close(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={sectionId === '' || route.isPending}>
-              {route.isPending ? <Loader2 className="animate-spin" /> : null}
+            <Button type="submit" disabled={sectionId === '' || pending}>
+              {pending ? <Loader2 className="animate-spin" /> : null}
               Assign to section
             </Button>
           </DialogFooter>
