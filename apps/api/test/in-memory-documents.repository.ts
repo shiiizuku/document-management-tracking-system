@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { AuthorizationActor } from '../src/modules/authorization/authorization.policy.js';
 import { AuthorizationPolicy } from '../src/modules/authorization/authorization.policy.js';
@@ -276,9 +277,22 @@ export class InMemoryDocumentsRepository {
     return Promise.resolve(this.applyVersioned(id, expectedVersion, patch));
   }
 
+  /** Moves a row to a status directly, to stage a change that lands between a check and a write. */
+  setStatusForTest(id: string, status: DocumentRow['status']): void {
+    const row = this.documents.get(id);
+    if (row !== undefined) this.documents.set(id, { ...row, status });
+  }
+
   setCurrentFileVersion(documentId: string, versionId: string): Promise<DocumentRow | null> {
     const row = this.documents.get(documentId);
     if (row === undefined || row.deletedAt !== null) return Promise.resolve(null);
+    if (row.status === 'RELEASED' || row.status === 'ARCHIVED')
+      return Promise.reject(
+        new ConflictException({
+          code: 'DOCUMENT_NOT_EDITABLE',
+          message: 'Attachments cannot be added to a released or archived document',
+        }),
+      );
     const next = {
       ...row,
       currentFileVersionId: versionId,

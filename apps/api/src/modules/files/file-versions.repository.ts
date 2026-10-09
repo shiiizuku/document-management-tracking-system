@@ -44,7 +44,7 @@ export class FileVersionsRepository {
   constructor(@Inject(DATABASE) private readonly database: Database) {}
 
   async createRecord(
-    values: { documentId: string; displayName: string; createdById: string },
+    values: { id?: string; documentId: string; displayName: string; createdById: string },
     executor: DatabaseExecutor = this.database,
   ): Promise<FileRecordRow> {
     const [row] = await executor.insert(fileRecords).values(values).returning();
@@ -143,13 +143,22 @@ export class FileVersionsRepository {
         code: 'SCAN_RESULT_CONFLICT',
         message: 'A final scan result cannot be changed',
       });
+    // Conditional on PENDING: two writers can both pass the read above, and without this the
+    // later one could replace an INFECTED result with CLEAN.
     const [row] = await this.database
       .update(fileVersions)
       .set({ scanStatus: status })
-      .where(eq(fileVersions.id, versionId))
+      .where(and(eq(fileVersions.id, versionId), eq(fileVersions.scanStatus, 'PENDING')))
       .returning();
-    if (!row) throw new NotFoundException('Attachment not found');
-    return { version: row, changed: true };
+    if (row) return { version: row, changed: true };
+    // Lost the race (or the row vanished): the stored value decides what the loser sees.
+    const stored = await this.findVersionById(versionId);
+    if (stored === null) throw new NotFoundException('Attachment not found');
+    if (stored.scanStatus === status) return { version: stored, changed: false };
+    throw new ConflictException({
+      code: 'SCAN_RESULT_CONFLICT',
+      message: 'A final scan result cannot be changed',
+    });
   }
 
   async isClean(versionId: string): Promise<boolean> {

@@ -28,8 +28,7 @@ export const workflowStatusSchema = z.enum([
 /**
  * What `documents.status` may actually hold — the business lifecycle, minus the derived condition.
  *
- * Derived from the presented set rather than listed again (the same shape as
- * {@link fileScanStatusSchema} below), so adding a status above forces a decision about whether it
+ * Derived from the presented set rather than listed again, so adding a status above forces a decision about whether it
  * is a stored state or a computed one instead of silently widening the column.
  */
 export const storedWorkflowStatusSchema = workflowStatusSchema.exclude(['PENDING']);
@@ -571,14 +570,6 @@ export const scanStatusSchema = z.enum([
   'SCAN_FAILED',
 ]);
 
-/**
- * What a scanner may report back. Derived from the full set rather than listed again, so a new
- * scan state cannot be added above without a decision about whether a scanner can report it.
- * `PENDING` is excluded because it is the initial state the system assigns, not an outcome.
- */
-export const fileScanStatusSchema = scanStatusSchema.exclude(['PENDING']);
-export const recordScanSchema = z.object({ status: fileScanStatusSchema });
-
 export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
 export type StoredWorkflowStatus = z.infer<typeof storedWorkflowStatusSchema>;
 export type WorkflowAction = z.infer<typeof workflowActionSchema>;
@@ -598,8 +589,6 @@ export type RouteDocumentInput = z.infer<typeof routeDocumentSchema>;
 export type ShareDocumentInput = z.infer<typeof shareDocumentSchema>;
 export type LinkReferenceDocumentInput = z.infer<typeof linkReferenceDocumentSchema>;
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
-export type FileScanResult = z.infer<typeof fileScanStatusSchema>;
-export type RecordScanInput = z.infer<typeof recordScanSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type AccountRequestStatus = z.infer<typeof accountRequestStatusSchema>;
 export type SubmitAccountRequestInput = z.infer<typeof submitAccountRequestSchema>;

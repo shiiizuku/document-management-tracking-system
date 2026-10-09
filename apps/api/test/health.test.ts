@@ -12,6 +12,7 @@ import { StoragePort } from '../src/modules/files/storage.port.js';
 const storageStub = (get: () => Promise<Uint8Array | null>): StoragePort => ({
   get,
   put: () => Promise.resolve(),
+  delete: () => Promise.resolve(),
 });
 
 const buildApp = async (

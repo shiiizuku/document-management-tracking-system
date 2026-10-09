@@ -57,6 +57,11 @@ export class MinioStorageAdapter extends StoragePort {
     return new Uint8Array(Buffer.concat(chunks));
   }
 
+  async delete(key: string): Promise<void> {
+    await this.#ensureBucket();
+    await this.#client.removeObject(this.#bucket, key);
+  }
+
   #ensureBucket(): Promise<void> {
     // Cache the promise, not just its result: if the first write fails to create the bucket, the
     // next write retries instead of assuming a bucket that isn't there.

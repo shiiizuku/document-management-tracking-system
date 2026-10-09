@@ -2,17 +2,27 @@ import 'reflect-metadata';
 import { hashSync } from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { DATABASE } from '../src/database/database.constants.js';
 import type { Database } from '../src/database/client.js';
-import { divisions, sections } from '../src/database/schema.js';
+import {
+  auditEvents,
+  divisions,
+  documents,
+  fileVersions,
+  outboxEvents,
+  sections,
+} from '../src/database/schema.js';
+import { OutboxWriter } from '../src/modules/audit/outbox.writer.js';
+import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
+import { FileVersionsRepository } from '../src/modules/files/file-versions.repository.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -61,11 +71,9 @@ describe('attachment files REST against a real database', () => {
       .set('Cookie', cookies)
       .attach('file', buffer, { filename, contentType });
 
-  const scan = (documentId: string, versionId: string, status: string) =>
-    request(server())
-      .post(`/api/v1/documents/${documentId}/attachments/${versionId}/scan`)
-      .set('Cookie', cookies)
-      .send({ status });
+  /** Records a verdict the way the scan worker does; there is no HTTP route for it. */
+  const markScanned = (versionId: string, status: 'CLEAN' | 'INFECTED') =>
+    app.get(FileVersionsRepository).recordScanStatus(versionId, status);
 
   beforeAll(async () => {
     // No storage override: the bytes go to the real MinIO bucket through MinioStorageAdapter, so
@@ -154,7 +162,7 @@ describe('attachment files REST against a real database', () => {
       .expect(409);
     expect(blocked.body.error.code).toBe('FILE_NOT_CLEAN');
 
-    await scan(doc.id, version.id, 'CLEAN').expect(201);
+    await markScanned(version.id, 'CLEAN');
 
     // The version metadata survives independently of the request that created it: list reads
     // it back from Postgres.
@@ -189,9 +197,100 @@ describe('attachment files REST against a real database', () => {
     const version = dataOf<{ id: string }>(
       await upload(doc.id, PDF, 'plan.pdf', 'application/pdf').expect(201),
     );
-    await scan(doc.id, version.id, 'CLEAN').expect(201);
-    const conflict = await scan(doc.id, version.id, 'INFECTED').expect(409);
-    expect(conflict.body.error.code).toBe('SCAN_RESULT_CONFLICT');
+    await markScanned(version.id, 'CLEAN');
+    await expect(markScanned(version.id, 'INFECTED')).rejects.toMatchObject({
+      response: { code: 'SCAN_RESULT_CONFLICT' },
+    });
+  }, 30_000);
+
+  it('lets exactly one of two concurrent scan verdicts win', async () => {
+    const doc = await createDoc('INCOMING');
+    const version = dataOf<{ id: string }>(
+      await upload(doc.id, PDF, 'plan.pdf', 'application/pdf').expect(201),
+    );
+    const results = await Promise.allSettled([
+      markScanned(version.id, 'CLEAN'),
+      markScanned(version.id, 'INFECTED'),
+    ]);
+    const winners = results.filter((result) => result.status === 'fulfilled');
+    const losers = results.filter((result) => result.status === 'rejected');
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect((losers[0] as PromiseRejectedResult).reason).toMatchObject({
+      response: { code: 'SCAN_RESULT_CONFLICT' },
+    });
+    const stored = await app.get(FileVersionsRepository).findVersionById(version.id);
+    const winner = (winners[0] as PromiseFulfilledResult<{ version: { scanStatus: string } }>)
+      .value;
+    expect(stored?.scanStatus).toBe(winner.version.scanStatus);
+  }, 30_000);
+
+  it('queues a rescan of a pending version, and leaves a final one alone', async () => {
+    const doc = await createDoc('INCOMING');
+    const version = dataOf<{ id: string }>(
+      await upload(doc.id, PDF, 'plan.pdf', 'application/pdf').expect(201),
+    );
+    const rescan = () =>
+      request(server())
+        .post(`/api/v1/documents/${doc.id}/attachments/${version.id}/rescan`)
+        .set('Cookie', cookies);
+    const queued = async (): Promise<number> =>
+      (
+        await app
+          .get<Database>(DATABASE)
+          .select()
+          .from(outboxEvents)
+          .where(eq(outboxEvents.aggregateId, version.id))
+      ).length;
+    expect(await queued()).toBe(1); // the upload's own event
+    await rescan().expect(201);
+    expect(await queued()).toBe(2);
+
+    await markScanned(version.id, 'CLEAN');
+    const final = await rescan().expect(201);
+    expect(dataOf<{ scanStatus: string }>(final).scanStatus).toBe('CLEAN');
+    expect(await queued()).toBe(2);
+  }, 30_000);
+
+  it('removes the whole upload when its commit fails part-way', async () => {
+    const doc = await createDoc('INCOMING');
+    const database = app.get<Database>(DATABASE);
+    const counts = async () => ({
+      versions: (await database.select().from(fileVersions)).length,
+      audits: (
+        await database
+          .select()
+          .from(auditEvents)
+          .where(
+            and(eq(auditEvents.targetId, doc.id), eq(auditEvents.action, 'attachment.uploaded')),
+          )
+      ).length,
+      pointer: (await database.select().from(documents).where(eq(documents.id, doc.id)))[0]
+        ?.currentFileVersionId,
+    });
+    const before = await counts();
+
+    const spy = vi
+      .spyOn(app.get(OutboxWriter), 'enqueue')
+      .mockRejectedValueOnce(new Error('outbox unavailable'));
+    try {
+      await upload(doc.id, PDF, 'plan.pdf', 'application/pdf').expect(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await counts()).toEqual(before);
+  }, 30_000);
+
+  it('refuses to move the pointer of a document that was released after the check', async () => {
+    const doc = await createDoc('INCOMING');
+    const version = dataOf<{ id: string }>(
+      await upload(doc.id, PDF, 'plan.pdf', 'application/pdf').expect(201),
+    );
+    const database = app.get<Database>(DATABASE);
+    await database.update(documents).set({ status: 'RELEASED' }).where(eq(documents.id, doc.id));
+    await expect(
+      app.get(DocumentsRepository).setCurrentFileVersion(doc.id, version.id),
+    ).rejects.toMatchObject({ response: { code: 'DOCUMENT_NOT_EDITABLE' } });
   }, 30_000);
 
   it('does not resolve a version through a sibling document (IDOR)', async () => {
@@ -211,7 +310,7 @@ describe('attachment files REST against a real database', () => {
     const version = dataOf<{ id: string }>(
       await upload(doc.id, PDF, 'plan.pdf', 'application/pdf').expect(201),
     ); // v2
-    await scan(doc.id, version.id, 'CLEAN').expect(201);
+    await markScanned(version.id, 'CLEAN');
 
     const act = (action: string, expectedVersion: number, as: string[] = cookies) =>
       request(server())

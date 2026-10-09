@@ -13,12 +13,10 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
-import { recordScanSchema, type RecordScanInput } from '@dts/contracts';
 import { AuthGuard } from '../../common/auth.guard.js';
 import { INLINE_CONTENT_CSP } from '../../common/inline-content.js';
 import { CurrentUser } from '../../common/current-user.decorator.js';
 import type { RequestUser } from '../../common/request-user.js';
-import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { AttachmentsService, MAX_ATTACHMENT_BYTES } from './attachments.service.js';
 
 // The subset of multer's in-memory file object this controller consumes. Declared locally
@@ -133,15 +131,13 @@ export class FilesController {
     response.send(Buffer.from(file.bytes));
   }
 
-  @Post(':versionId/scan')
-  async scan(
+  /** Queues another scan of a version still waiting for one. Verdicts only come from the scanner. */
+  @Post(':versionId/rescan')
+  async rescan(
     @CurrentUser() actor: RequestUser,
     @Param('documentId') documentId: string,
     @Param('versionId') versionId: string,
-    @Body(new ZodValidationPipe(recordScanSchema)) input: RecordScanInput,
   ) {
-    return {
-      data: await this.attachments.recordScan(actor, documentId, versionId, input.status),
-    };
+    return { data: await this.attachments.requestRescan(actor, documentId, versionId) };
   }
 }

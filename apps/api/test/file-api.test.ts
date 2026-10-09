@@ -97,6 +97,17 @@ describe('REST /api/v1 document attachments', () => {
     await app.close();
   });
 
+  /**
+   * Records the scanner's verdict the way the worker does, through the repository. There is no
+   * HTTP route for it: a verdict can only come from scanning the stored bytes.
+   */
+  const markScanned = async (
+    versionId: string,
+    status: 'CLEAN' | 'INFECTED' = 'CLEAN',
+  ): Promise<void> => {
+    await app.get(FileVersionsRepository).recordScanStatus(versionId, status);
+  };
+
   const login = async (email: string, password: string): Promise<string[]> => {
     const response = await request(server())
       .post('/api/v1/auth/login')
@@ -186,11 +197,7 @@ describe('REST /api/v1 document attachments', () => {
       .expect(409);
     expect(blocked.body.error.code).toBe('FILE_NOT_CLEAN');
 
-    await request(server())
-      .post(`/api/v1/documents/${document.id}/attachments/${versionId}/scan`)
-      .set('Cookie', cookie)
-      .send({ status: 'CLEAN' })
-      .expect(201);
+    await markScanned(versionId);
 
     const download = await request(server())
       .get(`/api/v1/documents/${document.id}/attachments/${versionId}/download`)
@@ -217,11 +224,7 @@ describe('REST /api/v1 document attachments', () => {
     ).expect(201); // document -> version 2
     const versionId = dataOf<{ id: string }>(uploaded).id;
 
-    await request(server())
-      .post(`/api/v1/documents/${created.id}/attachments/${versionId}/scan`)
-      .set('Cookie', cookie)
-      .send({ status: 'CLEAN' })
-      .expect(201); // scan does not bump the document version
+    await markScanned(versionId); // scan does not bump the document version
 
     // Accepting custody stamps the route row and leaves the document untouched, so the version
     // does not move here — every expectedVersion below is one lower than before the revision.
@@ -314,11 +317,7 @@ describe('REST /api/v1 document attachments', () => {
       'application/pdf',
     ).expect(201); // -> 2
     const versionId = dataOf<{ id: string }>(uploaded).id;
-    await request(server())
-      .post(`/api/v1/documents/${created.id}/attachments/${versionId}/scan`)
-      .set('Cookie', cookie)
-      .send({ status: 'CLEAN' })
-      .expect(201);
+    await markScanned(versionId);
 
     await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
     await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
@@ -339,11 +338,7 @@ describe('REST /api/v1 document attachments', () => {
     const firstData = dataOf<{ id: string; attachmentId: string }>(first);
     const firstVersionId = firstData.id;
     const attachmentId = firstData.attachmentId;
-    await request(server())
-      .post(`/api/v1/documents/${created.id}/attachments/${firstVersionId}/scan`)
-      .set('Cookie', cookie)
-      .send({ status: 'CLEAN' })
-      .expect(201);
+    await markScanned(firstVersionId);
 
     await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
     await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
@@ -411,11 +406,7 @@ describe('REST /api/v1 document attachments', () => {
     );
     const versionId = dataOf<{ id: string }>(uploaded).id;
 
-    await request(server())
-      .post(`/api/v1/documents/${created.id}/attachments/${versionId}/scan`)
-      .set('Cookie', cookie)
-      .send({ status: 'CLEAN' })
-      .expect(201);
+    await markScanned(versionId);
 
     await request(server())
       .get(`/api/v1/documents/${created.id}/attachments/${versionId}/content`)
@@ -437,11 +428,7 @@ describe('REST /api/v1 document attachments', () => {
     ); // -> 2
     const versionId = dataOf<{ id: string }>(uploaded).id;
 
-    await request(server())
-      .post(`/api/v1/documents/${created.id}/attachments/${versionId}/scan`)
-      .set('Cookie', cookie)
-      .send({ status: 'CLEAN' })
-      .expect(201);
+    await markScanned(versionId);
 
     await act(cookie, created.id, 'ACCEPT', { expectedVersion: 2 }).expect(201); // stays 2
     await act(cookie, created.id, 'SUBMIT_FOR_SIGNATURE', { expectedVersion: 2 }).expect(201); // -> 3
@@ -532,11 +519,7 @@ describe('REST /api/v1 document attachments', () => {
       .expect(409);
     expect(blocked.body.error.code).toBe('FILE_NOT_CLEAN');
 
-    await request(server())
-      .post(`/api/v1/documents/${document.id}/attachments/${versionId}/scan`)
-      .set('Cookie', cookie)
-      .send({ status: 'CLEAN' })
-      .expect(201);
+    await markScanned(versionId);
 
     const preview = await request(server())
       .get(`/api/v1/documents/${document.id}/attachments/${versionId}/content`)
@@ -576,11 +559,7 @@ describe('REST /api/v1 document attachments', () => {
       'application/pdf',
     ).expect(201);
     const versionId = dataOf<{ id: string }>(uploaded).id;
-    await request(server())
-      .post(`/api/v1/documents/${document.id}/attachments/${versionId}/scan`)
-      .set('Cookie', cookie)
-      .send({ status: 'CLEAN' })
-      .expect(201);
+    await markScanned(versionId);
 
     const staffCookie = await login('staff@dts.local', 'Staff@12345!');
     await request(server())
@@ -598,5 +577,108 @@ describe('REST /api/v1 document attachments', () => {
 
     const viewerCookie = await login('viewer@dts.local', 'Viewer@1234!');
     await uploadFile(viewerCookie, document.id, PDF, 'plan.pdf', 'application/pdf').expect(403);
+  });
+
+  describe('rescan', () => {
+    const uploadPending = async (cookie: string[]) => {
+      const created = await createOutgoing(cookie);
+      const uploaded = await uploadFile(
+        cookie,
+        created.id,
+        PDF,
+        'plan.pdf',
+        'application/pdf',
+      ).expect(201);
+      return { documentId: created.id, versionId: dataOf<{ id: string }>(uploaded).id };
+    };
+    const scanEvents = (versionId: string) =>
+      app
+        .get<InMemoryOutboxWriter>(OutboxWriter)
+        .events.filter((event) => event.aggregateId === versionId);
+
+    it('is the only way to ask for a scan: a submitted verdict has no route', async () => {
+      const cookie = await login('records@dts.local', 'Records@1234!');
+      const { documentId, versionId } = await uploadPending(cookie);
+      await request(server())
+        .post(`/api/v1/documents/${documentId}/attachments/${versionId}/scan`)
+        .set('Cookie', cookie)
+        .send({ status: 'CLEAN' })
+        .expect(404);
+      await request(server())
+        .get(`/api/v1/documents/${documentId}/attachments/${versionId}/download`)
+        .set('Cookie', cookie)
+        .expect(409);
+    });
+
+    it('queues another scan of a pending version and leaves it pending', async () => {
+      const cookie = await login('records@dts.local', 'Records@1234!');
+      const { documentId, versionId } = await uploadPending(cookie);
+      expect(scanEvents(versionId)).toHaveLength(1);
+
+      const response = await request(server())
+        .post(`/api/v1/documents/${documentId}/attachments/${versionId}/rescan`)
+        .set('Cookie', cookie)
+        .expect(201);
+      expect(dataOf<{ scanStatus: string }>(response).scanStatus).toBe('PENDING');
+      expect(scanEvents(versionId)).toHaveLength(2);
+    });
+
+    it('does nothing to a version that already has a final result', async () => {
+      const cookie = await login('records@dts.local', 'Records@1234!');
+      const { documentId, versionId } = await uploadPending(cookie);
+      await markScanned(versionId, 'INFECTED');
+
+      const response = await request(server())
+        .post(`/api/v1/documents/${documentId}/attachments/${versionId}/rescan`)
+        .set('Cookie', cookie)
+        .expect(201);
+      expect(dataOf<{ scanStatus: string }>(response).scanStatus).toBe('INFECTED');
+      expect(scanEvents(versionId)).toHaveLength(1);
+    });
+
+    it('is refused to a caller without FILE_SCAN_RECORD', async () => {
+      const staff = await login('staff@dts.local', 'Staff@12345!');
+      const created = await request(server())
+        .post('/api/v1/documents')
+        .set('Cookie', staff)
+        .send({
+          title: 'Staff memorandum',
+          type: 'MEMORANDUM',
+          priority: 'NORMAL',
+          direction: 'OUTGOING',
+          divisionId: 'division-pilot',
+          sectionId: 'section-pilot',
+        })
+        .expect(201);
+      const documentId = dataOf<{ id: string }>(created).id;
+      const uploaded = await uploadFile(
+        staff,
+        documentId,
+        PDF,
+        'plan.pdf',
+        'application/pdf',
+      ).expect(201);
+      const versionId = dataOf<{ id: string }>(uploaded).id;
+
+      await request(server())
+        .post(`/api/v1/documents/${documentId}/attachments/${versionId}/rescan`)
+        .set('Cookie', staff)
+        .expect(403);
+      expect(scanEvents(versionId)).toHaveLength(1);
+    });
+  });
+
+  it('refuses a new attachment on a document that was released after the editable check', async () => {
+    const cookie = await login('records@dts.local', 'Records@1234!');
+    const created = await createOutgoing(cookie);
+    const documents = app.get(DocumentsRepository);
+    const row = await documents.findById(created.id);
+    if (row === null) throw new Error('document missing');
+    // Released between the service's check and the pointer update, which is the window the
+    // repository's own status predicate closes.
+    (documents as unknown as InMemoryDocumentsRepository).setStatusForTest(created.id, 'RELEASED');
+    await expect(documents.setCurrentFileVersion(created.id, 'any-version')).rejects.toMatchObject({
+      response: { code: 'DOCUMENT_NOT_EDITABLE' },
+    });
   });
 });

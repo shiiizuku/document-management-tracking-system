@@ -7,6 +7,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import type { DatabaseExecutor } from '../../database/executor.js';
 import type {
   CreateDocumentInput,
   RouteDocumentInput,
@@ -1650,8 +1651,12 @@ export class DocumentsService {
   }
 
   /** Points the document at a freshly uploaded attachment version and bumps its row version. */
-  async setCurrentAttachment(documentId: string, versionId: string): Promise<DocumentRow> {
-    const updated = await this.repository.setCurrentFileVersion(documentId, versionId);
+  async setCurrentAttachment(
+    documentId: string,
+    versionId: string,
+    executor?: DatabaseExecutor,
+  ): Promise<DocumentRow> {
+    const updated = await this.repository.setCurrentFileVersion(documentId, versionId, executor);
     if (updated === null) throw new NotFoundException('Document not found');
     return updated;
   }
