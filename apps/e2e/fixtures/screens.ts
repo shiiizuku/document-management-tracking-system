@@ -35,7 +35,7 @@ const yourMove = (page: Page): Locator => page.getByRole('region', { name: 'Your
  * refactor of the rail and one that does not.
  */
 const STATUS_LABELS = [
-  'Pending',
+  'En route',
   'In process',
   'For revision',
   'For initial',

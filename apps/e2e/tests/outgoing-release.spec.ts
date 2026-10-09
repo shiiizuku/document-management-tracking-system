@@ -54,7 +54,7 @@ test('an outgoing letter is drafted, endorsed, signed, released by courier and a
     // and year, inside the same transaction as the tracking number. The division code in it is
     // permanent, which is why a division is deactivated and never deleted (decision 153).
     await expect(head.getByText(`PILOT-${YEAR}-00001`)).toBeVisible();
-    await expect(status(head)).toHaveText('Pending');
+    await expect(status(head)).toHaveText('En route');
   });
 
   await test.step('2.2 the draft is taken on and its file uploaded', async () => {
