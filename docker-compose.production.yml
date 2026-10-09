@@ -32,6 +32,15 @@ services:
     restart: unless-stopped
   worker:
     restart: unless-stopped
+    # `restart:` is applied by the Docker daemon, which ignores `depends_on`: after a reboot the
+    # worker would start beside Redis at once and spend its five job retries (about 15 seconds)
+    # before ClamAV, which takes minutes to load its definitions, answers. The attachment would sit
+    # at "scan pending" until an operator requeued it. So wait for what a job needs first; on a
+    # normal `up` Compose has already gated this on `api` and the wait is instant.
+    command:
+      - sh
+      - -c
+      - until nc -z postgres 5432 && nc -z redis 6379 && nc -z minio 9000 && nc -z clamav 3310; do sleep 2; done; exec node apps/api/dist/worker.js
   web:
     ports: !override
       - '127.0.0.1:${WEB_HOST_PORT:-3001}:3000'

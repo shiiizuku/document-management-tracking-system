@@ -222,10 +222,16 @@ default 4001) from the same host.
 
 **After a reboot:** the overlay sets `restart: unless-stopped` on every long-running service, so the
 stack comes back by itself once the Docker daemon starts; `migrate` is a one-shot and re-runs only
-on `up`. Make sure the daemon starts at boot (`systemctl enable docker` on Linux; on Windows, a
-service or Docker Desktop set to start before anyone signs in). After the first reboot, check that
-`docker compose ps` shows every service healthy and the site loads. Nothing in the repository
-tests this, so rehearse it once before the pilot.
+on `up`. The daemon must therefore start at boot, without anyone signing in: `systemctl enable
+docker` on Linux, and on Windows Server Docker Engine installed as a service in WSL 2 or a Linux VM
+(`docs/runbooks/nas-backup-target.md`, Docker on Windows Server). Docker Desktop only starts when a
+user signs in, so on a Desktop host the stack stays down after an unattended reboot until someone
+does. A restart policy ignores the `depends_on` order, so the overlay makes `worker` wait for
+Postgres, Redis, MinIO and ClamAV before it takes jobs (ClamAV needs minutes to load its
+definitions). After the first reboot, check that `docker compose ps` shows every service healthy,
+that the site loads, and that a new upload leaves `scan pending`. If the NAS is mounted into the
+host, confirm the mount is up before Docker starts (the runbook's Linux section). Nothing in the
+repository tests this, so rehearse it once before the pilot.
 
 **Upgrading:** pull, then run the step 3 command (with the overlay) again. `migrate` re-runs and `api`
 waits for it. Back up first with `scripts/backup.sh`, and make sure `BACKUP_PATH` is on another

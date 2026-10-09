@@ -174,6 +174,19 @@ findmnt -t cifs /mnt/dts-backup          # must print a line; nothing means it i
 test -f /mnt/dts-backup/.dts-archive && echo ok
 ```
 
+Docker must not start before the share is mounted. A container started against an unmounted
+`/mnt/dts-backup` writes WAL to the empty local folder under it, and mounting the share afterwards
+does not reach into the running container (bind mounts are not propagated). So make the Docker
+service wait for the mount:
+
+```bash
+systemctl edit docker      # add:  [Unit]  RequiresMountsFor=/mnt/dts-backup
+systemctl daemon-reload
+```
+
+After a reboot, before trusting the stack, run `findmnt -t cifs /mnt/dts-backup` and
+`test -f /mnt/dts-backup/.dts-archive && echo ok`; nothing printed means it is not the NAS.
+
 Set `BACKUP_PATH=/mnt/dts-backup` in `.env`, then `docker compose up -d postgres minio`. The same
 trap applies: if the share is not mounted, `/mnt/dts-backup` is an empty local folder and Docker
 uses it without complaint. The jobs check the marker first. Root's crontab:
