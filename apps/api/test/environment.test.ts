@@ -5,6 +5,7 @@ import {
   PUBLIC_SESSION_SECRETS,
   parseTrustProxy,
   parseWebOrigins,
+  seedsDemoAccounts,
   validateDirectorAccount,
   validateEnvironment,
   validateSeedAdminPassword,
@@ -355,5 +356,13 @@ describe('API_DOCS', () => {
     expect(validateEnvironment({ ...production, API_DOCS: 'true' })).toMatchObject({
       API_DOCS: true,
     });
+  });
+});
+
+describe('seedsDemoAccounts', () => {
+  it('seeds the development accounts everywhere except production', () => {
+    expect(seedsDemoAccounts({ NODE_ENV: 'production' })).toBe(false);
+    expect(seedsDemoAccounts({ NODE_ENV: 'development' })).toBe(true);
+    expect(seedsDemoAccounts({})).toBe(true);
   });
 });

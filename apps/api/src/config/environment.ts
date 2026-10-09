@@ -267,6 +267,10 @@ export const validateDirectorAccount = (
  * API never reads it, and requiring it at API boot would mean keeping a bootstrap password in the
  * long-running process's environment for no benefit.
  */
+/** The seed creates its development-only accounts (fixed, published passwords) outside production only. */
+export const seedsDemoAccounts = (environment: Record<string, unknown>): boolean =>
+  environment.NODE_ENV !== 'production';
+
 export const validateSeedAdminPassword = (environment: Record<string, unknown>): string | null => {
   const password =
     typeof environment.SEED_ADMIN_PASSWORD === 'string' ? environment.SEED_ADMIN_PASSWORD : '';
