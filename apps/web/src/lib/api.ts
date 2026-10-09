@@ -191,8 +191,8 @@ export interface InlineContent {
  * attachment feature because it is the same transport concern — screens should no more construct
  * an object URL than they should set a CSRF header.
  */
-export async function inlineContent(path: string): Promise<InlineContent> {
-  const response = await request(path, { method: 'GET' });
+export async function inlineContent(path: string, init: RequestInit = {}): Promise<InlineContent> {
+  const response = await request(path, { ...init, method: 'GET' });
   if (!response.ok) throw await errorFrom(response);
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
