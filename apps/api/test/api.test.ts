@@ -113,6 +113,74 @@ describe('REST /api/v1 public seam', () => {
     expect(afterAccept.body.data).toContain('COMPLY');
   });
 
+  it('pages the registry by cursor: every document once, in order, and a foreign cursor refused', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'records@dts.local', password: 'Records@1234!' })
+      .expect(201);
+    const cookie = sessionCookie(login);
+    const ids: string[] = [];
+    for (const n of [1, 2, 3, 4, 5]) {
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/documents')
+        .set('Cookie', cookie)
+        .send({
+          title: `Cursor subject ${String(n)}`,
+          type: 'MEMORANDUM',
+          description: 'Paged.',
+          priority: 'NORMAL',
+          direction: 'INCOMING',
+          sender: 'Citizen',
+          company: 'Public',
+          referenceNumber: `EXT-2026-CURSOR-${String(n)}`,
+          divisionId: 'division-records',
+          sectionId: 'section-intake',
+        })
+        .expect(201);
+      ids.push(created.body.data.id as string);
+    }
+
+    const walk = async (query: string) => {
+      const seen: string[] = [];
+      let cursor: string | null | undefined;
+      let total: number;
+      do {
+        const suffix = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+        const page = await request(app.getHttpServer())
+          .get(`/api/v1/documents?pageSize=2${query}${suffix}`)
+          .set('Cookie', cookie)
+          .expect(200);
+        seen.push(...(page.body.data.items as { id: string }[]).map((item) => item.id));
+        total = page.body.data.total as number;
+        cursor = page.body.data.nextCursor as string | null;
+      } while (cursor);
+      return { seen, total };
+    };
+
+    for (const query of ['', '&sort=priority&order=asc', '&sort=status&order=desc']) {
+      const { seen, total } = await walk(query);
+      expect(new Set(seen).size).toBe(seen.length);
+      expect([...seen].sort()).toEqual([...ids].sort());
+      expect(total).toBe(5);
+    }
+
+    const first = await request(app.getHttpServer())
+      .get('/api/v1/documents?pageSize=2')
+      .set('Cookie', cookie)
+      .expect(200);
+    const cursor = first.body.data.nextCursor as string;
+    // The cursor was issued for newest-first by date; asking for another order must not resume it.
+    const foreign = await request(app.getHttpServer())
+      .get(`/api/v1/documents?pageSize=2&sort=priority&cursor=${encodeURIComponent(cursor)}`)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(foreign.body.error.code).toBe('INVALID_CURSOR');
+    await request(app.getHttpServer())
+      .get('/api/v1/documents?cursor=not-a-cursor')
+      .set('Cookie', cookie)
+      .expect(400);
+  });
+
   // The stored status is IN_PROCESS from registration, so a list that badged it would show a
   // document nobody has accepted as being in hand. The list carries the presented status instead.
   it('presents a document as pending in the registry until its lead hop is accepted', async () => {

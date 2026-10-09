@@ -11,7 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { ListShell } from './list-shell';
+import { ListShell, type ListMore } from './list-shell';
 import { TableRowsSkeleton } from './skeletons';
 
 export type SortOrder = 'asc' | 'desc';
@@ -63,6 +63,8 @@ export interface DataTableProps<Row> {
   isFetching?: boolean | undefined;
   error?: unknown;
   onRetry?: (() => void) | undefined;
+  /** Continuous mode in place of the numbered pager; see `ListShell`. */
+  more?: ListMore | undefined;
   /** Shown in place of rows when the query succeeded and matched nothing. */
   empty: ReactNode;
 }
@@ -97,6 +99,7 @@ export function DataTable<Row>({
   isFetching = false,
   error,
   onRetry,
+  more,
   empty,
 }: DataTableProps<Row>) {
   const toggleSort = (column: DataTableColumn<Row>) => {
@@ -124,6 +127,7 @@ export function DataTable<Row>({
       isFetching={isFetching}
       error={error}
       onRetry={onRetry}
+      more={more}
     >
       {(state) => (
         <Table>

@@ -75,7 +75,11 @@ export class DocumentsController {
       ...(query.page ? { page: Number(query.page) } : {}),
       ...(query.pageSize ? { pageSize: Number(query.pageSize) } : {}),
     };
-    return this.documents.search(actor, filters).then((data) => ({ data }));
+    // `cursor` and `page` are two ways to ask for the same thing; a numbered page wins, so an old
+    // bookmark that still carries `page` behaves as it always did.
+    return this.documents
+      .search(actor, filters, query.page ? undefined : query.cursor)
+      .then((data) => ({ data }));
   }
 
   @Post()

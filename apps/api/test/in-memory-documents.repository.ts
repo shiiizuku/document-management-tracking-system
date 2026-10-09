@@ -251,14 +251,60 @@ export class InMemoryDocumentsRepository {
       ...(filters.page !== undefined ? { page: filters.page } : {}),
       ...(filters.pageSize !== undefined ? { pageSize: filters.pageSize } : {}),
     };
-    const result = this.search_.execute(actor, searchable, query);
     const byId = new Map(searchable.map((entry) => [entry.id, entry.row]));
+    if (filters.page === undefined)
+      return Promise.resolve(this.keysetPage(actor, searchable, query, filters));
+    const result = this.search_.execute(actor, searchable, query);
     return Promise.resolve({
       items: result.items.map((item) => byId.get(item.id)!),
       total: result.total,
       page: result.page,
       pageSize: result.pageSize,
     });
+  }
+
+  /**
+   * The in-memory twin of the SQL keyset page. The search service pages by offset, so this walks it
+   * to get the whole ordered, scoped list and then cuts it after the cursor's row. Slower than SQL,
+   * and it only has to be right: what it returns is what the REST suites assert on.
+   */
+  private keysetPage(
+    actor: AuthorizationActor,
+    searchable: (SearchableDocument & { row: DocumentRow })[],
+    query: DocumentSearchQuery,
+    filters: DocumentSearchFilters,
+  ): DocumentSearchPage {
+    const byId = new Map(searchable.map((entry) => [entry.id, entry.row]));
+    const ordered: DocumentRow[] = [];
+    for (let page = 1; ; page += 1) {
+      const result = this.search_.execute(actor, searchable, { ...query, page, pageSize: 100 });
+      ordered.push(...result.items.map((item) => byId.get(item.id)!));
+      if (result.items.length < 100) break;
+    }
+    const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 20));
+    const start =
+      filters.after === undefined
+        ? 0
+        : ordered.findIndex((row) => row.id === filters.after?.id) + 1;
+    const rows = ordered.slice(start, start + pageSize + 1);
+    const items = rows.slice(0, pageSize);
+    const last = items.at(-1);
+    const sortValue = (row: DocumentRow): string =>
+      filters.sort === 'priority'
+        ? row.priority
+        : filters.sort === 'status'
+          ? row.status
+          : row.createdAt.toISOString();
+    return {
+      items,
+      total: ordered.length,
+      page: 1,
+      pageSize,
+      next:
+        rows.length > pageSize && last !== undefined
+          ? { value: sortValue(last), id: last.id }
+          : null,
+    };
   }
 
   updateMetadata(

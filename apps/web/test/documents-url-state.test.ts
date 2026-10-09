@@ -4,7 +4,6 @@ import {
   documentFiltersToParams,
   hasActiveDocumentFilters,
   parseDocumentFilters,
-  parsePage,
 } from '../src/features/documents/url-state';
 
 const params = (query: string) => new URLSearchParams(query);
@@ -63,33 +62,32 @@ describe('reading registry filters from the URL', () => {
     expect(parseDocumentFilters(params('sort=priority&order=asc')).order).toBe('asc');
   });
 
-  it.each([
-    ['no page', '', 1],
-    ['a page number', 'page=4', 4],
-    ['a non-numeric page', 'page=abc', 1],
-    ['a zero page', 'page=0', 1],
-    ['a negative page', 'page=-2', 1],
-    ['a fractional page', 'page=1.5', 1],
-  ])('reads %s as page %i', (_label, query, expected) => {
-    expect(parsePage(params(query))).toBe(expected);
+  // The registry scrolls continuously, so a position is no longer part of the address: an old
+  // bookmark that still carries one shows the same filtered list from the top.
+  it('ignores a page number left in an old link', () => {
+    expect(parseDocumentFilters(params('status=PENDING&page=4'))).toEqual({
+      ...DEFAULT_DOCUMENT_FILTERS,
+      status: 'PENDING',
+    });
   });
 });
 
 describe('writing registry filters to the URL', () => {
   // The unfiltered registry should be reachable at a clean `/documents`, not at a URL carrying a
   // row of empty parameters.
-  it('writes nothing for an unfiltered first page', () => {
-    expect(documentFiltersToParams(DEFAULT_DOCUMENT_FILTERS, 1)).toBe('');
+  it('writes nothing for an unfiltered list', () => {
+    expect(documentFiltersToParams(DEFAULT_DOCUMENT_FILTERS)).toBe('');
   });
 
   it('writes only what narrows the view', () => {
-    const query = documentFiltersToParams(
-      { ...DEFAULT_DOCUMENT_FILTERS, status: 'PENDING', search: '  memo  ' },
-      3,
-    );
+    const query = documentFiltersToParams({
+      ...DEFAULT_DOCUMENT_FILTERS,
+      status: 'PENDING',
+      search: '  memo  ',
+    });
     expect(new URLSearchParams(query).get('status')).toBe('PENDING');
     expect(new URLSearchParams(query).get('search')).toBe('memo');
-    expect(new URLSearchParams(query).get('page')).toBe('3');
+    expect(new URLSearchParams(query).get('page')).toBeNull();
     expect(new URLSearchParams(query).get('priority')).toBeNull();
   });
 
@@ -111,10 +109,9 @@ describe('writing registry filters to the URL', () => {
       sort: 'status',
       order: 'asc',
     } as const;
-    const query = documentFiltersToParams(filters, 2);
+    const query = documentFiltersToParams(filters);
 
     expect(parseDocumentFilters(new URLSearchParams(query))).toEqual(filters);
-    expect(parsePage(new URLSearchParams(query))).toBe(2);
   });
 });
 

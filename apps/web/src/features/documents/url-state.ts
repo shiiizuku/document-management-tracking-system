@@ -53,12 +53,6 @@ export const parseDocumentFilters = (params: URLSearchParams): DocumentFilters =
   order: params.get('order') === 'asc' ? 'asc' : 'desc',
 });
 
-/** Page 1 for anything that is not a page number, so `?page=abc` shows the first page. */
-export const parsePage = (params: URLSearchParams): number => {
-  const page = Number(params.get('page'));
-  return Number.isInteger(page) && page > 0 ? page : 1;
-};
-
 /**
  * Serialises filters and page back into a query string, omitting everything left at its default.
  *
@@ -66,7 +60,7 @@ export const parsePage = (params: URLSearchParams): number => {
  * a string of empty parameters — and it means the unfiltered registry is reached at `/documents`
  * with no query at all.
  */
-export const documentFiltersToParams = (filters: DocumentFilters, page: number): string => {
+export const documentFiltersToParams = (filters: DocumentFilters): string => {
   const params = new URLSearchParams();
   if (filters.search.trim()) params.set('search', filters.search.trim());
   if (filters.status) params.set('status', filters.status);
@@ -78,7 +72,6 @@ export const documentFiltersToParams = (filters: DocumentFilters, page: number):
   if (filters.overdue) params.set('overdue', 'true');
   if (filters.sort !== DEFAULT_DOCUMENT_FILTERS.sort) params.set('sort', filters.sort);
   if (filters.order !== DEFAULT_DOCUMENT_FILTERS.order) params.set('order', filters.order);
-  if (page > 1) params.set('page', String(page));
   return params.toString();
 };
 

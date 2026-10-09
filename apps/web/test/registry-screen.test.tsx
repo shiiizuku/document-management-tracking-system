@@ -5,7 +5,7 @@ import { RegistryScreen } from '../src/features/documents/registry-screen';
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
 import { documentItem, sessionUser } from './fixtures';
-import { calledPath } from './mock-api';
+import { calledPath, calledPaths } from './mock-api';
 import { renderWithQuery } from './query-harness';
 
 const { apiMock, pushMock, searchParams } = vi.hoisted(() => ({
@@ -113,7 +113,7 @@ describe('RegistryScreen', () => {
   });
 
   it('reads its filters from the URL and sends them to the API', async () => {
-    searchParams.value = new URLSearchParams('status=PENDING&search=budget&page=2');
+    searchParams.value = new URLSearchParams('status=PENDING&search=budget');
     serve({ items: [documentItem()], total: 40 });
     renderWithQuery(<RegistryScreen />);
 
@@ -122,7 +122,8 @@ describe('RegistryScreen', () => {
     const requested = calledPath(apiMock, (path) => path.startsWith('/documents?'));
     expect(requested).toContain('status=PENDING');
     expect(requested).toContain('search=budget');
-    expect(requested).toContain('page=2');
+    // Continuous list: no position in the request, so the server pages by cursor.
+    expect(requested).not.toContain('page=');
     // The applied search is shown in the box, so a filtered link does not look unfiltered.
     expect(screen.getByLabelText('Search')).toHaveValue('budget');
   });
@@ -201,6 +202,48 @@ describe('RegistryScreen', () => {
       await userEvent.click(screen.getByRole('option', { name: 'Any division' }));
 
       expect(pushMock).toHaveBeenCalledWith('/documents', { scroll: false });
+    });
+  });
+
+  describe('continuous list', () => {
+    const second = documentItem({ id: 'doc-2', title: 'Second page letter' });
+
+    const servePages = () =>
+      apiMock.mockImplementation((path: string) => {
+        if (path === '/auth/me') return Promise.resolve(sessionUser());
+        if (path.startsWith('/documents?'))
+          return Promise.resolve(
+            path.includes('cursor=next-1')
+              ? { items: [second], total: 2, page: 1, pageSize: 20, nextCursor: null }
+              : { items: [documentItem()], total: 2, page: 1, pageSize: 20, nextCursor: 'next-1' },
+          );
+        return Promise.resolve([]);
+      });
+
+    it('loads the next page with the cursor and appends it, with no numbered pager', async () => {
+      servePages();
+      renderWithQuery(<RegistryScreen />);
+      await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+
+      expect(screen.getByText('Showing 1 of 2')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Next page' })).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+      await waitFor(() => expect(screen.getByText('Second page letter')).toBeInTheDocument());
+      // The first page is still there: scrolling adds to the list instead of replacing it.
+      expect(screen.getByText('Incoming budget letter')).toBeInTheDocument();
+      expect(screen.getByText('Showing 2 of 2')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+      expect(calledPaths(apiMock).filter((path) => path.includes('cursor=next-1'))).toHaveLength(1);
+    });
+
+    it('offers nothing more to load on a list that fits one page', async () => {
+      serve({ items: [documentItem()], total: 1 });
+      renderWithQuery(<RegistryScreen />);
+      await waitFor(() => expect(screen.getByText('Incoming budget letter')).toBeInTheDocument());
+
+      expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
     });
   });
 

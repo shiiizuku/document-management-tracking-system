@@ -192,8 +192,14 @@ export interface DocumentSearchFilters {
   overdue?: boolean | undefined;
   sort?: 'createdAt' | 'priority' | 'status' | undefined;
   order?: 'asc' | 'desc' | undefined;
+  /** Offset paging, kept for callers that jump to a numbered page. Wins over `after` if both are set. */
   page?: number | undefined;
   pageSize?: number | undefined;
+  /**
+   * Keyset paging: continue after this row, in the list's own sort and order. Without `page`, the
+   * search is keyset-paged and reports where to continue from in `next`.
+   */
+  after?: { value: string; id: string } | undefined;
 }
 
 export interface DocumentSearchPage {
@@ -201,6 +207,8 @@ export interface DocumentSearchPage {
   total: number;
   page: number;
   pageSize: number;
+  /** Where the next keyset page starts, or `null` on the last one. Absent for offset paging. */
+  next?: { value: string; id: string } | null;
 }
 
 export interface NewWorkflowEvent {
@@ -410,6 +418,7 @@ export class DocumentsRepository {
     actor: AuthorizationActor,
     filters: DocumentSearchFilters,
   ): Promise<DocumentSearchPage> {
+    const offsetPaging = filters.page !== undefined;
     const page = Math.max(1, filters.page ?? 1);
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
 
@@ -466,20 +475,65 @@ export class DocumentsRepository {
           ? documents.status
           : documents.createdAt;
 
+    // The count is of the whole filtered set, not of what is left after the cursor: it is the
+    // figure the dashboard's tiles must match, and it is what the header reads however far the
+    // list has scrolled.
     const [{ total } = { total: 0 }] = await this.database
       .select({ total: count() })
       .from(documents)
       .where(where);
 
-    const items = await this.database
-      .select()
-      .from(documents)
-      .where(where)
-      .orderBy(direction(sortColumn), direction(documents.id))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize);
+    if (offsetPaging) {
+      const items = await this.database
+        .select()
+        .from(documents)
+        .where(where)
+        .orderBy(direction(sortColumn), direction(documents.id))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize);
+      return { items, total, page, pageSize };
+    }
 
-    return { items, total, page, pageSize };
+    /*
+     * Keyset paging. `(sort value, id)` compared as a row, which is exactly the order the
+     * `ORDER BY` below produces because both columns run the same direction. The cursor's value is
+     * cast to the column's own type, so an enum compares by its declaration rank and a timestamp by
+     * its full microsecond value rather than by text.
+     */
+    const sortType =
+      filters.sort === 'priority'
+        ? 'document_priority'
+        : filters.sort === 'status'
+          ? 'workflow_status'
+          : 'timestamptz';
+    const after = filters.after;
+    const pageCondition =
+      after === undefined
+        ? undefined
+        : filters.order === 'asc'
+          ? sql`(${sortColumn}, ${documents.id}) > (${after.value}::${sql.raw(sortType)}, ${after.id}::uuid)`
+          : sql`(${sortColumn}, ${documents.id}) < (${after.value}::${sql.raw(sortType)}, ${after.id}::uuid)`;
+
+    // One row past the page, to know whether there is another without a second query.
+    const rows = await this.database
+      .select({ document: documents, sortKey: sql<string>`${sortColumn}::text` })
+      .from(documents)
+      .where(pageCondition === undefined ? where : and(where, pageCondition))
+      .orderBy(direction(sortColumn), direction(documents.id))
+      .limit(pageSize + 1);
+
+    const pageRows = rows.slice(0, pageSize);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map((row) => row.document),
+      total,
+      page: 1,
+      pageSize,
+      next:
+        rows.length > pageSize && last !== undefined
+          ? { value: last.sortKey, id: last.document.id }
+          : null,
+    };
   }
 
   /**

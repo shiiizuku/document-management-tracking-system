@@ -1,6 +1,12 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import type {
   CreateDocumentInput,
   DocumentDirection,
@@ -239,6 +245,8 @@ export interface DocumentPage {
   total: number;
   page: number;
   pageSize: number;
+  /** Pass back to fetch the page after this one; `null` on the last. Absent for a numbered page. */
+  nextCursor?: string | null;
 }
 
 export interface MetadataRevision {
@@ -276,8 +284,9 @@ const documentKeys = {
  */
 export const documentsQueryString = (
   filters: DocumentFilters,
-  page: number,
+  page: number | undefined,
   pageSize: number = DOCUMENT_PAGE_SIZE,
+  cursor?: string,
 ): string => {
   const params = new URLSearchParams();
   if (filters.search.trim()) params.set('search', filters.search.trim());
@@ -290,10 +299,35 @@ export const documentsQueryString = (
   if (filters.overdue) params.set('overdue', 'true');
   params.set('sort', filters.sort);
   params.set('order', filters.order);
-  params.set('page', String(page));
+  // A numbered page and a cursor are two ways to ask for the same thing. Without `page` the server
+  // pages by cursor, so the continuous registry omits it.
+  if (page !== undefined) params.set('page', String(page));
+  if (cursor !== undefined) params.set('cursor', cursor);
   params.set('pageSize', String(pageSize));
   return params.toString();
 };
+
+/**
+ * The registry as one continuous list: each page is requested with the previous one's cursor, so a
+ * row registered or re-sorted while the user scrolls cannot be shown twice or skipped.
+ *
+ * Keyed under `lists()` like every other list, so `invalidateDocument` and the realtime adapter
+ * refresh it. A refetch re-requests every loaded page from the top, which is what keeps a long
+ * scroll consistent with the table as it now is.
+ */
+export function useInfiniteDocuments(filters: DocumentFilters) {
+  return useInfiniteQuery({
+    queryKey: [...documentKeys.lists(), 'infinite', filters] as const,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      api<DocumentPage>(
+        `/documents?${documentsQueryString(filters, undefined, DOCUMENT_PAGE_SIZE, pageParam)}`,
+      ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    // Keeps the rows on screen while a changed filter loads, as the numbered list always did.
+    placeholderData: (previous) => previous,
+  });
+}
 
 export function useDocuments(filters: DocumentFilters, page: number) {
   return useQuery({
