@@ -12,7 +12,7 @@ Updated after the audit baseline. Resolved items were matched against the merged
 | Competing scan writers replace a final verdict (P1) | Resolved | `f756f42` (#136): the status update is conditional on a non-final status |
 | Upload not atomic / races with document closure (P1) | Resolved | `f756f42`, `012501a` (#136): version, pointer, audit and scan enqueue commit in one transaction; the pointer update rechecks released/archived |
 | Production seed creates demo users with known passwords (P0) | Resolved in code | `d8ce8d4` (#137): `records@` and `staff@` are created only outside production. A server seeded earlier still has them; deactivate or change their passwords |
-| Missed realtime updates on reconnect (P1) | Partly resolved | `a14c5f0`: inbox and documents are refetched on every reconnect. The first successful connect is skipped (`use-realtime-sync.ts:51-60`), so a change made after the initial queries load but before the socket first connects stays stale until the next event |
+| Missed realtime updates on reconnect (P1) | Resolved | `a14c5f0`, then `ab62703` (#147): the inbox and documents are refetched after every connect, including the first, once the server reports the socket has joined its room; a second refetch follows if a query was already in flight |
 | Profile photo UI (P3) | Resolved | `aae0152`, `50795cd`, `54310b5` (#139) |
 | "In process" label on pending custody (P2) | Resolved | `97b5baa` (#138): list rows carry `presentedStatus` |
 | Registry section filter (P2) | Resolved | `97b5baa`, `9a3045f` (#138): section picker scoped to the division, kept in the URL |
@@ -20,7 +20,7 @@ Updated after the audit baseline. Resolved items were matched against the merged
 | Published internal ports (P1), restart policy (P2), backup freshness alerting (P2) | Open | |
 | `format:check` line endings and embedded worktree | Open | |
 
-Open: 6 findings and 1 partly resolved (worst: published internal ports, P1). Not rerun since the baseline: lint, typecheck, tests and build.
+Open: 6 findings (worst: published internal ports, P1). Not rerun since the baseline: lint, typecheck, tests and build.
 
 ## Standards and implementation integrity
 
