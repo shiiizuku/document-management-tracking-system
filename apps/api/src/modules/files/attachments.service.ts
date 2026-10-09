@@ -21,6 +21,7 @@ import { DocumentsService } from '../documents/documents.service.js';
 import type { DocumentRow } from '../documents/documents.repository.js';
 import {
   FileVersionsRepository,
+  isFinalScanStatus,
   objectKeyFor,
   type FileScanStatus,
   type FileVersionRow,
@@ -215,15 +216,28 @@ export class AttachmentsService {
         return this.toPublic(version, document);
       });
     } catch (error) {
-      // Best effort: nothing references these bytes now. A failure here only leaves garbage.
-      await this.storage.delete(objectKey).catch((cleanupError: unknown) => {
-        this.logger.warn(
-          `could not remove orphaned object ${objectKey}: ${
-            cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-          }`,
-        );
-      });
+      await this.discardUnreferencedObject(objectKey, versionId);
       throw error;
+    }
+  }
+
+  /**
+   * Deletes the bytes of an upload whose transaction rejected, but only once a fresh read shows no
+   * version row for them. A rejection is not proof of a rollback (a connection can drop after the
+   * server applied COMMIT), and deleting bytes a committed version points at would make it
+   * permanently unreadable. If that read fails, the object is kept: garbage is recoverable, loss
+   * is not.
+   */
+  private async discardUnreferencedObject(objectKey: string, versionId: string): Promise<void> {
+    try {
+      if ((await this.versions.findVersionById(versionId)) !== null) return;
+      await this.storage.delete(objectKey);
+    } catch (cleanupError) {
+      this.logger.warn(
+        `kept object ${objectKey} after a failed upload: ${
+          cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+        }`,
+      );
     }
   }
 
@@ -311,8 +325,9 @@ export class AttachmentsService {
    * verdict: a result is only ever what ClamAV said about the stored bytes (policy P-07), so an
    * operator whose scan was lost can requeue it but cannot declare the file clean.
    *
-   * A version that already has a final result is returned unchanged; the scan worker also skips
-   * non-pending versions, so a repeated request is harmless.
+   * Any version still awaiting a verdict (pending, pending retry, scan failed) can be requeued. One
+   * that already has a final result is returned unchanged; the scan worker skips those too, so a
+   * repeated request is harmless.
    */
   async requestRescan(
     actor: RequestUser,
@@ -324,7 +339,7 @@ export class AttachmentsService {
       throw new ForbiddenException('Requesting a rescan is not allowed');
     const version = await this.versions.findVersionForDocument(documentId, versionId);
     if (version === null) throw new NotFoundException('Attachment not found');
-    if (version.scanStatus !== 'PENDING') return this.toPublic(version, document);
+    if (isFinalScanStatus(version.scanStatus)) return this.toPublic(version, document);
     await this.database.transaction(async (tx) => {
       // A fresh key per request: the upload's own key is already in the outbox and would be
       // dropped as a duplicate.

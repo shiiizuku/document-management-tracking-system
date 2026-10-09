@@ -1,5 +1,5 @@
 import type { ScanVerdict } from './clamav-scanner.js';
-import type { FileVersionRow } from './file-versions.repository.js';
+import { isFinalScanStatus, type FileVersionRow } from './file-versions.repository.js';
 
 /**
  * The slice of each collaborator the scan consumer needs. Narrow structural types (rather than the
@@ -48,7 +48,7 @@ export const scanUploadedVersion = async (
     deps.logger?.warn(`scan skipped: version ${versionId} not found`);
     return { status: 'skipped', reason: 'not-found' };
   }
-  if (version.scanStatus !== 'PENDING') {
+  if (isFinalScanStatus(version.scanStatus)) {
     return { status: 'skipped', reason: 'already-scanned' };
   }
   const bytes = await deps.storage.get(version.objectKey);
