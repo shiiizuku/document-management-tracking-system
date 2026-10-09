@@ -14,6 +14,7 @@ import type {
   DocumentRouteRow,
   DocumentRow,
   DocumentSearchFilters,
+  AssignedPage,
   DocumentSearchPage,
   NewAssignment,
   NewDocument,
@@ -514,12 +515,44 @@ export class InMemoryDocumentsRepository {
     return Promise.resolve(pending);
   }
 
-  listAssignedTo(userId: string): Promise<DocumentRow[]> {
-    return Promise.resolve(
-      [...this.documents.values()].filter(
+  /**
+   * The in-memory twin of the SQL keyset page. It compares `(createdAt, id)` against the cursor's
+   * values rather than looking for the cursor's row, so a row that was unassigned or deleted
+   * between two pages cannot make the next page start over.
+   */
+  listAssignedTo(
+    userId: string,
+    options: {
+      after?: { value: string; id: string } | undefined;
+      pageSize?: number | undefined;
+    } = {},
+  ): Promise<AssignedPage> {
+    const ordered = [...this.documents.values()]
+      .filter(
         (row) => row.deletedAt === null && (this.assignments.get(row.id)?.has(userId) ?? false),
-      ),
-    );
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1));
+    const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 20));
+    const after = options.after;
+    const rest =
+      after === undefined
+        ? ordered
+        : ordered.filter((row) => {
+            const at = new Date(after.value).getTime();
+            return (
+              row.createdAt.getTime() < at || (row.createdAt.getTime() === at && row.id < after.id)
+            );
+          });
+    const items = rest.slice(0, pageSize);
+    const last = items.at(-1);
+    return Promise.resolve({
+      items,
+      total: ordered.length,
+      next:
+        rest.length > pageSize && last !== undefined
+          ? { value: last.createdAt.toISOString(), id: last.id }
+          : null,
+    });
   }
 
   findByIdIncludingDeleted(id: string): Promise<DocumentRow | null> {

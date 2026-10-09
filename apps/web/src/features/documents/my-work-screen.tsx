@@ -18,10 +18,10 @@ import { useDocumentTypeLabel } from '@/features/org/queries';
 /**
  * The documents assigned to the signed-in user, as a list of rows to work through.
  *
- * `GET /documents/assigned` returns the whole queue rather than a page of it, and deliberately so:
- * a personal work queue that needs paging is a queue nobody is working. The states and the footer
- * are still the shared {@link ListShell}, because the four states — loading, empty, error, rows —
- * are the same four, and a second implementation would answer them slightly differently.
+ * The queue scrolls continuously, a cursor page at a time, as the registry does: "Load more" in the
+ * footer, which also fires as the footer scrolls into view. The states and the footer are the
+ * shared {@link ListShell}, because the four states — loading, empty, error, rows — are the same
+ * four, and a second implementation would answer them slightly differently.
  *
  * Civic Ledger draws this queue as rows rather than as a table, and without the card/table/line
  * choice the registry keeps: every row here is something to act on, so each one carries its due
@@ -30,27 +30,34 @@ import { useDocumentTypeLabel } from '@/features/org/queries';
 export function MyWorkScreen() {
   const router = useRouter();
   const queue = useAssignedDocuments();
-  const rows = queue.data ?? [];
+  // The pages loaded so far, as one list. `total` is the server's count of the whole queue, the
+  // same on every page, so the first one's is read.
+  const rows = queue.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = queue.data?.pages[0]?.total;
 
   return (
     <>
       <PageHeader
         eyebrow="Assigned to me"
         title="My work"
-        count={queue.data?.length}
+        count={total}
         description="Documents currently assigned to you. Clearing this queue is what moves them on."
       />
 
       <ListShell
-        // The endpoint returns the whole queue, so the pager reports one page of everything
-        // rather than pretending to a server-side window that does not exist.
-        total={rows.length}
+        total={total ?? rows.length}
+        // Unused in continuous mode (`more`).
         page={1}
         pageSize={Math.max(rows.length, 1)}
         onPageChange={() => undefined}
+        more={{
+          hasMore: queue.hasNextPage,
+          isLoadingMore: queue.isFetchingNextPage,
+          onLoadMore: () => void queue.fetchNextPage(),
+        }}
         rowCount={rows.length}
         isLoading={queue.isPending}
-        isFetching={queue.isFetching}
+        isFetching={queue.isFetching && !queue.isFetchingNextPage}
         error={queue.error}
         onRetry={() => void queue.refetch()}
         framed={false}

@@ -13,6 +13,7 @@ import {
 import type { Response } from 'express';
 import {
   assignDocumentSchema,
+  assignedDocumentsQuerySchema,
   createDocumentSchema,
   linkReferenceDocumentSchema,
   listDocumentsQuerySchema,
@@ -26,6 +27,7 @@ import {
   type AssignDocumentInput,
   type CreateDocumentInput,
   type LinkReferenceDocumentInput,
+  type AssignedDocumentsQuery,
   type ListDocumentsQuery,
   type NameSuggestionsQuery,
   type RecordReleaseCarrierInput,
@@ -92,8 +94,13 @@ export class DocumentsController {
 
   // Declared before the `:id` routes so the literal path is not captured as a document id.
   @Get('assigned')
-  assigned(@CurrentUser() actor: RequestUser) {
-    return this.documents.assignedQueue(actor).then((data) => ({ data }));
+  assigned(
+    @CurrentUser() actor: RequestUser,
+    @Query(new ZodValidationPipe(assignedDocumentsQuerySchema)) query: AssignedDocumentsQuery,
+  ) {
+    return this.documents
+      .assignedQueue(actor, query.cursor, query.pageSize)
+      .then((data) => ({ data }));
   }
 
   // Also before `:id`, and for the same reason.

@@ -365,6 +365,14 @@ export const listDocumentsQuerySchema = z.looseObject({
 });
 export type ListDocumentsQuery = z.infer<typeof listDocumentsQuerySchema>;
 
+/** `GET /documents/assigned`: the work queue, a cursor page at a time (newest first, fixed). */
+export const assignedDocumentsQuerySchema = z.looseObject({
+  /** Opaque; issued as `nextCursor` by the previous page. */
+  cursor: z.string().min(1).max(512).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+});
+export type AssignedDocumentsQuery = z.infer<typeof assignedDocumentsQuerySchema>;
+
 /**
  * One addressee of an outgoing document: a person or agency by name, and any email addresses to
  * copy the document to. Emails are optional because most correspondence still goes by post or hand.

@@ -202,15 +202,16 @@ function Tile({
 /**
  * The "Your move" strip: how many documents are waiting on this user, and the way to them.
  *
- * The count is the length of the My work queue — the same query, under the same key, that the My
- * work screen reads, so the strip and the screen it links to share one request and one answer. The
- * dashboard summary has no such field, and adding one would be a second definition of "assigned
- * to you" to keep in step with the first. Hidden at zero, and while the queue is loading or failed:
+ * The count is the My work queue's `total` — the whole queue as the server counts it, from the same
+ * query, under the same key, that the My work screen reads, so the strip and the screen it links to
+ * share one request and one answer. It is not the number of rows loaded: the queue is paged, and
+ * the strip loads only the first page. The dashboard summary has no such field, and adding one
+ * would be a second definition of "assigned to you" to keep in step with the first. Hidden at zero, and while the queue is loading or failed:
  * a strip saying "0 documents" asks nothing of anyone.
  */
 function YourMoveStrip() {
   const queue = useAssignedDocuments();
-  const count = Array.isArray(queue.data) ? queue.data.length : 0;
+  const count = queue.data?.pages[0]?.total ?? 0;
   if (count === 0) return null;
 
   return (

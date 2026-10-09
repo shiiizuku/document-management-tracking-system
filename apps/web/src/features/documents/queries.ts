@@ -331,18 +331,38 @@ export function useDocuments(filters: DocumentFilters, page: number) {
   });
 }
 
+/** One page of `GET /documents/assigned`. `total` is the whole queue, whatever has been loaded. */
+export interface AssignedPage {
+  items: DocumentListItem[];
+  total: number;
+  /** Pass back to fetch the page after this one; `null` on the last. */
+  nextCursor: string | null;
+}
+
 /**
- * The signed-in user's whole work queue (`GET /documents/assigned`, unpaged on purpose: a personal
- * queue that needs paging is a queue nobody is working). Here rather than in the My work screen
- * because the dashboard's "Your move" strip counts the same queue, and the two sharing one query
- * key means they share one request and can never show different numbers.
+ * The signed-in user's work queue (`GET /documents/assigned`), a cursor page at a time like the
+ * registry, so a document assigned or moved on while the user scrolls cannot be shown twice or
+ * skipped. Here rather than in the My work screen because the dashboard's "Your move" strip reads
+ * the same queue: the two share one query key, so they share one first request, and the strip takes
+ * its count from `total` rather than from how many pages happen to be loaded.
+ *
+ * Under `lists()` so `invalidateDocument` and the realtime adapter refresh it; a refetch
+ * re-requests every loaded page from the top.
  */
 export function useAssignedDocuments() {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: documentKeys.assigned(),
-    queryFn: () => api<DocumentListItem[]>('/documents/assigned'),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      api<AssignedPage>(
+        pageParam === undefined
+          ? '/documents/assigned'
+          : `/documents/assigned?${new URLSearchParams({ cursor: pageParam }).toString()}`,
+      ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 }
+
 export function useDocument(id: string, enabled = true) {
   return useQuery({
     queryKey: documentKeys.detail(id),

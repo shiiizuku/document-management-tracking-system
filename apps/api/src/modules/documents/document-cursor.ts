@@ -1,3 +1,5 @@
+import { documentPrioritySchema, storedWorkflowStatusSchema } from '@dts/contracts';
+
 /**
  * The opaque cursor behind the registry's continuous list.
  *
@@ -19,10 +21,17 @@ export interface DocumentCursor {
   order: DocumentSortOrder;
   /** The last row's sort value, as Postgres prints it. */
   value: string;
+  /**
+   * Which list issued it. Absent for the registry; `'assigned'` for the work queue. Without it a
+   * registry cursor sorted by date would be accepted by the queue and start it mid-way.
+   */
+  list?: 'assigned';
   /** The last row's id: the tie-break, so rows sharing a sort value keep a total order. */
   id: string;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TIMESTAMP = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}(:?\d{2})?)?$/;
 const SORTS: readonly string[] = ['createdAt', 'priority', 'status'];
 const ORDERS: readonly string[] = ['asc', 'desc'];
 
@@ -34,12 +43,27 @@ export const decodeDocumentCursor = (raw: string): DocumentCursor | null => {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
     if (typeof parsed !== 'object' || parsed === null) return null;
-    const { sort, order, value, id } = parsed as Record<string, unknown>;
+    const { sort, order, value, id, list } = parsed as Record<string, unknown>;
     if (typeof sort !== 'string' || !SORTS.includes(sort)) return null;
     if (typeof order !== 'string' || !ORDERS.includes(order)) return null;
     if (typeof value !== 'string' || value === '' || value.length > 64) return null;
-    if (typeof id !== 'string' || id === '' || id.length > 64) return null;
-    return { sort: sort as DocumentSortField, order: order as DocumentSortOrder, value, id };
+    if (typeof id !== 'string' || !UUID.test(id)) return null;
+    if (list !== undefined && list !== 'assigned') return null;
+    // Postgres casts these back to the column's type; anything it cannot parse would be a 500.
+    const valid =
+      sort === 'priority'
+        ? documentPrioritySchema.safeParse(value).success
+        : sort === 'status'
+          ? storedWorkflowStatusSchema.safeParse(value).success
+          : TIMESTAMP.test(value);
+    if (!valid) return null;
+    return {
+      sort: sort as DocumentSortField,
+      order: order as DocumentSortOrder,
+      value,
+      id,
+      ...(list === 'assigned' ? { list } : {}),
+    };
   } catch {
     return null;
   }
