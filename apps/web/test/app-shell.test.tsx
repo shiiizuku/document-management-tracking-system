@@ -131,7 +131,23 @@ describe('AppShell', () => {
     expect(within(screen.getByRole('menu')).getByText('Staff member')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('menuitem', { name: /Sign out/ }));
+    const confirm = await screen.findByRole('dialog', { name: 'Sign out?' });
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Sign out' }));
     await waitFor(() => expect(locationReplace).toHaveBeenCalledWith('/'));
+  });
+
+  it('keeps the session when the sign-out confirmation is cancelled', async () => {
+    renderShell([]);
+
+    await userEvent.click(screen.getByRole('button', { name: /Ana Dela Cruz/ }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /Sign out/ }));
+    const confirm = await screen.findByRole('dialog', { name: 'Sign out?' });
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Sign out?' })).not.toBeInTheDocument(),
+    );
+    expect(apiMock).not.toHaveBeenCalledWith('/auth/logout', expect.anything());
   });
 
   it('lets anyone change their own password from the account menu', async () => {
