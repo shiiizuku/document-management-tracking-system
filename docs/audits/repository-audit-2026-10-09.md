@@ -16,12 +16,14 @@ Updated after the audit baseline. Resolved items were matched against the merged
 | Profile photo UI (P3) | Resolved | `aae0152`, `50795cd`, `54310b5` (#139) |
 | "In process" label on pending custody (P2) | Resolved | `97b5baa` (#138): list rows carry `presentedStatus` |
 | Registry section filter (P2) | Resolved | `97b5baa`, `9a3045f` (#138): section picker scoped to the division, kept in the URL |
-| Offset paging (P2), dashboard actions (P2) | Open | |
+| Offset paging (P2) | Partly resolved | `ed048ab` (#144): the registry pages by keyset cursor and scrolls continuously. My work still loads its whole queue from the unpaged `/documents/assigned`, although decision 22 names it too; the queue is one person's, but it is unbounded |
+| Dashboard pending work not actionable in place (P2) | Partly resolved | `aa11771`: a "Waiting for acceptance" panel renders the server-offered actions and an assign picker. The picker assigns to a person (`/users/assignable`); decision 14 says assign to a section, which the dashboard does not offer |
 | Internal services published on every interface (P1) | Resolved in configuration | `73b702e` (#141), `801fbcb`, `bfee2f3` (#143): `docker-compose.production.yml` publishes nothing but API and web, on loopback only. The README step to check `config` and probe the ports from another machine has not been run on a server |
-| Restart policy (P2), backup freshness alerting (P2) | Open | |
-| `format:check` line endings and embedded worktree | Open | |
+| Restart policy (P2) | Resolved in configuration | #151: `restart: unless-stopped` on the seven long-running services in the production overlay; the worker waits for Postgres, Redis, MinIO and ClamAV before taking jobs; the README and the Linux runbook cover the daemon starting at boot and the backup mount. A reboot has not been rehearsed |
+| Backup freshness alerting (P2) | Resolved in code | #152: `.status` markers from the mirror, base backup and push, and `scripts/check-backup-freshness.sh` (exit 1 when stale, optional webhook), scheduled every 5 minutes by the runbooks. Not yet tried against a real NAS, Task Scheduler or webhook receiver |
+| `format:check` line endings and embedded worktree | Resolved | #149: `* text=auto eol=lf` in `.gitattributes`, and `.claude` in `.prettierignore` |
 
-Open: 5 findings (worst: offset paging, P2). Not rerun since the baseline: lint, typecheck, tests and build.
+Open: the My work paging and the dashboard's section assignment (both partly resolved). Restart policy and backup alerting are merged but unverified on a pilot host, as are the seed accounts on already-seeded servers and the port probe from another machine: a reboot, a real NAS push and an alert test are still to be done. Not rerun since the baseline: lint, typecheck, tests and build.
 
 ## Standards and implementation integrity
 
