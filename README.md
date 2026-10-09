@@ -151,7 +151,8 @@ The whole system — Postgres, Redis, MinIO, ClamAV, a one-shot `migrate` job, `
 every `${...}` in that file, so production is configured there and nothing in the compose file
 needs editing.
 
-Requirements on the host: Docker Engine with Compose v2, about 4 GB of free memory (ClamAV alone
+Requirements on the host: Docker Engine 28 or later (earlier engines do not enforce the loopback-only
+port binding below against hosts on the same network segment) with Compose v2.24.4 or later, about 4 GB of free memory (ClamAV alone
 wants about 2 GB), and a reverse proxy that terminates HTTPS in front of the web and API ports.
 
 **1. Get the code with LF line endings.** On Windows, check out with `git config core.autocrlf
@@ -181,10 +182,15 @@ from the reverse proxy, so the whole office shares one 120/min rate-limit bucket
 login window, and login audit events record the proxy's address. `true` is refused at boot,
 because it would trust an address the client wrote itself.
 
-**3. Build and start.**
+**3. Build and start.** Use the production overlay from the first command: the base file publishes
+Postgres, Redis, MinIO and ClamAV on every host interface, and the overlay leaves them unpublished and
+binds `api` and `web` to 127.0.0.1 only. To make every `docker compose` command on this host (including
+the runbooks') use it, add `COMPOSE_FILE=docker-compose.yml:docker-compose.production.yml` to `.env`
+(on Windows the separator is `;`: `COMPOSE_FILE=docker-compose.yml;docker-compose.production.yml`);
+the commands below spell it out.
 
 ```bash
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
 ```
 
 Verified cold on 2026-10-03 from an empty Docker (no images, no volumes, no build cache): about
@@ -201,28 +207,20 @@ docker compose ps
 **4. Seed the organisation and the first administrator** (once; re-running is harmless):
 
 ```bash
-docker compose run --rm --no-deps migrate node dist/database/seed.js
+docker compose -f docker-compose.yml -f docker-compose.production.yml run --rm --no-deps migrate node dist/database/seed.js
 ```
 
 With `NODE_ENV=production` the seed creates only the administrator and the Director you configured;
 the development `records@` and `staff@` accounts below are not created. A server seeded before this
 change may still have them: deactivate them, or change their passwords.
 
-**5. Publish only the app, then put HTTPS in front.** Start the stack with the production overlay,
-which leaves Postgres, Redis, MinIO and ClamAV unpublished and binds `api` and `web` to 127.0.0.1
-only (needs Docker Compose v2.24+):
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
-```
-
-Check with `docker compose -f docker-compose.yml -f docker-compose.production.yml config`, which must
+**5. Check the published ports, then put HTTPS in front.** Check with `docker compose -f docker-compose.yml -f docker-compose.production.yml config`, which must
 show `ports:` only under `api` and `web`, each prefixed `127.0.0.1:`, and from another machine that
 ports 5433, 6380, 9002, 9003, 3311, 3001 and 4001 on the server refuse connections. Then proxy the
 public hostname to `web` (`WEB_HOST_PORT`, default 3001) and `/api` to `api` (`API_HOST_PORT`,
 default 4001) from the same host.
 
-**Upgrading:** pull, then run `docker compose up -d --build` again. `migrate` re-runs and `api`
+**Upgrading:** pull, then run the step 3 command (with the overlay) again. `migrate` re-runs and `api`
 waits for it. Back up first with `scripts/backup.sh`, and make sure `BACKUP_PATH` is on another
 machine.
 
