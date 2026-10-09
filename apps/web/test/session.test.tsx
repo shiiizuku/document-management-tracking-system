@@ -43,6 +43,9 @@ const harness = () => {
   return { client, wrapper };
 };
 
+const locationReplace = vi.fn();
+vi.stubGlobal('location', { replace: locationReplace });
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -114,7 +117,7 @@ describe('useLogout', () => {
 
     result.current.mutate();
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/'));
+    await waitFor(() => expect(locationReplace).toHaveBeenCalledWith('/'));
     expect(client.getQueryData(['session'])).toBeUndefined();
   });
 
@@ -127,7 +130,7 @@ describe('useLogout', () => {
 
     result.current.mutate();
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/'));
+    await waitFor(() => expect(locationReplace).toHaveBeenCalledWith('/'));
     expect(client.getQueryData(['session'])).toBeUndefined();
   });
 });
