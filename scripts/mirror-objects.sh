@@ -15,6 +15,9 @@ set -euo pipefail
 # See scripts/backup.sh: MSYS rewrites POSIX-looking arguments on Windows workstations.
 export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 
+# shellcheck source=scripts/backup-env.sh
+. "$(dirname "$0")/backup-env.sh"
+
 # Mirrored at the filesystem level rather than through the S3 API. `mc` is not in this image:
 # the stack builds MinIO from the AGPL source because the published images are license-gated,
 # and that build ships the server alone. Copying the data directory needs no extra client, and

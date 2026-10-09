@@ -222,7 +222,8 @@ notices a job that has stopped even though the last good copy is still sitting t
 | --- | --- |
 | `objects` | the last good mirror pass is more than 7 minutes old (one missed pass plus the push) |
 | `base` | the last good base backup is more than 26 hours old |
-| `archiver` | Postgres's `pg_stat_archiver` shows a failure after its last success (needs `docker`) |
+| `archiver` | the postgres container is not running, or `pg_stat_archiver` shows a failure after its last success (skipped only when `docker` is absent) |
+| `nas-push` | `.status/pushed` on the NAS is more than 5 minutes old. `push-archive.ps1` writes it only after a whole successful copy, so a push that copied the markers and then failed on a later file shows up here |
 | `nas-obj`, `nas-base` | the same two markers on the NAS are stale or missing |
 | `nas-wal` | the newest local WAL segment old enough to have been pushed is not on the NAS |
 | `nas` | the share has no `.dts-archive` marker (not mounted, or not the NAS) |

@@ -17,6 +17,8 @@ set -euo pipefail
 # on the Linux deployment host, silent and wrong on a Windows workstation.
 export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 
+# shellcheck source=scripts/backup-env.sh
+. "$(dirname "$0")/backup-env.sh"
 ARCHIVE_ROOT="${BACKUP_PATH:-./backups}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 

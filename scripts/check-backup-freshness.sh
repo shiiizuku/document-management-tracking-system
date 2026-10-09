@@ -15,7 +15,8 @@
 #   objects    .status/objects, touched by scripts/mirror-objects.sh after a good pass
 #   base       .status/base, touched by scripts/backup.sh after a good base backup
 #   archiver   Postgres has not been failing to archive WAL since its last success (needs docker)
-#   nas        with --nas: the same two markers there, and the newest local WAL segment that has had
+#   nas        with --nas: a marker the push writes only after a whole successful copy, the same two
+#              markers there, and the newest local WAL segment that has had
 #              time to be pushed is on the NAS
 #
 # WAL is not judged by file age. Postgres closes a segment each minute only while there is
@@ -24,7 +25,8 @@
 #
 # Thresholds (seconds) can be overridden: OBJECTS_MAX_AGE (default 420: one missed 3-minute pass
 # plus the minute-long push), BASE_MAX_AGE (default 93600: the 01:30 nightly plus two hours),
-# PUSH_GRACE (default 180: how old a local WAL segment must be before it must be on the NAS).
+# PUSH_GRACE (default 180: how old a local WAL segment must be before it must be on the NAS),
+# PUSH_MAX_AGE (default 300: the push runs every minute). All must be whole numbers.
 # Set ALERT_WEBHOOK_URL to also POST {"text": "..."} there when anything is stale.
 set -uo pipefail
 
@@ -33,8 +35,17 @@ export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 OBJECTS_MAX_AGE="${OBJECTS_MAX_AGE:-420}"
 BASE_MAX_AGE="${BASE_MAX_AGE:-93600}"
 PUSH_GRACE="${PUSH_GRACE:-180}"
+PUSH_MAX_AGE="${PUSH_MAX_AGE:-300}"
+
+for name in OBJECTS_MAX_AGE BASE_MAX_AGE PUSH_GRACE PUSH_MAX_AGE; do
+  case "${!name}" in
+    '' | *[!0-9]*) echo "$name must be a whole number of seconds, not '${!name}'" >&2; exit 2 ;;
+  esac
+done
 
 NAS=""
+# shellcheck source=scripts/backup-env.sh
+. "$(dirname "$0")/backup-env.sh"
 ARCHIVE="${BACKUP_PATH:-./backups}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -76,23 +87,35 @@ check_marker() { # check_marker LABEL FILE MAX_AGE
 check_marker objects "$ARCHIVE/.status/objects" "$OBJECTS_MAX_AGE"
 check_marker base "$ARCHIVE/.status/base" "$BASE_MAX_AGE"
 
-# `t` when the most recent archive attempt failed after the most recent success.
-if command -v docker >/dev/null 2>&1 && docker compose ps --status running --services 2>/dev/null | grep -qx postgres; then
-  failing="$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-dts}" -d "${POSTGRES_DB:-dts}" -Atc \
-    "select coalesce(last_failed_time > coalesce(last_archived_time, '-infinity'), false) from pg_stat_archiver" 2>/dev/null | tr -d '[:space:]')"
+# `t` when the most recent archive attempt failed after the most recent success. Without docker on
+# this host there is nothing to ask and the check is skipped; with docker but no running postgres
+# container, WAL production has stopped, which is exactly what this is here to catch.
+if ! command -v docker >/dev/null 2>&1; then
+  report archiver SKIP "docker is not available from here"
+elif ! docker compose ps --status running --services 2>/dev/null | grep -qx postgres; then
+  stale archiver "the postgres container is not running (or docker compose cannot reach this stack)"
+else
+  failing="$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-dts}" -d "${POSTGRES_DB:-dts}" -Atc     "select coalesce(last_failed_time > coalesce(last_archived_time, '-infinity'), false) from pg_stat_archiver" 2>/dev/null | tr -d '[:space:]')"
   case "$failing" in
     f) report archiver OK "WAL archiving is succeeding" ;;
     t) stale archiver "Postgres is failing to archive WAL (pg_stat_archiver.last_failed_time is newer than last_archived_time)" ;;
     *) stale archiver "could not read pg_stat_archiver" ;;
   esac
-else
-  report archiver SKIP "docker or the postgres container is not available from here"
 fi
 
 if [ -n "$NAS" ]; then
   if [ ! -f "$NAS/.dts-archive" ]; then
     stale nas "no .dts-archive marker at $NAS (share not mounted, or not the NAS)"
   else
+    # The copied markers only show what the source held when they were copied. A push that copied
+    # them and then failed on a later file would leave them fresh, so the push itself leaves a
+    # marker, written only after the whole copy succeeded (push-archive.ps1). When the archive is
+    # the NAS mount itself (Linux), there is no push to prove.
+    if [ "$NAS" -ef "$ARCHIVE" ]; then
+      report nas-push SKIP "the archive is the NAS mount; there is no separate push"
+    else
+      check_marker nas-push "$NAS/.status/pushed" "$PUSH_MAX_AGE"
+    fi
     check_marker nas-obj "$NAS/.status/objects" "$OBJECTS_MAX_AGE"
     check_marker nas-base "$NAS/.status/base" "$BASE_MAX_AGE"
     # The newest local segment old enough to have been pushed must be there.
