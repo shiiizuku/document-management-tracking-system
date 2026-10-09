@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
-import { invalidateDocument } from '@/features/documents/queries';
+import { invalidateAllDocuments, invalidateDocument } from '@/features/documents/queries';
 import { invalidateNotifications } from '@/features/notifications/queries';
 import { API_URL } from '@/lib/api';
 
@@ -48,7 +48,17 @@ export function useRealtimeSync(): RealtimeStatus {
       transports: ['websocket'],
     });
 
-    socket.on('connect', () => setConnected(true));
+    let hasConnected = false;
+    socket.on('connect', () => {
+      setConnected(true);
+      // Pings sent while the socket was down are gone, not queued. The first connect has nothing to
+      // catch up on (queries fetch on mount); every later one refetches from the database instead.
+      if (hasConnected) {
+        invalidateNotifications(client);
+        invalidateAllDocuments(client);
+      }
+      hasConnected = true;
+    });
     socket.on('disconnect', () => setConnected(false));
     socket.on(NOTIFICATION_EVENT, (payload: unknown) => {
       invalidateNotifications(client);
