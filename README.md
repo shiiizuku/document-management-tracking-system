@@ -220,6 +220,13 @@ ports 5433, 6380, 9002, 9003, 3311, 3001 and 4001 on the server refuse connectio
 public hostname to `web` (`WEB_HOST_PORT`, default 3001) and `/api` to `api` (`API_HOST_PORT`,
 default 4001) from the same host.
 
+**After a reboot:** the overlay sets `restart: unless-stopped` on every long-running service, so the
+stack comes back by itself once the Docker daemon starts; `migrate` is a one-shot and re-runs only
+on `up`. Make sure the daemon starts at boot (`systemctl enable docker` on Linux; on Windows, a
+service or Docker Desktop set to start before anyone signs in). After the first reboot, check that
+`docker compose ps` shows every service healthy and the site loads. Nothing in the repository
+tests this, so rehearse it once before the pilot.
+
 **Upgrading:** pull, then run the step 3 command (with the overlay) again. `migrate` re-runs and `api`
 waits for it. Back up first with `scripts/backup.sh`, and make sure `BACKUP_PATH` is on another
 machine.
