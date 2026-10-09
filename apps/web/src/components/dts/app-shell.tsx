@@ -31,6 +31,7 @@ import {
 } from '@/features/command-palette/command-palette';
 import { NotificationsSheet } from '@/features/notifications/notifications-sheet';
 import { ColorModeButton, ThemePicker } from '@/components/theme-toggle';
+import { ConfirmDialog } from '@/components/dts/confirm-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDivisions } from '@/features/org/queries';
 import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
@@ -562,6 +563,7 @@ function AccountMenu({
   const logout = useLogout();
   const [changingPassword, setChangingPassword] = useState(false);
   const [changingPhoto, setChangingPhoto] = useState(false);
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
   const photoUrl = useProfilePhotoUrl();
   const division = useDivisionName(user.divisionId);
   const role = enumLabel(user.role);
@@ -631,11 +633,7 @@ function AccountMenu({
             <KeyRound />
             Change password
           </DropdownMenuItem>
-          <DropdownMenuItem
-            variant="destructive"
-            disabled={logout.isPending}
-            onSelect={() => logout.mutate()}
-          >
+          <DropdownMenuItem variant="destructive" onSelect={() => setConfirmingLogout(true)}>
             <LogOut />
             Sign out
           </DropdownMenuItem>
@@ -643,6 +641,16 @@ function AccountMenu({
       </DropdownMenu>
       <ChangePasswordDialog open={changingPassword} onOpenChange={setChangingPassword} />
       <ChangePhotoDialog open={changingPhoto} onOpenChange={setChangingPhoto} />
+      <ConfirmDialog
+        open={confirmingLogout}
+        onOpenChange={setConfirmingLogout}
+        title="Sign out?"
+        description="You will need to sign in again to continue."
+        confirmLabel="Sign out"
+        destructive
+        busy={logout.isPending}
+        onConfirm={() => logout.mutate()}
+      />
     </>
   );
 }

@@ -19,7 +19,8 @@ import {
  * Controlled by the caller, who owns when it opens — typically a held value (the validated form
  * values, the pending edit) that is non-null while the question is on screen. Escape and Cancel
  * both decline; only the confirm button proceeds, and it is disabled while `busy` so a double
- * click cannot submit twice.
+ * click cannot submit twice. `destructive` paints the confirm button red, for an action like
+ * signing out.
  */
 export function ConfirmDialog({
   open,
@@ -30,6 +31,7 @@ export function ConfirmDialog({
   confirmLabel,
   onConfirm,
   busy = false,
+  destructive = false,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -39,6 +41,7 @@ export function ConfirmDialog({
   confirmLabel: string;
   onConfirm: () => void;
   busy?: boolean;
+  destructive?: boolean;
 }>) {
   return (
     <Dialog open={open} onOpenChange={(next) => (busy ? undefined : onOpenChange(next))}>
@@ -57,7 +60,12 @@ export function ConfirmDialog({
           >
             Cancel
           </Button>
-          <Button type="button" disabled={busy} onClick={onConfirm}>
+          <Button
+            type="button"
+            variant={destructive ? 'destructive' : 'default'}
+            disabled={busy}
+            onClick={onConfirm}
+          >
             {busy ? <Loader2 className="animate-spin" /> : null}
             {confirmLabel}
           </Button>
