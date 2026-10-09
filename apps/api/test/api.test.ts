@@ -293,6 +293,27 @@ describe('REST /api/v1 public seam', () => {
       .expect(200);
     const foreign = await page(registry.body.data.nextCursor as string).expect(400);
     expect(foreign.body.error.code).toBe('INVALID_CURSOR');
+    // The default registry order has the queue's shape; only the list marker tells them apart.
+    const registryDefault = await request(app.getHttpServer())
+      .get('/api/v1/documents?pageSize=2')
+      .set('Cookie', records)
+      .expect(200);
+    await page(registryDefault.body.data.nextCursor as string).expect(400);
+    // And the other way: a queue cursor does not continue the registry.
+    await request(app.getHttpServer())
+      .get(`/api/v1/documents?pageSize=2&cursor=${encodeURIComponent(first.nextCursor!)}`)
+      .set('Cookie', records)
+      .expect(400);
+    const garbage = Buffer.from(
+      JSON.stringify({
+        sort: 'createdAt',
+        order: 'desc',
+        value: 'invalid',
+        id: 'invalid',
+        list: 'assigned',
+      }),
+    ).toString('base64url');
+    expect((await page(garbage).expect(400)).body.error.code).toBe('INVALID_CURSOR');
     await page('not-a-cursor').expect(400);
     await request(app.getHttpServer())
       .get('/api/v1/documents/assigned?pageSize=101')

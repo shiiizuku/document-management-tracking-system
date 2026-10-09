@@ -495,7 +495,12 @@ export class DocumentsService {
       // A cursor is only meaningful in the list that issued it: continuing a priority-sorted list
       // from a date-sorted cursor would resume from a position that does not exist there.
       const decoded = decodeDocumentCursor(cursor);
-      if (decoded === null || decoded.sort !== sort || decoded.order !== order)
+      if (
+        decoded === null ||
+        decoded.list !== undefined ||
+        decoded.sort !== sort ||
+        decoded.order !== order
+      )
         throw new BadRequestException({
           code: 'INVALID_CURSOR',
           message: 'The cursor does not belong to this list. Reload it from the top.',
@@ -1614,7 +1619,12 @@ export class DocumentsService {
       // Issued under the queue's fixed order; anything else (a registry cursor sorted by priority)
       // would resume from a position that does not exist here.
       const decoded = decodeDocumentCursor(cursor);
-      if (decoded === null || decoded.sort !== 'createdAt' || decoded.order !== 'desc')
+      if (
+        decoded === null ||
+        decoded.list !== 'assigned' ||
+        decoded.sort !== 'createdAt' ||
+        decoded.order !== 'desc'
+      )
         throw new BadRequestException({
           code: 'INVALID_CURSOR',
           message: 'The cursor does not belong to this list. Reload it from the top.',
@@ -1628,7 +1638,12 @@ export class DocumentsService {
       nextCursor:
         page.next === null
           ? null
-          : encodeDocumentCursor({ sort: 'createdAt', order: 'desc', ...page.next }),
+          : encodeDocumentCursor({
+              sort: 'createdAt',
+              order: 'desc',
+              list: 'assigned',
+              ...page.next,
+            }),
     };
   }
 
