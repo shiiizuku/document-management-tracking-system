@@ -31,13 +31,12 @@ import {
   DOCUMENT_TYPES,
   type DocumentListItem,
   type DocumentSortField,
-  useDocuments,
+  useInfiniteDocuments,
 } from './queries';
 import {
   documentFiltersToParams,
   hasActiveDocumentFilters,
   parseDocumentFilters,
-  parsePage,
 } from './url-state';
 
 const STATIC_FILTER_SELECTS = [
@@ -165,8 +164,11 @@ export function RegistryScreen() {
   const { view, setView } = useListView();
 
   const filters = parseDocumentFilters(searchParams);
-  const page = parsePage(searchParams);
-  const documents = useDocuments(filters, page);
+  const documents = useInfiniteDocuments(filters);
+  // The pages loaded so far, as one list. `total` is the server's count of the whole filtered set,
+  // the same on every page, so the first one's is read.
+  const rows = documents.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = documents.data?.pages[0]?.total;
 
   /*
    * The division list is a table, not an enum, so this select is built at render time. It exists
@@ -216,24 +218,24 @@ export function RegistryScreen() {
     setSearchDraft(filters.search);
   }, [filters.search]);
 
-  const navigate = (nextFilters: typeof filters, nextPage: number) => {
-    const query = documentFiltersToParams(nextFilters, nextPage);
+  const navigate = (nextFilters: typeof filters) => {
+    const query = documentFiltersToParams(nextFilters);
     router.push(query === '' ? '/documents' : `/documents?${query}`, { scroll: false });
   };
 
-  // Any change to what is being matched returns to page one: page 4 of the old result set is
-  // rarely page 4 of the new one, and usually does not exist.
-  const applyFilters = (patch: Partial<typeof filters>) => navigate({ ...filters, ...patch }, 1);
+  // Any change to what is being matched starts the list again from the top: a cursor belongs to
+  // the list that issued it.
+  const applyFilters = (patch: Partial<typeof filters>) => navigate({ ...filters, ...patch });
 
   const onSortChange = (sort: SortState) =>
-    navigate({ ...filters, sort: sort.field as DocumentSortField, order: sort.order }, 1);
+    navigate({ ...filters, sort: sort.field as DocumentSortField, order: sort.order });
 
   return (
     <>
       <PageHeader
         eyebrow="Registry"
         title="Documents"
-        count={documents.data?.total}
+        count={total}
         actions={
           <>
             {/* Recovery sits beside the registry because that is the list a deleted document left,
@@ -283,7 +285,7 @@ export function RegistryScreen() {
         }
         onClear={() => router.push('/documents', { scroll: false })}
         trailing={<ListViewControl view={view} onChange={setView} />}
-        emptyResult={documents.data === undefined ? undefined : documents.data.total === 0}
+        emptyResult={total === undefined ? undefined : total === 0}
       >
         <FilterCheckbox
           id="filter-overdue"
@@ -297,16 +299,23 @@ export function RegistryScreen() {
         view={view}
         caption="Documents in your authorized scope"
         columns={columns}
-        rows={documents.data?.items ?? []}
-        total={documents.data?.total ?? 0}
-        page={page}
+        rows={rows}
+        total={total ?? 0}
+        // Continuous list: the numbered-pager props are required by the shared shell and unused here.
+        page={1}
         pageSize={DOCUMENT_PAGE_SIZE}
-        onPageChange={(nextPage) => navigate(filters, nextPage)}
+        onPageChange={() => undefined}
+        more={{
+          hasMore: documents.hasNextPage,
+          isLoadingMore: documents.isFetchingNextPage,
+          onLoadMore: () => void documents.fetchNextPage(),
+        }}
         sort={{ field: filters.sort, order: filters.order }}
         onSortChange={onSortChange}
         onRowClick={(row) => router.push(`/documents/${row.id}`)}
         isLoading={documents.isPending}
-        isFetching={documents.isFetching}
+        // Loading more must not dim the rows already on screen, only a refetch of them should.
+        isFetching={documents.isFetching && !documents.isFetchingNextPage}
         error={documents.error}
         onRetry={() => void documents.refetch()}
         empty={

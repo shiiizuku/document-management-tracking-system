@@ -13,6 +13,7 @@ import type {
   RouteDocumentInput,
   UpdateDocumentMetadataInput,
 } from '@dts/contracts';
+import { decodeDocumentCursor, encodeDocumentCursor } from './document-cursor.js';
 import type { RequestUser } from '../../common/request-user.js';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
@@ -247,6 +248,8 @@ export interface DocumentSearchResult {
   total: number;
   page: number;
   pageSize: number;
+  /** Pass back as `cursor` for the next page; `null` on the last. Absent when `page` was used. */
+  nextCursor?: string | null;
 }
 
 // The metadata fields whose before/after are recorded on every edit. Kept in one place so the
@@ -467,13 +470,37 @@ export class DocumentsService {
 
   // --------------------------------------------------------------- read / list
 
-  async search(actor: RequestUser, filters: DocumentSearchFilters): Promise<DocumentSearchResult> {
-    const page = await this.repository.search(actor, filters);
+  async search(
+    actor: RequestUser,
+    filters: DocumentSearchFilters,
+    cursor?: string,
+  ): Promise<DocumentSearchResult> {
+    const sort = filters.sort ?? 'createdAt';
+    const order = filters.order === 'asc' ? 'asc' : 'desc';
+    let after: DocumentSearchFilters['after'];
+    if (cursor !== undefined) {
+      // A cursor is only meaningful in the list that issued it: continuing a priority-sorted list
+      // from a date-sorted cursor would resume from a position that does not exist there.
+      const decoded = decodeDocumentCursor(cursor);
+      if (decoded === null || decoded.sort !== sort || decoded.order !== order)
+        throw new BadRequestException({
+          code: 'INVALID_CURSOR',
+          message: 'The cursor does not belong to this list. Reload it from the top.',
+        });
+      after = { value: decoded.value, id: decoded.id };
+    }
+    const page = await this.repository.search(actor, { ...filters, after });
     return {
       items: await this.toPublicList(page.items),
       total: page.total,
       page: page.page,
       pageSize: page.pageSize,
+      ...(page.next === undefined
+        ? {}
+        : {
+            nextCursor:
+              page.next === null ? null : encodeDocumentCursor({ sort, order, ...page.next }),
+          }),
     };
   }
 

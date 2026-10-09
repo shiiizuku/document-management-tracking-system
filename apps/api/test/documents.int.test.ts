@@ -1107,4 +1107,72 @@ describe('document registry REST against a real database', () => {
     );
     expect(unlinked.referencedDocuments).toEqual([]);
   }, 30_000);
+
+  // The reason offset paging was replaced: a row registered between two requests shifted every
+  // later row down one place, so the next page began with a row the last one had just shown.
+  it('pages by cursor without repeating or skipping a row while the table changes', async () => {
+    const register = (title: string, priority: string) =>
+      registerDocument(records, {
+        title,
+        type: 'LETTER',
+        priority,
+        direction: 'INCOMING',
+        sender: 'External',
+        divisionId: DIV_A,
+        sectionId: SEC_A,
+      }).expect(201);
+    const original: string[] = [];
+    for (const [n, priority] of [
+      [1, 'HIGH'],
+      [2, 'HIGH'],
+      [3, 'NORMAL'],
+      [4, 'HIGH'],
+      [5, 'NORMAL'],
+    ] as const)
+      original.push(dataOf<DocumentPayload>(await register(`Keyset ${String(n)}`, priority)).id);
+
+    const list = async (query: string, cursor?: string) =>
+      dataOf<{ items: { id: string }[]; nextCursor: string | null; total: number }>(
+        await request(server())
+          .get(
+            `/api/v1/documents?search=Keyset&pageSize=2${query}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+          )
+          .set('Cookie', records.cookies)
+          .expect(200),
+      );
+
+    // Newest first. A document registered after the first page is newer than the cursor, so it
+    // must not push anything down into the second page.
+    const first = await list('');
+    expect(first.items.map((item) => item.id)).toEqual([original[4], original[3]]);
+    await register('Keyset late arrival', 'NORMAL');
+
+    const seen = [...first.items.map((item) => item.id)];
+    let cursor = first.nextCursor;
+    while (cursor) {
+      const next = await list('', cursor);
+      seen.push(...next.items.map((item) => item.id));
+      cursor = next.nextCursor;
+    }
+    expect(seen).toEqual([...original].reverse());
+
+    // Ties on the sort key (three HIGH, two NORMAL) are broken by id, so each is shown exactly once
+    // whichever way the list is sorted.
+    for (const query of ['&sort=priority&order=asc', '&sort=priority&order=desc', '&sort=status']) {
+      const everything = dataOf<{ items: { id: string }[] }>(
+        await request(server())
+          .get(`/api/v1/documents?search=Keyset&pageSize=100${query}`)
+          .set('Cookie', records.cookies)
+          .expect(200),
+      ).items.map((item) => item.id);
+      const paged: string[] = [];
+      let next: string | null | undefined;
+      do {
+        const page = await list(query, next ?? undefined);
+        paged.push(...page.items.map((item) => item.id));
+        next = page.nextCursor;
+      } while (next);
+      expect(paged).toEqual(everything);
+    }
+  }, 30_000);
 });

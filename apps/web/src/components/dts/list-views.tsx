@@ -3,7 +3,7 @@
 import type { KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import type { DataTableColumn } from './data-table';
-import { ListShell } from './list-shell';
+import { ListShell, type ListMore } from './list-shell';
 import { CardsSkeleton, LinesSkeleton } from './skeletons';
 
 /**
@@ -36,6 +36,8 @@ interface ListViewProps<Row> {
   isFetching?: boolean | undefined;
   error?: unknown;
   onRetry?: (() => void) | undefined;
+  /** Continuous mode in place of the numbered pager; see `ListShell`. */
+  more?: ListMore | undefined;
   empty: React.ReactNode;
 }
 
@@ -74,6 +76,7 @@ export function DocumentCards<Row>({
   isFetching = false,
   error,
   onRetry,
+  more,
   empty,
 }: ListViewProps<Row>) {
   const { primary, rest } = splitPrimary(columns);
@@ -89,6 +92,7 @@ export function DocumentCards<Row>({
       isFetching={isFetching}
       error={error}
       onRetry={onRetry}
+      more={more}
       framed={false}
     >
       {(state) => {
@@ -170,6 +174,7 @@ export function DocumentLines<Row>({
   isFetching = false,
   error,
   onRetry,
+  more,
   empty,
 }: ListViewProps<Row>) {
   const { primary, rest } = splitPrimary(columns);
@@ -185,6 +190,7 @@ export function DocumentLines<Row>({
       isFetching={isFetching}
       error={error}
       onRetry={onRetry}
+      more={more}
     >
       {(state) => {
         if (state === 'loading') return <LinesSkeleton />;

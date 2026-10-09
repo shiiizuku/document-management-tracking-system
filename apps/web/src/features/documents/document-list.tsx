@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 import { LayoutGrid, List, Rows3 } from 'lucide-react';
 import type { DataTableColumn, SortState } from '@/components/dts/data-table';
 import { DataTable } from '@/components/dts/data-table';
+import type { ListMore } from '@/components/dts/list-shell';
 import { DocumentCards, DocumentLines } from '@/components/dts/list-views';
 import { cn } from '@/lib/utils';
 import { LIST_VIEWS, type ListView } from './list-view';
@@ -90,6 +91,8 @@ export interface DocumentListProps {
   isFetching?: boolean | undefined;
   error?: unknown;
   onRetry?: (() => void) | undefined;
+  /** Continuous mode in place of the numbered pager; see `ListShell`. */
+  more?: ListMore | undefined;
   empty: React.ReactNode;
 }
 

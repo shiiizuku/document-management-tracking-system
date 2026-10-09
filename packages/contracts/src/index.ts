@@ -337,6 +337,8 @@ export const listUsersQuerySchema = z.object({
  */
 export const listDocumentsQuerySchema = z.looseObject({
   overdue: z.stringbool().optional(),
+  /** Opaque; issued as `nextCursor` by the previous page and valid only for the same sort and order. */
+  cursor: z.string().min(1).max(512).optional(),
 });
 export type ListDocumentsQuery = z.infer<typeof listDocumentsQuerySchema>;
 

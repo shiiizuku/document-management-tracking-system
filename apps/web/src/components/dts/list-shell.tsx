@@ -1,7 +1,7 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
@@ -27,6 +27,13 @@ import { cn } from '@/lib/utils';
 
 export type ListState = 'loading' | 'empty' | 'rows';
 
+/** What a continuously scrolling list needs to ask for more. */
+export interface ListMore {
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
+}
+
 export interface ListShellProps {
   /** Total matching rows on the server — not the length of this page. */
   total: number;
@@ -39,6 +46,12 @@ export interface ListShellProps {
   isFetching?: boolean;
   error?: unknown;
   onRetry?: (() => void) | undefined;
+  /**
+   * Continuous mode. When set, the numbered pager is replaced by "Showing N of M" and a Load more
+   * control that also fires as the footer scrolls into view. `page`, `pageSize` and `onPageChange`
+   * are then unused, which is why a caller in this mode passes inert values for them.
+   */
+  more?: ListMore | undefined;
   /**
    * The body, for the state the shell resolved. The caller places the empty and loading states
    * itself — a table draws them inside a cell spanning every column, a card grid as a plain block
@@ -60,6 +73,7 @@ export function ListShell({
   isFetching = false,
   error,
   onRetry,
+  more,
   children,
   framed = true,
   className,
@@ -90,44 +104,100 @@ export function ListShell({
         {children(state)}
       </div>
 
+      {more === undefined ? null : <ContinuousFooter more={more} total={total} shown={rowCount} />}
+
       {/* Stays mounted while loading so the footer does not jump as rows arrive. */}
-      <nav
-        className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm"
-        aria-label="Pagination"
-      >
-        <p className="text-muted-foreground tabular-nums">
-          {total === 0
-            ? 'No results'
-            : `Showing ${firstOnPage.toLocaleString()}–${lastOnPage.toLocaleString()} of ${total.toLocaleString()}`}
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onPageChange(page - 1)}
-            disabled={page <= 1}
-            aria-label="Previous page"
-          >
-            <ChevronLeft aria-hidden />
-            Previous
-          </Button>
-          <span className="px-1 text-muted-foreground tabular-nums">
-            Page {page.toLocaleString()} of {pageCount.toLocaleString()}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onPageChange(page + 1)}
-            disabled={page >= pageCount}
-            aria-label="Next page"
-          >
-            Next
-            <ChevronRight aria-hidden />
-          </Button>
-        </div>
-      </nav>
+      {more !== undefined ? null : (
+        <nav
+          className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm"
+          aria-label="Pagination"
+        >
+          <p className="text-muted-foreground tabular-nums">
+            {total === 0
+              ? 'No results'
+              : `Showing ${firstOnPage.toLocaleString()}–${lastOnPage.toLocaleString()} of ${total.toLocaleString()}`}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(page - 1)}
+              disabled={page <= 1}
+              aria-label="Previous page"
+            >
+              <ChevronLeft aria-hidden />
+              Previous
+            </Button>
+            <span className="px-1 text-muted-foreground tabular-nums">
+              Page {page.toLocaleString()} of {pageCount.toLocaleString()}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(page + 1)}
+              disabled={page >= pageCount}
+              aria-label="Next page"
+            >
+              Next
+              <ChevronRight aria-hidden />
+            </Button>
+          </div>
+        </nav>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The footer of a continuously scrolling list: how many rows are loaded, and the way to more.
+ *
+ * Loading fires when the footer scrolls into view, with the button as the fallback and the only
+ * control for a keyboard user or a browser without `IntersectionObserver`. The observer is only
+ * armed while there is more to fetch and nothing already in flight, so one scroll asks once.
+ */
+function ContinuousFooter({
+  more,
+  total,
+  shown,
+}: Readonly<{ more: ListMore; total: number; shown: number }>) {
+  const sentinel = useRef<HTMLDivElement>(null);
+  const { hasMore, isLoadingMore, onLoadMore } = more;
+
+  useEffect(() => {
+    const node = sentinel.current;
+    if (node === null || !hasMore || isLoadingMore) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) onLoadMore();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, onLoadMore]);
+
+  return (
+    <div
+      ref={sentinel}
+      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm"
+    >
+      <p className="text-muted-foreground tabular-nums" aria-live="polite">
+        {total === 0
+          ? 'No results'
+          : `Showing ${shown.toLocaleString()} of ${total.toLocaleString()}`}
+      </p>
+      {hasMore ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onLoadMore}
+          disabled={isLoadingMore}
+        >
+          {isLoadingMore ? <Loader2 className="animate-spin" aria-hidden /> : null}
+          Load more
+        </Button>
+      ) : null}
     </div>
   );
 }
