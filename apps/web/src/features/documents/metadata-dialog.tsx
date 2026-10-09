@@ -119,6 +119,16 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
   const outgoing = document.direction === 'OUTGOING';
   // Only fetched once the history is actually asked for: most edits never open it.
   const revisions = useMetadataRevisions(document.id, open && showHistory);
+  // The sender's reference is retired on incoming documents (decision 181), so its past edits are
+  // hidden too, and a revision that changed nothing else is dropped rather than shown empty.
+  const shownRevisions = (revisions.data ?? [])
+    .map((revision) => ({
+      ...revision,
+      changes: changedFields(revision.before, revision.after).filter(
+        ({ field }) => outgoing || field !== 'referenceNumber',
+      ),
+    }))
+    .filter((revision) => revision.changes.length > 0);
 
   const form = useForm<MetadataFormValues>({
     resolver: metadataResolver(document.version, document.direction === 'OUTGOING'),
@@ -408,13 +418,13 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
             <h3 className="text-sm font-semibold text-foreground">Revision history</h3>
             {revisions.isPending ? (
               <p className="mt-2 text-sm text-muted-foreground">Loading revisions…</p>
-            ) : (revisions.data ?? []).length === 0 ? (
+            ) : shownRevisions.length === 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">
                 This document has not been edited since registration.
               </p>
             ) : (
               <ol className="mt-2 space-y-3">
-                {(revisions.data ?? []).map((revision) => (
+                {shownRevisions.map((revision) => (
                   <li key={revision.id} className="text-sm">
                     <time
                       dateTime={revision.occurredAt}
@@ -423,7 +433,7 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
                       {new Date(revision.occurredAt).toLocaleString()}
                     </time>
                     <ul className="mt-1 space-y-0.5">
-                      {changedFields(revision.before, revision.after).map(({ field, from, to }) => (
+                      {revision.changes.map(({ field, from, to }) => (
                         <li key={field} className="text-muted-foreground">
                           <span className="font-medium text-foreground">{field}</span>: {from} →{' '}
                           {to}

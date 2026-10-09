@@ -30,6 +30,25 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
+const revision = (id: string, before: object, after: object) => ({
+  id,
+  actorId: 'user-1',
+  before,
+  after,
+  occurredAt: '2026-10-01T08:00:00.000Z',
+});
+
+const revisions = [
+  // Only the sender's reference changed: dropped entirely on an incoming document.
+  revision('rev-1', { referenceNumber: null }, { referenceNumber: 'DPWH-2026-0412' }),
+  // Both changed: the title stays, the reference goes.
+  revision(
+    'rev-2',
+    { title: 'Old title', referenceNumber: 'DPWH-2026-0412' },
+    { title: 'New title', referenceNumber: 'DPWH-2026-0413' },
+  ),
+];
+
 const serve = () => {
   apiMock.mockImplementation((path: string) => {
     if (path === '/auth/me') return Promise.resolve(sessionUser());
@@ -39,6 +58,7 @@ const serve = () => {
     if (path.startsWith('/documents/suggestions')) return Promise.resolve([]);
     if (path === '/office/head-of-bureau')
       return Promise.resolve({ name: '', title: 'Regional Director' });
+    if (path.endsWith('/metadata-revisions')) return Promise.resolve(revisions);
     if (path.startsWith('/documents/') && path.endsWith('/metadata'))
       return Promise.resolve(documentDetail());
     return Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 });
@@ -89,6 +109,19 @@ describe('the reference number in the metadata dialog (169)', () => {
       const body = requestBody(apiMock, '/documents/doc-1/metadata', 'PATCH');
       expect(Object.keys(body)).not.toContain('referenceNumber');
     });
+  });
+
+  it("hides an incoming document's reference edits from its revision history", async () => {
+    serve();
+    renderWithQuery(<MetadataDialog document={documentDetail({ direction: 'INCOMING' })} />);
+    await userEvent.click(screen.getByRole('button', { name: /Edit/i }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: /Revision history/ }));
+
+    await waitFor(() => expect(within(dialog).getByText('title')).toBeInTheDocument());
+    expect(within(dialog).queryByText('referenceNumber')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/DPWH-2026/)).not.toBeInTheDocument();
+    expect(within(dialog).getAllByRole('time')).toHaveLength(1);
   });
 
   it("shows an outgoing document's own reference read-only, and never sends it back", async () => {
