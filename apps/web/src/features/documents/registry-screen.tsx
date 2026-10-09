@@ -101,7 +101,10 @@ const columnsFor = (
         <div className="mt-0.5 text-xs text-muted-foreground">
           <span className="tracking-number">{row.trackingNumber}</span>
           {` · ${typeLabel(row.type)}`}
-          {row.referenceNumber === null ? '' : ` · ${row.referenceNumber}`}
+          {/* Outgoing only: an incoming document's sender's reference is retired, not shown. */}
+          {row.direction === 'OUTGOING' && row.referenceNumber !== null
+            ? ` · ${row.referenceNumber}`
+            : ''}
         </div>
       </div>
     ),
