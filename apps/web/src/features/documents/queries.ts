@@ -390,6 +390,14 @@ export function invalidateDocument(client: QueryClient, id?: string): void {
 }
 
 /**
+ * Marks every cached document query stale, for the realtime adapter after a reconnect: events sent
+ * while the socket was down named documents it never heard about, so nothing narrower is safe.
+ */
+export function invalidateAllDocuments(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: documentKeys.all });
+}
+
+/**
  * The configured release methods, for the picker in the `RELEASE` dialog.
  *
  * Cached like the org tree and for the same reason: the office changes this list a few times a
