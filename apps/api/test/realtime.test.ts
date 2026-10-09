@@ -7,6 +7,7 @@ import {
 import { realtimeMessagesForEvent } from '../src/modules/realtime/realtime.events.js';
 import {
   NOTIFICATION_EVENT,
+  READY_EVENT,
   parseRealtimeMessage,
   roomForUser,
 } from '../src/modules/realtime/realtime.contract.js';
@@ -113,7 +114,13 @@ describe('NotificationsGateway', () => {
   const fakeSocket = (handshake: unknown) => {
     const join = vi.fn(() => Promise.resolve());
     const disconnect = vi.fn();
-    return { socket: { handshake, join, disconnect } as unknown as Socket, join, disconnect };
+    const emit = vi.fn();
+    return {
+      socket: { handshake, join, disconnect, emit } as unknown as Socket,
+      join,
+      disconnect,
+      emit,
+    };
   };
 
   it('joins the user room when the handshake carries a valid session', async () => {
@@ -123,23 +130,29 @@ describe('NotificationsGateway', () => {
       ),
       vi.fn(() => ({ sub: 'user-42', csrf: 'c', sst: 0, exp: 0 })),
     );
-    const { socket, join, disconnect } = fakeSocket({ headers: { cookie: 'dts_session=jwt' } });
+    const { socket, join, disconnect, emit } = fakeSocket({
+      headers: { cookie: 'dts_session=jwt' },
+    });
 
     await gateway.handleConnection(socket);
 
     expect(join).toHaveBeenCalledWith(roomForUser('user-42'));
+    // Announced only after the join, so the client's catch-up cannot run ahead of the room.
+    expect(emit).toHaveBeenCalledWith(READY_EVENT);
+    expect(join.mock.invocationCallOrder[0]).toBeLessThan(emit.mock.invocationCallOrder[0] ?? 0);
     expect(disconnect).not.toHaveBeenCalled();
   });
 
   it('disconnects a socket with no session', async () => {
     const verify = vi.fn(() => ({ sub: 'x', csrf: 'c', sst: 0, exp: 0 }));
     const gateway = buildGateway(vi.fn(), verify);
-    const { socket, join, disconnect } = fakeSocket({ headers: {} });
+    const { socket, join, disconnect, emit } = fakeSocket({ headers: {} });
 
     await gateway.handleConnection(socket);
 
     expect(verify).not.toHaveBeenCalled();
     expect(join).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
     expect(disconnect).toHaveBeenCalledWith(true);
   });
 

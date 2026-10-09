@@ -31,6 +31,9 @@ const socketOrigin = (): string => {
 /** The server's "your notifications changed" ping; the payload may name the document involved. */
 const NOTIFICATION_EVENT = 'notification';
 
+/** Sent once the server has put this socket in its user room — pings reach it from then on. */
+const READY_EVENT = 'ready';
+
 export interface RealtimeStatus {
   /** Whether the socket is currently connected, for the live indicator in the inbox. */
   connected: boolean;
@@ -48,17 +51,32 @@ export function useRealtimeSync(): RealtimeStatus {
       transports: ['websocket'],
     });
 
-    let hasConnected = false;
-    socket.on('connect', () => {
-      setConnected(true);
-      // Pings sent while the socket was down are gone, not queued. The first connect has nothing to
-      // catch up on (queries fetch on mount); every later one refetches from the database instead.
-      if (hasConnected) {
+    // Pings sent while the socket was down are gone, not queued, so each time the server reports the
+    // socket ready (after its room join) the inbox and documents are refetched from the database.
+    // That includes the first: a change after the mount queries loaded but before the handshake
+    // finished would otherwise stay stale until the next ping. `connect` itself is too early.
+    let stopWaiting: (() => void) | null = null;
+    const catchUp = () => {
+      stopWaiting?.();
+      const refetch = () => {
         invalidateNotifications(client);
         invalidateAllDocuments(client);
-      }
-      hasConnected = true;
-    });
+      };
+      const fetching = client.isFetching() > 0;
+      refetch();
+      if (!fetching) return;
+      // A query with no data yet reuses its in-flight request instead of restarting it, and that
+      // request may have read the database before the missed change. Once everything settles,
+      // refetch again so a request that started after the catch-up is the one that stays cached.
+      stopWaiting = client.getQueryCache().subscribe(() => {
+        if (client.isFetching() > 0) return;
+        stopWaiting?.();
+        stopWaiting = null;
+        refetch();
+      });
+    };
+    socket.on('connect', () => setConnected(true));
+    socket.on(READY_EVENT, catchUp);
     socket.on('disconnect', () => setConnected(false));
     socket.on(NOTIFICATION_EVENT, (payload: unknown) => {
       invalidateNotifications(client);
@@ -69,6 +87,7 @@ export function useRealtimeSync(): RealtimeStatus {
     });
 
     return () => {
+      stopWaiting?.();
       socket.disconnect();
       setConnected(false);
     };

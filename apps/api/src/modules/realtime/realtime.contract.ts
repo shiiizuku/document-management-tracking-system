@@ -11,6 +11,13 @@ export const REALTIME_CHANNEL = 'dts:realtime';
 /** Socket.IO event name for "your notifications changed; refetch". */
 export const NOTIFICATION_EVENT = 'notification';
 
+/**
+ * Socket.IO event the gateway emits once the socket has joined its user room. The client's own
+ * `connect` fires before that join, so a catch-up fetch must wait for this instead: a notification
+ * committed in between would be fetched before it existed and its ping never delivered.
+ */
+export const READY_EVENT = 'ready';
+
 /** The room a user's sockets join, so a message fans out only to that user's connections. */
 export const roomForUser = (userId: string): string => `user:${userId}`;
 
