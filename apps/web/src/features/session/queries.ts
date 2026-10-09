@@ -2,7 +2,6 @@
 
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import type { Capability, ChangePasswordInput, LoginInput, Role } from '@dts/contracts';
 import { api, inlineContent, upload, type InlineContent } from '@/lib/api';
 
@@ -123,12 +122,17 @@ export function useLogin() {
  */
 export function useLogout() {
   const client = useQueryClient();
-  const router = useRouter();
   return useMutation({
     mutationFn: () => api<void>('/auth/logout', { method: 'POST' }),
-    onSettled: () => {
+    onSettled: async () => {
+      // Stop in-flight and scheduled fetches first. The shell is still mounted until the route
+      // changes, and clearing the cache under it makes `useSession` refetch, get a 401, and send
+      // the user to /login instead of the landing page.
+      await client.cancelQueries();
       client.clear();
-      router.replace('/');
+      // A full navigation, not router.replace: it also resets the QueryClient's one-shot 401 latch
+      // and drops every in-memory leftover of the ended session.
+      window.location.replace('/');
     },
   });
 }
