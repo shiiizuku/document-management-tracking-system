@@ -17,6 +17,8 @@ set -euo pipefail
 # on the Linux deployment host, silent and wrong on a Windows workstation.
 export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 
+# shellcheck source=scripts/backup-env.sh
+. "$(dirname "$0")/backup-env.sh"
 ARCHIVE_ROOT="${BACKUP_PATH:-./backups}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
@@ -26,6 +28,9 @@ mkdir -p "$ARCHIVE_ROOT/wal" "$ARCHIVE_ROOT/base" "$ARCHIVE_ROOT/objects"
 # into the backup would store it twice and still not cover the gap after the backup ends.
 docker compose exec -T postgres pg_basebackup \
   -U "${POSTGRES_USER:-dts}" -D /archive/base/"$STAMP" -Fp -X none -c fast
+
+# Marker for scripts/check-backup-freshness.sh; reached only if pg_basebackup succeeded (`set -e`).
+touch "$ARCHIVE_ROOT/.status/base" 2>/dev/null || { mkdir -p "$ARCHIVE_ROOT/.status" && touch "$ARCHIVE_ROOT/.status/base"; }
 
 # The object store is mirrored by its own script, which also runs every 3 minutes on its own so
 # attachments meet the database's recovery point rather than this job's nightly one.
