@@ -45,6 +45,14 @@ describe('identity & organization REST against a real database', () => {
   let app: INestApplication;
   const server = (): Server => app.getHttpServer() as Server;
 
+  // Sign-in is limited to five a minute per client (decision 68) and this suite already spends
+  // all five, so the photo tests reuse the administrator session the first test opened.
+  let adminSession: Session | undefined;
+  const sharedAdmin = (): Session => {
+    if (adminSession === undefined) throw new Error('the lifecycle test did not open a session');
+    return adminSession;
+  };
+
   const login = async (email: string, password: string): Promise<Session> => {
     const response = await request(server())
       .post('/api/v1/auth/login')
@@ -87,6 +95,7 @@ describe('identity & organization REST against a real database', () => {
 
   it('runs the account lifecycle: admin sets up the org, approves a request, the user signs in', async () => {
     const admin = await login('admin@dts.local', ADMIN_PASSWORD);
+    adminSession = admin;
     const authed = (method: 'post' | 'patch', path: string) =>
       request(server())[method](path).set('Cookie', admin.cookies).set('x-csrf-token', admin.csrf);
 
@@ -173,7 +182,7 @@ describe('identity & organization REST against a real database', () => {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
       'base64',
     );
-    const admin = await login('admin@dts.local', ADMIN_PASSWORD);
+    const admin = sharedAdmin();
     const adminId = dataOf<{ id: string }>(
       await request(server()).get('/api/v1/me').set('Cookie', admin.cookies).expect(200),
     ).id;
@@ -215,7 +224,7 @@ describe('identity & organization REST against a real database', () => {
   }, 30_000);
 
   it('refuses a profile photo that is not an image, empty, or too large', async () => {
-    const admin = await login('admin@dts.local', ADMIN_PASSWORD);
+    const admin = sharedAdmin();
     const post = (buffer: Buffer, filename: string, contentType: string) =>
       request(server())
         .post('/api/v1/me/photo')
