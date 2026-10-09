@@ -119,13 +119,15 @@ describe('AppShell', () => {
   it('identifies the signed-in user and signs them out', async () => {
     renderShell([]);
     apiMock.mockResolvedValueOnce(undefined);
+    const locationReplace = vi.fn();
+    vi.stubGlobal('location', { replace: locationReplace });
 
     await userEvent.click(screen.getByRole('button', { name: /Ana Dela Cruz/ }));
     expect(screen.getByText('staff@dts.local')).toBeInTheDocument();
     expect(within(screen.getByRole('menu')).getByText('Staff member')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('menuitem', { name: /Sign out/ }));
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/'));
+    await waitFor(() => expect(locationReplace).toHaveBeenCalledWith('/'));
   });
 
   it('lets anyone change their own password from the account menu', async () => {
