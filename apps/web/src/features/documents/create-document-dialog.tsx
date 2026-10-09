@@ -146,9 +146,6 @@ export function CreateDocumentDialog() {
        * the panel holding the offending field never opened.
        */
       email: '',
-      // Mounted only for incoming documents (decision 168), so it is defaulted here for the same
-      // reason as the three above: `applyServerErrors` only attaches to names it can find.
-      referenceNumber: '',
       sectionId: undefined,
       dueAt: undefined,
     },
@@ -170,8 +167,6 @@ export function CreateDocumentDialog() {
 
   const divisions = useDivisions();
   const divisionId = form.watch('divisionId');
-  // Decision 168: the sender's reference belongs to an incoming letter and has no meaning on an
-  // outgoing one, whose reference the server allocates (decision 169).
   const incoming = form.watch('direction') === 'INCOMING';
   const headOfBureau = useHeadOfBureau();
   const senderValue = form.watch('sender') ?? '';
@@ -480,31 +475,6 @@ export function CreateDocumentDialog() {
                 </FormItem>
               )}
             />
-
-            {/*
-              Beside the sender, not folded away with the optional details. It is the string a
-              reply is matched against the letter by, so it is transcribed off the paper at the
-              moment the rest of the letter is — which is exactly what decision 168 is about: it
-              used to be addable only after registration, by reopening the record.
-            */}
-            {incoming ? (
-              <FormField
-                control={form.control}
-                name="referenceNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sender&rsquo;s reference</FormLabel>
-                    <FormControl>
-                      <Input maxLength={120} {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormDescription>
-                      The reference the sending office printed on their letter, if there is one.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            ) : null}
 
             {/*
               The rest, folded away. `defaultOpen` is driven by whether anything inside is in

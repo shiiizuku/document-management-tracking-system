@@ -48,11 +48,11 @@ The DTS replaces paper routing slips and fragmented email tracking with one acco
 
 **Tracking number**: The system-generated stable identifier for a Document.
 
-**Sender's reference number**: The reference the originating office put on an *incoming* letter. Free text, supplied at registration, never generated. Retained verbatim; it is how a reply is matched to the letter it answers. Shown only on incoming documents.
+**Sender's reference number**: Retired. The reference an originating office put on an *incoming* letter used to be typed in at registration; it is no longer offered. Values already stored are kept but not shown. A reply or compliance letter names the incoming Document it answers as a Reference Document instead.
 
 **Reference number**: The organization-issued identifier for an *outgoing* Document, allocated per division per year from the division's code. Server-generated and read-only — a user cannot type it. Shown only on outgoing documents.
 
-**Reference Document**: An *incoming* Document that an outgoing Document answers, recorded as a link to that Document rather than as text. Outgoing-only, and may name more than one incoming Document. The inverse relation is read from the incoming side as its replies. Distinct from both reference numbers above: those are strings, this is a relationship.
+**Reference Document**: An *incoming* Document that an outgoing Document answers, recorded as a link to that Document rather than as text. Outgoing-only, and may name more than one incoming Document. The inverse relation is read from the incoming side as its replies. Distinct from both reference numbers above: those are strings, this is a relationship. Labelled "Reference an incoming document" in the interface.
 
 **Attachment**: A logical file associated with a Document.
 

@@ -113,8 +113,9 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
   const update = useUpdateMetadata(document.id);
   // The stored type stays selectable even once retired, so saving another field leaves it alone.
   const typeOptions = useOfferedDocumentTypes(document.type);
-  // Decision 169. The reference column holds the office's own identifier on an outgoing document
-  // and the sender's on an incoming one, which changes both the label and whether it may be typed.
+  // Decision 169. The reference column holds the office's own identifier on an outgoing document;
+  // an incoming one no longer shows or edits the sender's reference (it was moved to Reference
+  // Documents on the reply), so the field appears on outgoing documents only, read-only.
   const outgoing = document.direction === 'OUTGOING';
   // Only fetched once the history is actually asked for: most edits never open it.
   const revisions = useMetadataRevisions(document.id, open && showHistory);
@@ -292,31 +293,29 @@ export function MetadataDialog({ document }: Readonly<{ document: DocumentDetail
             />
 
             {/*
-              Two different strings have shared this column, and "External reference" was wrong
-              about both (decision 169). On an incoming document it is whatever the sending office
-              printed on their letter — free text, theirs. On an outgoing one it is the office's
-              own `ORD-2026-00014`, allocated from `reference_counters` inside the create
-              transaction, which is neither external nor editable: the server refuses the change,
-              and this merely declines to ask for it.
+              The office's own `ORD-2026-00014`, allocated from `reference_counters` inside the
+              create transaction (decision 169) — neither external nor editable: the server refuses
+              the change, and this merely declines to ask for it. Incoming documents no longer show
+              the sender's reference; a reply names the letter it answers as a Reference Document.
             */}
-            <FormField
-              control={form.control}
-              name="referenceNumber"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{outgoing ? 'Reference number' : "Sender's reference"}</FormLabel>
-                  <FormControl>
-                    <Input maxLength={120} readOnly={outgoing} {...field} />
-                  </FormControl>
-                  {outgoing ? (
+            {outgoing ? (
+              <FormField
+                control={form.control}
+                name="referenceNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reference number</FormLabel>
+                    <FormControl>
+                      <Input maxLength={120} readOnly {...field} />
+                    </FormControl>
                     <FormDescription>
                       Issued by the system when the document was registered.
                     </FormDescription>
-                  ) : null}
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
 
             <FormField
               control={form.control}
@@ -449,10 +448,9 @@ const toPatch = (values: MetadataFormValues, outgoing: boolean) => ({
   description: orNull(values.description),
   priority: values.priority,
   company: orNull(values.company),
-  // Omitted entirely on an outgoing document rather than sent back unchanged: the server refuses
-  // the field there (decision 169), and an omitted field and a `null` one mean different things to
-  // the patch schema — sending the current value would make every outgoing edit a 400.
-  ...(outgoing ? {} : { referenceNumber: orNull(values.referenceNumber) }),
+  // `referenceNumber` is never sent. The server refuses it on an outgoing document (decision 169),
+  // and on an incoming one the field is no longer offered, so omitting it leaves whatever an older
+  // record stored untouched — a `null` would erase it.
   // The sender of an outgoing document is the Head of the Bureau and is refused by the server
   // (like the reference above); an incoming one has no recipients. Each side sends only its own.
   ...(outgoing

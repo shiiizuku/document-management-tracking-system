@@ -73,14 +73,14 @@ export function ReferencesSection({
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <Link2 className="size-4 text-muted-foreground" aria-hidden />
-          {outgoing ? 'References' : 'Replies'}
+          {outgoing ? 'Reference an incoming document' : 'Replies'}
         </h3>
         {outgoing && canEdit ? <AddReference document={document} /> : null}
       </div>
 
       <p className="text-xs text-muted-foreground">
         {outgoing
-          ? 'The incoming documents this letter answers.'
+          ? 'Link the incoming documents this letter replies to or complies with.'
           : 'The outgoing documents that answer this one.'}
       </p>
 
@@ -114,7 +114,7 @@ export function ReferencesSection({
       <ReferenceDialog
         reference={open}
         onClose={() => setOpen(null)}
-        heading={outgoing ? 'Reference document' : 'Reply'}
+        heading={outgoing ? 'Referenced incoming document' : 'Reply'}
       />
     </section>
   );

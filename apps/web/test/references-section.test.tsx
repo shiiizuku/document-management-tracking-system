@@ -83,7 +83,9 @@ describe('ReferencesSection', () => {
     serve(outgoing({ referencedDocuments: [referenceSummary()] }));
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
 
-    await waitFor(() => expect(screen.getByText('References')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Reference an incoming document')).toBeInTheDocument(),
+    );
     expect(screen.getByText('Request for ore transport permits')).toBeInTheDocument();
     expect(screen.getByText('DTS-2026-000002')).toBeInTheDocument();
     // No count from another source, no "hidden" row: a second reference this reader may not read
@@ -96,7 +98,9 @@ describe('ReferencesSection', () => {
     serve(outgoing());
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
 
-    await waitFor(() => expect(screen.getByText('References')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Reference an incoming document')).toBeInTheDocument(),
+    );
     expect(screen.getByRole('button', { name: 'Add reference' })).toBeInTheDocument();
   });
 
@@ -104,7 +108,9 @@ describe('ReferencesSection', () => {
     serve(outgoing({ status: 'RELEASED' }));
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
 
-    await waitFor(() => expect(screen.getByText('References')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Reference an incoming document')).toBeInTheDocument(),
+    );
     expect(screen.queryByRole('button', { name: 'Add reference' })).not.toBeInTheDocument();
   });
 
@@ -142,7 +148,9 @@ describe('ReferencesSection', () => {
       candidates: [documentItem({ id: 'doc-9', trackingNumber: 'DTS-2026-000009' })],
     });
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
-    await waitFor(() => expect(screen.getByText('References')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Reference an incoming document')).toBeInTheDocument(),
+    );
 
     await userEvent.click(screen.getByRole('button', { name: 'Add reference' }));
     await userEvent.type(screen.getByPlaceholderText('Search incoming documents'), 'budget');
@@ -161,7 +169,9 @@ describe('ReferencesSection', () => {
       attachments: [attachmentGroup([attachmentVersion()])],
     });
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
-    await waitFor(() => expect(screen.getByText('References')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Reference an incoming document')).toBeInTheDocument(),
+    );
 
     await userEvent.click(screen.getByText('Request for ore transport permits'));
 
@@ -181,7 +191,9 @@ describe('ReferencesSection', () => {
       attachments: [attachmentGroup([attachmentVersion()])],
     });
     renderWithQuery(<DocumentDetailScreen documentId="doc-1" />);
-    await waitFor(() => expect(screen.getByText('References')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Reference an incoming document')).toBeInTheDocument(),
+    );
 
     await userEvent.click(screen.getByText('Request for ore transport permits'));
     await screen.findByTitle('Preview of budget.pdf');
