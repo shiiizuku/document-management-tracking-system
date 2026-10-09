@@ -5,7 +5,7 @@
 # publishes nothing but the app itself, and that only on loopback, for the reverse proxy to reach.
 # Containers still reach each other over the compose network; none of them use the host ports.
 #
-# `!reset` and `!override` need Docker Compose v2.24 or later: a plain `ports:` here would be
+# `!reset` and `!override` need Docker Compose v2.24.4 or later (and Docker Engine 28+ for the loopback binding to hold on the local network): a plain `ports:` here would be
 # appended to the base file's list, not replace it.
 services:
   postgres:
