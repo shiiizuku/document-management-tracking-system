@@ -16,6 +16,7 @@ import { relativeTime } from '@/features/notifications/queries';
 import { useAssignedDocuments } from '@/features/documents/queries';
 import { useSession } from '@/features/session/queries';
 import { cn } from '@/lib/utils';
+import { AwaitingAcceptance } from './awaiting-acceptance';
 import { useDashboardSummary, type DashboardSummary } from './queries';
 
 /**
@@ -121,6 +122,8 @@ export function DashboardScreen() {
       )}
 
       <YourMoveStrip />
+
+      <AwaitingAcceptance />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <PendingByDivision summary={data} />

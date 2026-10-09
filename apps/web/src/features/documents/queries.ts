@@ -389,6 +389,45 @@ export function invalidateDocument(client: QueryClient, id?: string): void {
   void client.invalidateQueries({ queryKey: documentKeys.deleted() });
 }
 
+/** A person the signed-in user may assign a document to (`GET /users/assignable`). */
+export interface AssignableUser {
+  id: string;
+  displayName: string;
+  role: string;
+  divisionId: string | null;
+}
+
+/**
+ * The assignee picker's people. `enabled` for the same reason as {@link useReleaseMethods}: the
+ * list is only needed once a dialog is open, and an unconditional query would be a request on every
+ * page that mounts the hook.
+ */
+export function useAssignableUsers(enabled: boolean) {
+  return useQuery({
+    queryKey: ['users', 'assignable'] as const,
+    queryFn: () => api<AssignableUser[]>('/users/assignable'),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Hands a document to a colleague (`POST /documents/:id/assignments`). Idempotent on the server, so
+ * assigning someone who already holds it is a quiet success. The detail and every list are settled
+ * afterwards, because an assignment moves the document into the assignee's My work queue.
+ */
+export function useAssignDocument(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (recipientUserId: string) =>
+      api<DocumentDetail>(`/documents/${id}/assignments`, {
+        method: 'POST',
+        body: JSON.stringify({ recipientUserId }),
+      }),
+    onSuccess: () => invalidateDocument(client, id),
+  });
+}
+
 /**
  * The configured release methods, for the picker in the `RELEASE` dialog.
  *
