@@ -4,8 +4,16 @@ import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode 
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { KeyRound, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  Camera,
+  KeyRound,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+} from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -27,7 +35,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useDivisions } from '@/features/org/queries';
 import { useRealtimeSync } from '@/features/realtime/use-realtime-sync';
 import { ChangePasswordDialog } from '@/features/session/change-password-dialog';
-import { useLogout, useSession, type SessionUser } from '@/features/session/queries';
+import { ChangePhotoDialog } from '@/features/session/change-photo-dialog';
+import {
+  useLogout,
+  useProfilePhotoUrl,
+  useSession,
+  type SessionUser,
+} from '@/features/session/queries';
 import { cn, enumLabel } from '@/lib/utils';
 import { activeNavHref, navSections, visibleNavItems } from './nav-items';
 
@@ -547,6 +561,8 @@ function AccountMenu({
   const topbar = placement === 'topbar';
   const logout = useLogout();
   const [changingPassword, setChangingPassword] = useState(false);
+  const [changingPhoto, setChangingPhoto] = useState(false);
+  const photoUrl = useProfilePhotoUrl();
   const division = useDivisionName(user.divisionId);
   const role = enumLabel(user.role);
   const roleLine = division === null ? role : `${role} · ${division}`;
@@ -567,6 +583,7 @@ function AccountMenu({
             )}
           >
             <Avatar className="size-9">
+              {photoUrl === null ? null : <AvatarImage src={photoUrl} alt="" />}
               <AvatarFallback
                 className={cn(
                   'text-xs font-semibold',
@@ -604,6 +621,10 @@ function AccountMenu({
             <span className="mt-1 block text-xs text-muted-foreground">{role}</span>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => setChangingPhoto(true)}>
+            <Camera />
+            Change photo
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setChangingPassword(true)}>
             <KeyRound />
             Change password
@@ -619,6 +640,7 @@ function AccountMenu({
         </DropdownMenuContent>
       </DropdownMenu>
       <ChangePasswordDialog open={changingPassword} onOpenChange={setChangingPassword} />
+      <ChangePhotoDialog open={changingPhoto} onOpenChange={setChangingPhoto} />
     </>
   );
 }

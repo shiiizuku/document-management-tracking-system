@@ -166,6 +166,81 @@ describe('identity & organization REST against a real database', () => {
       .expect(401);
   }, 30_000);
 
+  // The three photo endpoints had no caller in any suite. A real 1x1 PNG, because the service sniffs
+  // the bytes and a renamed text file must not pass.
+  it('stores a profile photo and serves it back to its owner and to an administrator', async () => {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const admin = await login('admin@dts.local', ADMIN_PASSWORD);
+    const adminId = dataOf<{ id: string }>(
+      await request(server()).get('/api/v1/me').set('Cookie', admin.cookies).expect(200),
+    ).id;
+
+    const before = await request(server()).get('/api/v1/me').set('Cookie', admin.cookies);
+    expect(dataOf<{ hasPhoto: boolean }>(before).hasPhoto).toBe(false);
+    await request(server()).get('/api/v1/me/photo').set('Cookie', admin.cookies).expect(404);
+
+    const stored = await request(server())
+      .post('/api/v1/me/photo')
+      .set('Cookie', admin.cookies)
+      .set('x-csrf-token', admin.csrf)
+      .attach('file', png, { filename: 'me.png', contentType: 'image/png' })
+      .expect(201);
+    expect(dataOf<{ mediaType: string }>(stored).mediaType).toBe('image/png');
+
+    const after = await request(server()).get('/api/v1/me').set('Cookie', admin.cookies);
+    expect(dataOf<{ hasPhoto: boolean }>(after).hasPhoto).toBe(true);
+
+    const own = await request(server())
+      .get('/api/v1/me/photo')
+      .set('Cookie', admin.cookies)
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(own.headers['content-type']).toBe('image/png');
+    expect(own.headers['x-content-type-options']).toBe('nosniff');
+    expect(own.headers.etag).toMatch(/^"[0-9a-f]{64}"$/);
+    expect((own.body as Buffer).equals(png)).toBe(true);
+
+    await request(server())
+      .get(`/api/v1/users/${adminId}/photo`)
+      .set('Cookie', admin.cookies)
+      .expect(200);
+  }, 30_000);
+
+  it('refuses a profile photo that is not an image, empty, or too large', async () => {
+    const admin = await login('admin@dts.local', ADMIN_PASSWORD);
+    const post = (buffer: Buffer, filename: string, contentType: string) =>
+      request(server())
+        .post('/api/v1/me/photo')
+        .set('Cookie', admin.cookies)
+        .set('x-csrf-token', admin.csrf)
+        .attach('file', buffer, { filename, contentType });
+
+    // A script renamed to .png, declared as an image: the bytes decide, not the name.
+    const spoofed = await post(Buffer.from('<script>alert(1)</script>'), 'me.png', 'image/png');
+    expect(spoofed.status).toBe(415);
+    expect(spoofed.body.error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+
+    const empty = await post(Buffer.alloc(0), 'empty.png', 'image/png');
+    expect(empty.status).toBe(400);
+
+    const huge = await post(Buffer.alloc(2 * 1024 * 1024 + 1), 'huge.png', 'image/png');
+    expect(huge.status).toBe(413);
+
+    await request(server())
+      .post('/api/v1/me/photo')
+      .set('Cookie', admin.cookies)
+      .set('x-csrf-token', admin.csrf)
+      .expect(400);
+  }, 30_000);
+
   it('records auth and admin actions in an audit trail only administrators may read', async () => {
     const admin = await login('admin@dts.local', ADMIN_PASSWORD);
 

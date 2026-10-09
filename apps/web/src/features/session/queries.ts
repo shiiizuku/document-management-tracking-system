@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import type { Capability, ChangePasswordInput, LoginInput, Role } from '@dts/contracts';
-import { api } from '@/lib/api';
+import { api, inlineContent, upload } from '@/lib/api';
 
 /**
  * Who is signed in, and what they may do.
@@ -144,5 +144,67 @@ export function useChangePassword() {
   return useMutation({
     mutationFn: (input: ChangePasswordInput) =>
       api<void>('/me/password', { method: 'POST', body: JSON.stringify(input) }),
+  });
+}
+
+/** Largest photo the API accepts (`MAX_PROFILE_PHOTO_BYTES`); checked here so the refusal is instant. */
+export const MAX_PROFILE_PHOTO_BYTES = 2 * 1024 * 1024;
+export const PROFILE_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+
+const photoStampKey = ['session', 'photo-stamp'] as const;
+
+/**
+ * The signed-in user's photo as an object URL, or `null` when they have none.
+ *
+ * Fetched through `inlineContent` rather than pointed at by an `<img src>`: the API is a different
+ * origin in development and the photo needs the session cookie, which an image request to another
+ * site does not carry. The URL is revoked when the photo changes or the avatar unmounts.
+ * The cache key carries an upload stamp, so a replaced photo is fetched again rather than served
+ * from the 5-minute browser cache.
+ */
+export function useProfilePhotoUrl(): string | null {
+  const stamp = useQuery({
+    queryKey: photoStampKey,
+    queryFn: () => 0,
+    enabled: false,
+    initialData: 0,
+    staleTime: Infinity,
+  }).data;
+  // `/auth/me` does not say whether a photo exists, `/me` does; asking first avoids a 404 on every
+  // page load for the people who never set one.
+  const has = useQuery({
+    queryKey: ['session', 'has-photo', stamp] as const,
+    queryFn: () => api<{ hasPhoto: boolean }>('/me').then((me) => me.hasPhoto),
+    staleTime: Infinity,
+    retry: false,
+  });
+  const enabled = has.data === true;
+  const query = useQuery({
+    queryKey: ['session', 'photo', stamp] as const,
+    queryFn: () => inlineContent('/me/photo'),
+    enabled,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  });
+  const content = query.data;
+  useEffect(() => () => content?.release(), [content]);
+  return enabled && content !== undefined ? content.url : null;
+}
+
+/**
+ * Uploads the signed-in user's own photo. On success the cache stamp moves, so the avatar
+ * fetches the new image instead of the cached one.
+ */
+export function useUploadProfilePhoto() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const body = new FormData();
+      body.append('file', file);
+      return upload<{ mediaType: string; sizeBytes: number }>('/me/photo', body);
+    },
+    // A new stamp changes both cache keys above, so the check and the image are fetched afresh.
+    onSuccess: () => client.setQueryData(photoStampKey, Date.now()),
   });
 }
