@@ -1,3 +1,7 @@
+# Source and config are LF in the repository and LF on checkout, so Prettier's `endOfLine: lf`
+# check passes on a Windows checkout with core.autocrlf=true. Anything git detects as binary is left alone.
+* text=auto eol=lf
+
 # Files read inside Linux containers must keep LF on every checkout. With core.autocrlf=true on
 # Windows, clamd.conf was checked out as CRLF and clamd rejected `TCPSocket 3310\r`, so clamd never
 # started and every upload stayed at scan pending.
