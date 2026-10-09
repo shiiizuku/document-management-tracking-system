@@ -14,11 +14,13 @@ Updated after the audit baseline. Resolved items were matched against the merged
 | Production seed creates demo users with known passwords (P0) | Resolved in code | `d8ce8d4` (#137): `records@` and `staff@` are created only outside production. A server seeded earlier still has them; deactivate or change their passwords |
 | Missed realtime updates on reconnect (P1) | Resolved | `a14c5f0`: inbox and documents are refetched when the socket reconnects |
 | Profile photo UI (P3) | Resolved | `aae0152`, `50795cd`, `54310b5` (#139) |
-| Offset paging (P2), "In process" label (P2), dashboard actions (P2), registry section filter (P2) | Open | |
+| "In process" label on pending custody (P2) | Resolved | `97b5baa` (#138): list rows carry `presentedStatus` |
+| Registry section filter (P2) | Resolved | `97b5baa`, `9a3045f` (#138): section picker scoped to the division, kept in the URL |
+| Offset paging (P2), dashboard actions (P2) | Open | |
 | Published internal ports (P1), restart policy (P2), backup freshness alerting (P2) | Open | |
 | `format:check` line endings and embedded worktree | Open | |
 
-Open: 8 findings (worst: published internal ports, P1). Not rerun since the baseline: lint, typecheck, tests and build.
+Open: 6 findings (worst: published internal ports, P1). Not rerun since the baseline: lint, typecheck, tests and build.
 
 ## Standards and implementation integrity
 
