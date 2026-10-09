@@ -48,17 +48,15 @@ export function useRealtimeSync(): RealtimeStatus {
       transports: ['websocket'],
     });
 
-    let hasConnected = false;
     socket.on('connect', () => {
       setConnected(true);
-      // Pings sent while the socket was down are gone, not queued. The first connect has nothing to
-      // catch up on (queries fetch on mount); every later one refetches from the database instead.
-      if (hasConnected) {
-        invalidateNotifications(client);
-        invalidateAllDocuments(client);
-      }
-      hasConnected = true;
+      // Pings sent while the socket was down are gone, not queued, so every connect refetches from
+      // the database. That includes the first: a change made after the mount queries loaded but
+      // before the handshake finished would otherwise stay stale until the next ping.
+      invalidateNotifications(client);
+      invalidateAllDocuments(client);
     });
+
     socket.on('disconnect', () => setConnected(false));
     socket.on(NOTIFICATION_EVENT, (payload: unknown) => {
       invalidateNotifications(client);

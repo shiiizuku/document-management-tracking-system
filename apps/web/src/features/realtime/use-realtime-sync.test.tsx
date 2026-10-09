@@ -15,7 +15,7 @@ vi.mock('socket.io-client', () => ({
 describe('useRealtimeSync', () => {
   beforeEach(() => handlers.clear());
 
-  it('refetches inbox and documents on a reconnect, but not on the first connect', () => {
+  it('refetches inbox and documents on every connect, including the first', () => {
     const client = new QueryClient();
     const spy = vi.spyOn(client, 'invalidateQueries');
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -24,12 +24,12 @@ describe('useRealtimeSync', () => {
     renderHook(() => useRealtimeSync(), { wrapper });
 
     handlers.get('connect')?.();
-    expect(spy).not.toHaveBeenCalled();
+    const firstKeys = spy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey[0]);
+    expect(firstKeys).toContain('documents');
+    expect(spy.mock.calls.length).toBe(2);
 
     handlers.get('disconnect')?.();
     handlers.get('connect')?.();
-    const keys = spy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey[0]);
-    expect(keys).toContain('documents');
-    expect(spy.mock.calls.length).toBe(2);
+    expect(spy.mock.calls.length).toBe(4);
   });
 });
