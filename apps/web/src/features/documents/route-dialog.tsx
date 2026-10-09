@@ -7,6 +7,7 @@ import { AlertCircle, Loader2, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { routeDocumentSchema, type RouteDocumentInput } from '@dts/contracts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -44,8 +45,8 @@ import { currentCustody, useRouteDocument, type DocumentDetail } from './queries
 const NO_SECTION = '__none__';
 
 /**
- * Forwards a document to another division or section, optionally copying other divisions in for
- * information.
+ * Forwards a document to one lead division (optionally a section in it), copying any other ticked
+ * divisions in for information.
  *
  * Forwarding *adds* a reader rather than moving access: the receiving unit gains the document and
  * the unit that handled it keeps it, so a hand-off never leaves a gap in who can answer for a
@@ -72,12 +73,42 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
   const toDivisionId = form.watch('toDivisionId');
   const sections = useSections(toDivisionId || null);
 
+  const copies = form.watch('forInformationDivisionIds') ?? [];
+
   const custody = currentCustody(document);
-  const active = (divisions.data ?? []).filter((division) => division.active);
-  const destinations = active.filter((division) => division.id !== custody.divisionId);
-  // The lead may not also be copied in — one division cannot both block progress and not block it
-  // — so it leaves the list as soon as it is chosen, and any stale tick is dropped with it.
-  const consultable = active.filter((division) => division.id !== toDivisionId);
+  const destinations = (divisions.data ?? []).filter(
+    (division) => division.active && division.id !== custody.divisionId,
+  );
+
+  /*
+   * One list of divisions, where a forward still names exactly one lead (decision 159): the first
+   * division ticked is the lead and every later tick is a copy for information. Unticking the lead
+   * promotes the next copy, so a forward with any tick always has a lead; "Make lead" swaps the two.
+   * The section belongs to the lead's division, so it is cleared whenever the lead changes.
+   */
+  const setLead = (divisionId: string, nextCopies: string[]) => {
+    form.setValue('toDivisionId', divisionId, { shouldValidate: form.formState.isSubmitted });
+    form.setValue('toSectionId', undefined);
+    form.setValue('forInformationDivisionIds', nextCopies);
+  };
+  const toggle = (divisionId: string, checked: boolean) => {
+    if (checked) {
+      if (toDivisionId === '') setLead(divisionId, copies);
+      else form.setValue('forInformationDivisionIds', [...copies, divisionId]);
+      return;
+    }
+    if (divisionId === toDivisionId) {
+      const [next = '', ...rest] = copies;
+      setLead(next, rest);
+      return;
+    }
+    form.setValue(
+      'forInformationDivisionIds',
+      copies.filter((id) => id !== divisionId),
+    );
+  };
+  const makeLead = (divisionId: string) =>
+    setLead(divisionId, [toDivisionId, ...copies.filter((id) => id !== divisionId)]);
 
   const onSubmit = (values: RouteDocumentInput) => {
     setFormError(null);
@@ -133,124 +164,102 @@ export function RouteDialog({ document }: Readonly<{ document: DocumentDetail }>
             <FormField
               control={form.control}
               name="toDivisionId"
-              render={({ field }) => (
+              render={() => (
                 <FormItem>
-                  <FormLabel>Receiving division</FormLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={(value) => {
-                      field.onChange(value);
-                      // The previously chosen section belongs to another division, and the new
-                      // lead cannot stay ticked as a copy — the contract refuses that pairing.
-                      form.setValue('toSectionId', undefined);
-                      form.setValue(
-                        'forInformationDivisionIds',
-                        (form.getValues('forInformationDivisionIds') ?? []).filter(
-                          (id) => id !== value,
-                        ),
-                      );
-                    }}
+                  <FormLabel id="route-divisions-label">Receiving divisions</FormLabel>
+                  <div
+                    role="group"
+                    aria-labelledby="route-divisions-label"
+                    className="max-h-64 divide-y divide-border-subtle overflow-y-auto rounded-xl border-[1.5px] border-input"
                   >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a division" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {destinations.map((division) => (
-                        <SelectItem key={division.id} value={division.id}>
-                          {division.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="toSectionId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Receiving section</FormLabel>
-                  <Select
-                    value={field.value ?? NO_SECTION}
-                    onValueChange={(value) =>
-                      field.onChange(value === NO_SECTION ? undefined : value)
-                    }
-                    disabled={(sections.data ?? []).length === 0}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value={NO_SECTION}>
-                        {(sections.data ?? []).length === 0
-                          ? 'No sections'
-                          : 'Division-level (no section)'}
-                      </SelectItem>
-                      {(sections.data ?? []).map((section) => (
-                        <SelectItem key={section.id} value={section.id}>
-                          {section.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    Leave at division level to let the receiving division assign it.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="forInformationDivisionIds"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Copy in for information (optional)</FormLabel>
-                  <div className="max-h-56 divide-y divide-border-subtle overflow-y-auto rounded-xl border-[1.5px] border-input">
-                    {consultable.length === 0 ? (
+                    {destinations.length === 0 ? (
                       <p className="px-3.5 py-3 text-sm text-muted-foreground">
                         No other divisions.
                       </p>
                     ) : (
-                      consultable.map((division) => {
-                        const selected = (field.value ?? []).includes(division.id);
+                      destinations.map((division) => {
+                        const lead = division.id === toDivisionId;
+                        const copied = copies.includes(division.id);
                         return (
-                          <label
+                          <div
                             key={division.id}
-                            className="flex min-h-11 cursor-pointer items-center gap-3 px-3.5 text-[15px] hover:bg-accent"
+                            className="flex min-h-11 items-center gap-2 pr-2 hover:bg-accent"
                           >
-                            <Checkbox
-                              checked={selected}
-                              onCheckedChange={(checked) =>
-                                field.onChange(
-                                  checked === true
-                                    ? [...(field.value ?? []), division.id]
-                                    : (field.value ?? []).filter((id) => id !== division.id),
-                                )
-                              }
-                            />
-                            {division.name}
-                          </label>
+                            <label className="flex min-h-11 flex-1 cursor-pointer items-center gap-3 pl-3.5 text-[15px]">
+                              <Checkbox
+                                checked={lead || copied}
+                                onCheckedChange={(checked) => toggle(division.id, checked === true)}
+                              />
+                              {division.name}
+                            </label>
+                            {lead ? (
+                              <Badge>Lead</Badge>
+                            ) : copied ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => makeLead(division.id)}
+                              >
+                                Make lead
+                              </Button>
+                            ) : null}
+                          </div>
                         );
                       })
                     )}
                   </div>
                   <FormDescription>
-                    Copied divisions may read and remark. They do not hold the document and never
-                    block it.
+                    The lead takes custody and must accept it. Every other ticked division is copied
+                    in for information: it may read and remark, and never blocks the document.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
+
+            {toDivisionId === '' ? null : (
+              <FormField
+                control={form.control}
+                name="toSectionId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Receiving section</FormLabel>
+                    <Select
+                      value={field.value ?? NO_SECTION}
+                      onValueChange={(value) =>
+                        field.onChange(value === NO_SECTION ? undefined : value)
+                      }
+                      disabled={(sections.data ?? []).length === 0}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value={NO_SECTION}>
+                          {(sections.data ?? []).length === 0
+                            ? 'No sections'
+                            : 'Division-level (no section)'}
+                        </SelectItem>
+                        {(sections.data ?? []).map((section) => (
+                          <SelectItem key={section.id} value={section.id}>
+                            {section.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Within the lead division. Leave at division level to let it assign the
+                      document.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}

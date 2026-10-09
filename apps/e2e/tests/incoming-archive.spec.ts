@@ -95,17 +95,19 @@ test('an incoming letter is registered, accepted, forwarded, complied with and a
       dialog.getByRole('heading', { name: 'Forward to another division' }),
     ).toBeVisible();
 
-    await dialog.getByRole('combobox', { name: 'Receiving division' }).click();
-    await records.getByRole('option', { name: 'Pilot Division', exact: true }).click();
-
     /*
-     * Left at "Division-level (no section)", which is what lets the receiving division decide who
-     * takes it: a hop addressed to a section can only be accepted from inside that section.
+     * One list of divisions: the first ticked is the lead, the next a copy for information. The
+     * section is left at "Division-level (no section)", which is what lets the receiving division
+     * decide who takes it: a hop addressed to a section can only be accepted from inside it.
      *
-     * The copies are checkboxes rather than a multi-select, and a Radix checkbox is a `button` with
-     * `role="checkbox"` — the enclosing `<label>` is decoration, because a button is not a
-     * labelable element — so the control is reached through the label's text, not by it.
+     * A Radix checkbox is a `button` with `role="checkbox"` — the enclosing `<label>` is
+     * decoration, because a button is not a labelable element — so the control is reached through
+     * the label's text, not by it.
      */
+    await dialog
+      .locator('label', { hasText: /^Pilot Division$/ })
+      .getByRole('checkbox')
+      .check();
     await dialog
       .locator('label', { hasText: 'Lands Management Division' })
       .getByRole('checkbox')
