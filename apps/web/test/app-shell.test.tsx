@@ -124,7 +124,9 @@ describe('AppShell', () => {
     renderShell([]);
     apiMock.mockResolvedValueOnce(undefined);
     const locationReplace = vi.fn();
-    vi.stubGlobal('location', { replace: locationReplace });
+    // `next/image` resolves its src against `window.location.href` whenever it renders, and a late
+    // re-render (the photo query settling) lands after this stub; without an href it throws.
+    vi.stubGlobal('location', { href: 'http://localhost/', replace: locationReplace });
 
     await userEvent.click(screen.getByRole('button', { name: /Ana Dela Cruz/ }));
     expect(screen.getByText('staff@dts.local')).toBeInTheDocument();
