@@ -40,14 +40,20 @@ const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
   ) as Record<string, string>,
 }));
 
-const block = (selector: string) => rules.find((rule) => rule.selectors.includes(selector));
+const blocks = (selector: string) => rules.filter((rule) => rule.selectors.includes(selector));
+
+const declarations = (selector: string): Record<string, string> =>
+  blocks(selector).reduce<Record<string, string>>(
+    (merged, rule) => ({ ...merged, ...rule.declarations }),
+    {},
+  );
 
 /** The variables in force for one theme and mode, in cascade order. */
 const palette = (theme: string, dark: boolean): Record<string, string> => ({
-  ...block(':root')?.declarations,
-  ...block(`:root[data-theme='${theme}']`)?.declarations,
-  ...(dark ? block(':root.dark')?.declarations : {}),
-  ...(dark ? block(`:root.dark[data-theme='${theme}']`)?.declarations : {}),
+  ...declarations(':root'),
+  ...declarations(`:root[data-theme='${theme}']`),
+  ...(dark ? declarations(':root.dark') : {}),
+  ...(dark ? declarations(`:root.dark[data-theme='${theme}']`) : {}),
 });
 
 /** oklch(L C H) → relative luminance, via OKLab and linear sRGB (clamped to gamut). */
@@ -113,8 +119,8 @@ const PAIRS = [
 
 describe('theme palettes', () => {
   it.each(THEMES)('defines %s in both light and dark', (theme) => {
-    expect(block(`:root[data-theme='${theme}']`)).toBeDefined();
-    expect(block(`:root.dark[data-theme='${theme}']`)).toBeDefined();
+    expect(blocks(`:root[data-theme='${theme}']`)).not.toHaveLength(0);
+    expect(blocks(`:root.dark[data-theme='${theme}']`)).not.toHaveLength(0);
   });
 
   it.each(COMBINATIONS)(

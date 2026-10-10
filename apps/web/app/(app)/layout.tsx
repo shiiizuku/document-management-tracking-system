@@ -4,6 +4,7 @@ import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { AppShell } from '@/components/dts/app-shell';
+import { RouteLoader } from '@/components/dts/route-loader';
 import { useSession } from '@/features/session/queries';
 
 /**
@@ -35,15 +36,7 @@ export default function AppLayout({ children }: Readonly<{ children: React.React
 }
 
 function SessionLoading() {
-  return (
-    <div className="grid min-h-screen place-items-center">
-      <div
-        className="size-8 animate-spin rounded-full border-3 border-secondary border-t-primary"
-        role="status"
-        aria-label="Loading"
-      />
-    </div>
-  );
+  return <RouteLoader title="Confirming your session" detail="Checking your authorized scope." />;
 }
 
 function SessionUnavailable({ onRetry }: Readonly<{ onRetry: () => void }>) {

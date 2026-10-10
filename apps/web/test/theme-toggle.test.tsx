@@ -60,6 +60,9 @@ describe('ThemeToggle', () => {
       'Warm sand',
       'Sage pastel',
       'Blush pastel',
+      'Ocean blue',
+      'Soft iris',
+      'Warm clay',
       'Civic Ledger',
     ]);
     // Nothing in a swatch is visible text; the name shows in a tooltip on hover.

@@ -88,7 +88,9 @@ export function RequestAccountForm() {
     <div className="space-y-6">
       <div>
         <p className="eyebrow">Request access</p>
-        <h1 className="mt-1 text-3xl text-foreground">Apply for an account</h1>
+        <h2 className="mt-1 font-display text-4xl leading-tight text-foreground">
+          Apply for an account
+        </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Accounts are created by an administrator. Tell us who you are and why you need access.
         </p>
@@ -166,8 +168,7 @@ export function RequestAccountForm() {
                   />
                 </FormControl>
                 <FormDescription>
-                  Name your division and section here — the reviewer uses this to place your
-                  account.
+                  Name your division and section here. The reviewer uses this to place your account.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
