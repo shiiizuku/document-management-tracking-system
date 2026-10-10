@@ -44,6 +44,7 @@ describe('LoginForm', () => {
     await signIn('records@dts.local', 'Records@1234!');
 
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/dashboard'));
+    expect(screen.getByRole('status', { name: 'Opening your workspace' })).toBeInTheDocument();
     expect(apiMock).toHaveBeenCalledWith('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email: 'records@dts.local', password: 'Records@1234!' }),
@@ -102,6 +103,7 @@ describe('LoginForm', () => {
     await signIn('records@dts.local', 'Records@1234!');
 
     await waitFor(() => expect(screen.getByText('Invalid credentials')).toBeInTheDocument());
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(replaceMock).not.toHaveBeenCalled();
   });
 

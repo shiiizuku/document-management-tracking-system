@@ -17,7 +17,7 @@ type ThemeContext = {
   colorMode: ColorMode;
   resolvedColorMode: 'light' | 'dark';
   setColorMode: (mode: ColorMode) => void;
-  /** The Civic Ledger palette: neutral, sage, blush or civic. */
+  /** The active Civic Ledger palette, independent of light or dark mode. */
   theme: Theme;
   setTheme: (theme: Theme) => void;
 };

@@ -157,6 +157,7 @@ function useSidebarShortcut(toggle: () => void): void {
 }
 
 export function AppShell({ user, children }: Readonly<{ user: SessionUser; children: ReactNode }>) {
+  const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
@@ -313,9 +314,11 @@ export function AppShell({ user, children }: Readonly<{ user: SessionUser; child
 
         <main
           data-slot="app-main"
-          className="mx-auto w-full max-w-[1280px] min-w-0 flex-1 space-y-6 px-4 py-8 sm:px-6"
+          className="mx-auto w-full max-w-[1280px] min-w-0 flex-1 px-4 py-8 sm:px-6"
         >
-          {children}
+          <div key={pathname} data-slot="route-transition" className="route-enter space-y-6">
+            {children}
+          </div>
         </main>
       </div>
 

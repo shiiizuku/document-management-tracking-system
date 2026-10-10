@@ -21,6 +21,9 @@ const SWATCHES: Record<Theme, { accent: string; bar: string }> = {
   sand: { accent: '#835F49', bar: '#EBE0D2' },
   sage: { accent: '#4F7A64', bar: '#DCE6DF' },
   blush: { accent: '#8A5E66', bar: '#EADFE0' },
+  ocean: { accent: '#3F6F91', bar: '#D7E5EF' },
+  iris: { accent: '#725D91', bar: '#E6DFF0' },
+  clay: { accent: '#985A45', bar: '#EDDDD5' },
   civic: { accent: '#1F6B45', bar: '#13291F' },
 };
 
@@ -57,7 +60,7 @@ export function ColorModeButton({
 /**
  * The theme picker: a palette button opening a grid of swatches, each named in a tooltip.
  *
- * Names stay off the grid itself — eight labelled rows would not fit the sidebar footer, and the
+ * Names stay off the grid itself because labelled rows would not fit the sidebar footer, and the
  * swatch already shows what a theme looks like — but hovering or focusing one shows its name, and
  * the name is also its accessible label. Picking one applies it at once and closes the popover, and
  * Radix returns focus to the palette button on close, so a keyboard user ends where they started.
