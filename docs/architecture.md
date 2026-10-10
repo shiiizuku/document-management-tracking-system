@@ -11,6 +11,7 @@ orientation document: read it first, then follow the pointers.
 | Why a load-bearing choice was made        | [adr/](adr/)                                         |
 | What is real today, what to build next    | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) |
 | Institution-owned questions still open    | [policy-register.md](policy-register.md)             |
+| On-premises office deployment assessment  | [on-premises-deployment-assessment.md](on-premises-deployment-assessment.md) |
 | The in-flight UI migration                | [frontend-rebuild-plan.md](audits/frontend-rebuild-plan.md) |
 
 ---

@@ -347,6 +347,8 @@ version in the wrong database. CI does all of this in the `integration` job.
 
 `docs/architecture.md` is the orientation document: the layers, the stack choices, and why each
 one looks the way it does. The decisions behind the load-bearing ones live in `docs/adr/`.
+For an evidence-backed office-network target architecture, deployment tradeoffs, migration phases,
+and acceptance checks, see [the on-premises deployment assessment](docs/on-premises-deployment-assessment.md).
 
 The backend is feature-complete through phase 6 and persisted to Postgres — the old in-process
 `Map`-backed adapter has been retired, and attachments, scanning, realtime and the outbox relay all
