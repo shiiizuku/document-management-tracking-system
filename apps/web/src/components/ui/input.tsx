@@ -31,6 +31,7 @@ function Input({
         cn(
           'selection:bg-primary selection:text-primary-foreground',
           'file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground',
+          type === 'file' && 'cursor-pointer py-2 file:mr-3 file:cursor-pointer',
           type === 'date' && DATE_INDICATOR,
           className,
         ),

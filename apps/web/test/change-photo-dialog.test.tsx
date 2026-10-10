@@ -56,10 +56,10 @@ describe('ChangePhotoDialog', () => {
   it('refuses an image over the size limit', async () => {
     renderWithQuery(<ChangePhotoDialog open onOpenChange={vi.fn()} />);
 
-    const big = new File([new Uint8Array(2 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' });
+    const big = new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' });
     await choose(big);
 
-    expect(await screen.findByText('That image is larger than 2 MB.')).toBeInTheDocument();
+    expect(await screen.findByText('That image is larger than 10 MB.')).toBeInTheDocument();
     expect(uploadMock).not.toHaveBeenCalled();
   });
 

@@ -240,7 +240,7 @@ describe('identity & organization REST against a real database', () => {
     const empty = await post(Buffer.alloc(0), 'empty.png', 'image/png');
     expect(empty.status).toBe(400);
 
-    const huge = await post(Buffer.alloc(2 * 1024 * 1024 + 1), 'huge.png', 'image/png');
+    const huge = await post(Buffer.alloc(10 * 1024 * 1024 + 1), 'huge.png', 'image/png');
     expect(huge.status).toBe(413);
 
     await request(server())

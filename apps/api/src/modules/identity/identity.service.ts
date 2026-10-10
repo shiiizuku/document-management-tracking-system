@@ -42,7 +42,7 @@ import { ProfilePhotosRepository } from './profile-photos.repository.js';
 
 const BCRYPT_ROUNDS = 12;
 
-export const MAX_PROFILE_PHOTO_BYTES = 2 * 1024 * 1024;
+export const MAX_PROFILE_PHOTO_BYTES = 10 * 1024 * 1024;
 export const ALLOWED_PROFILE_PHOTO_MEDIA_TYPES: ReadonlySet<string> = new Set([
   'image/png',
   'image/jpeg',

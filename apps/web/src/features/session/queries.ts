@@ -152,7 +152,7 @@ export function useChangePassword() {
 }
 
 /** Largest photo the API accepts (`MAX_PROFILE_PHOTO_BYTES`); checked here so the refusal is instant. */
-export const MAX_PROFILE_PHOTO_BYTES = 2 * 1024 * 1024;
+export const MAX_PROFILE_PHOTO_BYTES = 10 * 1024 * 1024;
 export const PROFILE_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 
 const photoStampKey = ['session', 'photo-stamp'] as const;
