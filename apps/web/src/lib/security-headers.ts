@@ -13,14 +13,18 @@
  *   the `blob:` preview frame inherits; only this page's own blob URLs may be plugin content.
  * - `base-uri 'self'`, `form-action 'self'` — the usual injection footholds.
  */
-export const securityHeaders = (apiUrl: string): { key: string; value: string }[] => {
+export const securityHeaders = (
+  apiUrl: string,
+  { development = false }: { development?: boolean } = {},
+): { key: string; value: string }[] => {
   const api = new URL(apiUrl);
   // Socket.IO upgrades to a WebSocket on the API's host; name the scheme explicitly rather than
   // relying on the CSP3 http→ws match.
   const socket = `${api.protocol === 'https:' ? 'wss:' : 'ws:'}//${api.host}`;
   const policy = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    // React's dev build rebuilds callstacks with eval(); production never does.
+    `script-src 'self' 'unsafe-inline'${development ? " 'unsafe-eval'" : ''}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
