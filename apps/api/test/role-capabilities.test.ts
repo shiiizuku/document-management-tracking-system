@@ -40,6 +40,17 @@ describe('role capability table', () => {
     expect(capabilitiesByRole.DIRECTOR).not.toContain('DOCUMENT_INITIAL');
   });
 
+  // Releasing is the records office's act: only the administrator and records staff hold it.
+  it('keeps releasing with the administrator and records staff only', () => {
+    for (const capability of ['DOCUMENT_PREPARE_RELEASE', 'DOCUMENT_RELEASE'] as const) {
+      const holders = Object.entries(capabilitiesByRole)
+        .filter(([, capabilities]) => capabilities.includes(capability))
+        .map(([role]) => role)
+        .sort();
+      expect(holders, capability).toEqual(['ADMINISTRATOR', 'RECORDS_STAFF']);
+    }
+  });
+
   // VIEWER is read-only by design: scope still lets them read, but no capability means no mutation
   // and, on the client, no capability-gated nav item.
   it('grants a viewer nothing', () => {

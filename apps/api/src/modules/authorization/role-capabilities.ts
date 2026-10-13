@@ -60,8 +60,7 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'DOCUMENT_PREPARE_RELEASE',
     'DOCUMENT_RELEASE',
     // Filling in the carrier of a mailed release recorded before carriers were asked for (P-15
-    // as decided 2026-10-06). The records office keeps the release record, so it is theirs; a
-    // division head can release but cannot amend a release afterwards.
+    // as decided 2026-10-06). The records office keeps the release record, so it is theirs.
     'DOCUMENT_RELEASE_CORRECT',
     'DOCUMENT_COMPLY',
     'DOCUMENT_ARCHIVE',
@@ -92,8 +91,8 @@ export const capabilitiesByRole: Readonly<Record<Role, readonly Capability[]>> =
     'DOCUMENT_RESUBMIT',
     'DOCUMENT_INITIAL',
     'DOCUMENT_SUBMIT_FOR_SIGNATURE',
-    'DOCUMENT_PREPARE_RELEASE',
-    'DOCUMENT_RELEASE',
+    // Releasing is held by the administrator and records staff only; a division head endorses
+    // and submits for signature but does not release.
     'DOCUMENT_COMPLY',
     'DOCUMENT_ARCHIVE',
     'DOCUMENT_ASSIGN',
