@@ -509,6 +509,4 @@ export class WorkflowService {
   }
 }
 
-export const WORKFLOW_TRANSITIONS = transitionsByDirection;
 export const WORKFLOW_ACTION_CAPABILITIES = actionCapabilities;
-export const WORKFLOW_EDGE_CONDITIONS = edgeConditions;

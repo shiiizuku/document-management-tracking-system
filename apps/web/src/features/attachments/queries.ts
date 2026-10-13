@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ScanStatus } from '@dts/contracts';
-import { api, download, inlineContent, upload, type InlineContent } from '@/lib/api';
+import { api, download, upload } from '@/lib/api';
 import { invalidateDocument } from '@/features/documents/queries';
 
 /**
@@ -116,20 +116,6 @@ export function useDownloadAttachment(documentId: string) {
 export const attachmentContentPath = (documentId: string, versionId: string): string =>
   `/documents/${documentId}/attachments/${versionId}/content`;
 
-/**
- * Fetches a version's bytes for the in-page preview.
- *
- * A mutation rather than a query, and deliberately: the result owns an object URL that has to be
- * released, and a cached query would hand the same URL to a second viewer after the first one
- * revoked it. Modelled as an action the viewer performs once, whose result the viewer then owns.
- */
-export function usePreviewAttachment(documentId: string) {
-  return useMutation({
-    mutationFn: (version: AttachmentVersion): Promise<InlineContent> =>
-      inlineContent(attachmentContentPath(documentId, version.id)),
-  });
-}
-
 /** Whether a version's bytes may leave the quarantine. Only a clean scan clears it. */
 export const isDownloadable = (status: ScanStatus): boolean => status === 'CLEAN';
 
@@ -151,9 +137,6 @@ const PREVIEWABLE_MEDIA_TYPES: ReadonlySet<string> = new Set([
 /** Whether this version can be shown on the page: cleared by the scanner, and a renderable type. */
 export const isPreviewable = (version: AttachmentVersion): boolean =>
   isDownloadable(version.scanStatus) && PREVIEWABLE_MEDIA_TYPES.has(version.mediaType);
-
-/** Whether a preview should render as an image rather than in a document frame. */
-export const isImageMediaType = (mediaType: string): boolean => mediaType.startsWith('image/');
 
 const SCAN_LABELS: Record<ScanStatus, string> = {
   PENDING: 'Scan pending',
