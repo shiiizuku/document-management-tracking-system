@@ -13,6 +13,13 @@
  *   the `blob:` preview frame inherits; only this page's own blob URLs may be plugin content.
  * - `base-uri 'self'`, `form-action 'self'` — the usual injection footholds.
  */
+/** Development only: the API's scheme and port on any host. An implicit port stays implicit. */
+const anyHost = (api: URL): string => {
+  const port = api.port === '' ? '' : `:${api.port}`;
+  const socketScheme = api.protocol === 'https:' ? 'wss:' : 'ws:';
+  return ` ${api.protocol}//*${port} ${socketScheme}//*${port}`;
+};
+
 export const securityHeaders = (
   apiUrl: string,
   { development = false }: { development?: boolean } = {},
@@ -28,7 +35,9 @@ export const securityHeaders = (
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    `connect-src 'self' ${api.origin} ${socket}`,
+    // Development follows the page's host (see `resolveApiUrl` in api.ts), so any host on the API's
+    // port is allowed; production names exactly the one configured origin.
+    `connect-src 'self' ${api.origin} ${socket}${development ? anyHost(api) : ''}`,
     "frame-src 'self' blob:",
     'object-src blob:',
     "base-uri 'self'",

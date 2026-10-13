@@ -107,12 +107,8 @@ describe('LoginForm', () => {
     expect(replaceMock).not.toHaveBeenCalled();
   });
 
-  /*
-   * Decision 100: the seeded pilot credentials must never be offered to a real user. `NODE_ENV`
-   * is inlined at build time, so under test (`NODE_ENV=test`, as in a production build) the
-   * literals are not reachable and the fields come up empty.
-   */
-  it('does not prefill the seeded credentials outside a development build', () => {
+  // Decision 100: the seeded pilot credentials are never offered to anyone, development included.
+  it('does not prefill the seeded credentials', () => {
     renderWithQuery(<LoginForm />);
     expect(screen.getByLabelText('Email')).toHaveValue('');
     expect(screen.getByLabelText('Password')).toHaveValue('');

@@ -300,7 +300,6 @@ export function RegistryScreen() {
             : []
         }
         onClear={() => router.push('/documents', { scroll: false })}
-        trailing={<ListViewControl view={view} onChange={setView} />}
         emptyResult={total === undefined ? undefined : total === 0}
       >
         <FilterCheckbox
@@ -310,6 +309,10 @@ export function RegistryScreen() {
           onChange={(overdue) => applyFilters({ overdue })}
         />
       </FilterBar>
+
+      <div className="-mt-3 mb-3 flex justify-end">
+        <ListViewControl view={view} onChange={setView} />
+      </div>
 
       <DocumentList
         view={view}

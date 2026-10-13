@@ -40,7 +40,7 @@ export function ListViewControl({
       role="radiogroup"
       aria-label="List view"
       className={cn(
-        'inline-flex rounded-[10px] border border-border bg-card p-0.5',
+        'inline-flex rounded-full border border-border bg-card p-0.5',
         // Hidden at the width where `DocumentList` forces cards (NARROW_QUERY): a control whose
         // Table and Lines options change nothing there would announce a view that is not shown.
         'max-[759px]:hidden',
@@ -59,13 +59,14 @@ export function ListViewControl({
             title={option.note}
             onClick={() => onChange(option.id)}
             className={cn(
-              'inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
+              // `after:` stretches the click area to 44px (28px pill + 8px each side) without growing the pill.
+              'relative inline-flex min-h-7 items-center gap-1 rounded-full px-2.5 text-xs font-medium outline-none after:absolute after:inset-x-0 after:-inset-y-2 after:content-[""] hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
               selected
                 ? 'bg-muted font-semibold text-foreground'
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            <Icon className="size-3.5" aria-hidden />
+            <Icon className="size-3" aria-hidden />
             {option.label}
           </button>
         );

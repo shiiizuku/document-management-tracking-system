@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertCircle, ArrowRight } from 'lucide-react';
+import { AlertCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { loginSchema, type LoginInput } from '@dts/contracts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -22,17 +22,8 @@ import { RouteLoader } from '@/components/dts/route-loader';
 import { applyServerErrors, safeNextPath } from '@/lib/forms';
 import { useLogin } from './queries';
 
-/**
- * The seeded pilot account, prefilled so a developer can sign in without looking it up.
- *
- * `NODE_ENV` is inlined at build time, so these literals are dead code in a production bundle and
- * the fields ship empty. That is decision 100: the seeded credentials exist for development and
- * must never be offered — or shipped — to a pilot user.
- */
-const developmentDefaults: LoginInput =
-  process.env.NODE_ENV === 'development'
-    ? { email: 'records@dts.local', password: 'Records@1234!' }
-    : { email: '', password: '' };
+/** Empty on purpose: seeded credentials are never offered, in development or anywhere else. */
+const emptyDefaults: LoginInput = { email: '', password: '' };
 
 /**
  * `autoFocus` is on for the dedicated sign-in screen and off where the form shares a page with
@@ -43,6 +34,7 @@ export function LoginForm({ autoFocus = true }: Readonly<{ autoFocus?: boolean }
   const searchParams = useSearchParams();
   const login = useLogin();
   const [formError, setFormError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [transitionStage, setTransitionStage] = useState<'idle' | 'authenticating' | 'opening'>(
     'idle',
   );
@@ -51,7 +43,7 @@ export function LoginForm({ autoFocus = true }: Readonly<{ autoFocus?: boolean }
     // The same schema the API validates with, so the client cannot accept a password the server
     // will reject on length alone.
     resolver: zodResolver(loginSchema),
-    defaultValues: developmentDefaults,
+    defaultValues: emptyDefaults,
   });
 
   const onSubmit = (values: LoginInput) => {
@@ -125,9 +117,25 @@ export function LoginForm({ autoFocus = true }: Readonly<{ autoFocus?: boolean }
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Password</FormLabel>
-                <FormControl>
-                  <Input type="password" autoComplete="current-password" {...field} />
-                </FormControl>
+                <div className="relative">
+                  <FormControl>
+                    <Input
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      className="pr-12"
+                      {...field}
+                    />
+                  </FormControl>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((shown) => !shown)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
+                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-[10px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-seal"
+                  >
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
                 <FormMessage />
               </FormItem>
             )}
