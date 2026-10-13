@@ -9,8 +9,12 @@ export function RouteLoader({
   return (
     <div
       className={cn(
-        'grid place-items-center bg-background text-foreground',
-        overlay ? 'fixed inset-0 z-50 min-h-[100dvh] px-6' : 'min-h-[min(72dvh,720px)] w-full px-6',
+        'grid place-items-center text-foreground',
+        // An overlay covers its nearest positioned ancestor, not the viewport: a `fixed` one inside
+        // the landing page's rotated sign-in card was sized to the card but centred on the screen.
+        overlay
+          ? 'absolute inset-0 z-10 rounded-[inherit] bg-card px-6'
+          : 'min-h-[min(72dvh,720px)] w-full bg-background px-6',
       )}
       role="status"
       aria-live="polite"

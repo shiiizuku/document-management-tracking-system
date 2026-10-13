@@ -63,7 +63,7 @@ export function LoginForm({ autoFocus = true }: Readonly<{ autoFocus?: boolean }
   };
 
   return (
-    <>
+    <div className="relative">
       {transitionStage === 'idle' ? null : (
         <RouteLoader
           overlay
@@ -161,6 +161,6 @@ export function LoginForm({ autoFocus = true }: Readonly<{ autoFocus?: boolean }
           </p>
         </form>
       </Form>
-    </>
+    </div>
   );
 }
