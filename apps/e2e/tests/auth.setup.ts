@@ -25,7 +25,7 @@ for (const role of SIGNED_IN_ROLES) {
   setup(`sign in as the ${account.displayName}`, async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel('Email').fill(account.email);
-    await page.getByLabel('Password').fill(account.password);
+    await page.getByLabel('Password', { exact: true }).fill(account.password);
     await page.getByRole('button', { name: 'Sign in' }).click();
 
     // `safeNextPath` sends a sign-in with no `?next=` to the dashboard. Waiting for the heading as
