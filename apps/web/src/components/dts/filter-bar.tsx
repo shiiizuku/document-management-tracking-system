@@ -182,7 +182,7 @@ export function FilterBar({
         type="button"
         variant="outline"
         aria-controls={panelId}
-        className="gap-2 data-[state=open]:bg-muted"
+        className="gap-2 border-border text-foreground data-[state=open]:bg-muted"
       >
         <SlidersHorizontal aria-hidden />
         Advanced search
