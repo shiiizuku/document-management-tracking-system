@@ -56,3 +56,13 @@ describe('development connect-src', () => {
     expect(policy).not.toContain('*');
   });
 });
+
+describe('development connect-src with a default port', () => {
+  it('emits no empty-port sources', () => {
+    const policy = securityHeaders('http://localhost/api/v1', { development: true }).find(
+      (entry) => entry.key === 'Content-Security-Policy',
+    )?.value;
+    expect(policy).toContain('http://*');
+    expect(policy).not.toMatch(/\*:(\s|;|$)/);
+  });
+});
