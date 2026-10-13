@@ -13,6 +13,4 @@ const storage = new AsyncLocalStorage<RequestContext>();
 export const runWithRequestContext = <T>(context: RequestContext, callback: () => T): T =>
   storage.run(context, callback);
 
-export const getRequestContext = (): RequestContext | undefined => storage.getStore();
-
 export const getCorrelationId = (): string | undefined => storage.getStore()?.correlationId;
