@@ -39,3 +39,20 @@ describe('web security headers', () => {
     );
   });
 });
+
+describe('development connect-src', () => {
+  it('allows the API port on any host so the app works at localhost and a LAN address', () => {
+    const policy = securityHeaders('http://localhost:4001/api/v1', { development: true }).find(
+      (entry) => entry.key === 'Content-Security-Policy',
+    )?.value;
+    expect(policy).toContain('http://*:4001');
+    expect(policy).toContain('ws://*:4001');
+  });
+
+  it('never widens it in production', () => {
+    const policy = securityHeaders('https://dts.example/api/v1').find(
+      (entry) => entry.key === 'Content-Security-Policy',
+    )?.value;
+    expect(policy).not.toContain('*');
+  });
+});

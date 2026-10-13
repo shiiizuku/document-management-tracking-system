@@ -28,7 +28,11 @@ export const securityHeaders = (
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    `connect-src 'self' ${api.origin} ${socket}`,
+    // Development follows the page's host (see `resolveApiUrl` in api.ts), so any host on the API's
+    // port is allowed; production names exactly the one configured origin.
+    `connect-src 'self' ${api.origin} ${socket}${
+      development ? ` ${api.protocol}//*:${api.port} ${socket.split('//')[0]}//*:${api.port}` : ''
+    }`,
     "frame-src 'self' blob:",
     'object-src blob:',
     "base-uri 'self'",

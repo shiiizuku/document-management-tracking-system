@@ -7,7 +7,26 @@
  * `upload()` or `download()` and handle `ApiError`; they never see a header, an envelope or an
  * object URL. Tests replace this module and nothing else.
  */
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4001/api/v1';
+const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4001/api/v1';
+
+/**
+ * In development the API is addressed by whatever host the page itself was opened on, so the app
+ * works at `localhost` and at a LAN address alike. The session cookie is host-scoped: a page on
+ * one host talking to an API on another never gets it back, and sign-in appears to do nothing.
+ * Production keeps the configured URL untouched.
+ */
+const resolveApiUrl = (configured: string): string => {
+  if (process.env.NODE_ENV !== 'development' || typeof window === 'undefined') return configured;
+  try {
+    const url = new URL(configured);
+    url.hostname = window.location.hostname;
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return configured;
+  }
+};
+
+export const API_URL = resolveApiUrl(configuredApiUrl);
 
 /** Methods the server treats as state-changing, and so require the CSRF header. */
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
