@@ -102,8 +102,7 @@ test('a signed letter is emailed to its recipient and the requester, then releas
   });
 
   await test.step('the sent mail unlocks release by Emailed', async () => {
-    // The delivery result is not pushed to an open page, so reload to read it.
-    await records.reload();
+    // The section polls while the message is queued, so the result arrives without a reload.
     const section = records.getByRole('region', { name: 'Release email' });
     await expect(section.getByText('The mail was sent.')).toBeVisible();
 

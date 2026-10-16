@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { FileText, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { mailAddressListSchema, updateMailDraftSchema } from '@dts/contracts';
@@ -31,6 +31,51 @@ const failureMessage = (error: unknown): string => {
     return 'Mail is not configured';
   return error instanceof Error ? error.message : 'Please try again.';
 };
+
+/**
+ * One address row's state: its chips, what is typed but not yet a chip, and why that text was
+ * refused. Held by the form rather than the field, so Send can commit text still being typed.
+ */
+interface AddressDraft {
+  values: string[];
+  text: string;
+  error: string | null;
+}
+
+const addressDraft = (values: string[]): AddressDraft => ({ values, text: '', error: null });
+
+/**
+ * Turns typed text into chips. Validation and normalisation are the contract's own
+ * (`mailAddressListSchema`), so a chip is exactly what the server will accept — trimmed,
+ * lower-cased and de-duplicated. What does not parse stays as text, with the reason.
+ */
+const commitText = (values: string[], raw: string): AddressDraft => {
+  const pieces = raw.split(/[\s,;]+/).filter((piece) => piece.length > 0);
+  if (pieces.length === 0) return addressDraft(values);
+  const valid: string[] = [];
+  const rejected: string[] = [];
+  for (const piece of pieces)
+    (mailAddressListSchema.safeParse([piece]).success ? valid : rejected).push(piece);
+
+  let next = values;
+  if (valid.length > 0) {
+    const merged = mailAddressListSchema.safeParse([...values, ...valid]);
+    if (!merged.success) return { values, text: raw, error: `At most ${ADDRESS_LIMIT} addresses` };
+    next = merged.data;
+  }
+  return {
+    values: next,
+    text: rejected.join(' '),
+    error: rejected.length === 0 ? null : `${rejected.join(', ')} is not a valid email address`,
+  };
+};
+
+/*
+ * Keeps focus where it is when a footer button is pressed. Without it the address input blurs on
+ * mouse-down, its pending text becomes a chip, the form re-renders, and the click can miss —
+ * a second click was needed. Send commits the pending text itself instead.
+ */
+const keepFocus = (event: MouseEvent) => event.preventDefault();
 
 /**
  * The compose form for a release email's draft: address chips, subject, a plain-text body and the
@@ -71,9 +116,9 @@ function ComposeForm({
   message,
   onClose,
 }: Readonly<{ documentId: string; message: MailMessage; onClose: () => void }>) {
-  const [to, setTo] = useState(message.to);
-  const [cc, setCc] = useState(message.cc);
-  const [bcc, setBcc] = useState(message.bcc);
+  const [to, setTo] = useState(() => addressDraft(message.to));
+  const [cc, setCc] = useState(() => addressDraft(message.cc));
+  const [bcc, setBcc] = useState(() => addressDraft(message.bcc));
   const [showCc, setShowCc] = useState(message.cc.length > 0);
   const [showBcc, setShowBcc] = useState(message.bcc.length > 0);
   const [subject, setSubject] = useState(message.subject);
@@ -86,11 +131,33 @@ function ComposeForm({
 
   const busy = update.isPending || send.isPending;
   const complete = subject.trim().length > 0 && body.trim().length > 0;
-  const hint =
-    to.length === 0 ? 'Add a recipient' : complete ? null : 'A subject and a message are required';
+  // Typed text counts: Send commits it before saving.
+  const hasRecipient = to.values.length > 0 || to.text.trim().length > 0;
+  const hint = !hasRecipient
+    ? 'Add a recipient'
+    : complete
+      ? null
+      : 'A subject and a message are required';
 
+  /*
+   * Commits what is still typed in each address field, then saves. `false` when any typed text is
+   * not an address: the field shows why and nothing is saved, rather than the text being dropped.
+   */
   const save = async (): Promise<boolean> => {
-    const parsed = updateMailDraftSchema.safeParse({ to, cc, bcc, subject, body });
+    const [nextTo, nextCc, nextBcc] = [to, cc, bcc].map((draft) =>
+      commitText(draft.values, draft.text),
+    ) as [AddressDraft, AddressDraft, AddressDraft];
+    setTo(nextTo);
+    setCc(nextCc);
+    setBcc(nextBcc);
+    if (nextTo.error !== null || nextCc.error !== null || nextBcc.error !== null) return false;
+    const parsed = updateMailDraftSchema.safeParse({
+      to: nextTo.values,
+      cc: nextCc.values,
+      bcc: nextBcc.values,
+      subject,
+      body,
+    });
     if (!parsed.success) {
       setFailure('Check the addresses, subject and message');
       return false;
@@ -127,7 +194,7 @@ function ComposeForm({
 
       <AddressField
         label="To"
-        values={to}
+        draft={to}
         onChange={setTo}
         toggles={
           <>
@@ -144,8 +211,8 @@ function ComposeForm({
           </>
         }
       />
-      {showCc ? <AddressField label="Cc" values={cc} onChange={setCc} /> : null}
-      {showBcc ? <AddressField label="Bcc" values={bcc} onChange={setBcc} /> : null}
+      {showCc ? <AddressField label="Cc" draft={cc} onChange={setCc} /> : null}
+      {showBcc ? <AddressField label="Bcc" draft={bcc} onChange={setBcc} /> : null}
 
       <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-2">
         <Label htmlFor={subjectId} className="text-xs text-muted-foreground">
@@ -196,6 +263,7 @@ function ComposeForm({
             variant="outline"
             size="xs"
             disabled={busy || !complete}
+            onMouseDown={keepFocus}
             onClick={() => void run(false)}
           >
             {update.isPending && !send.isPending ? <Loader2 className="animate-spin" /> : null}
@@ -204,7 +272,8 @@ function ComposeForm({
           <Button
             type="button"
             size="xs"
-            disabled={busy || to.length === 0 || !complete}
+            disabled={busy || !hasRecipient || !complete}
+            onMouseDown={keepFocus}
             onClick={() => void run(true)}
           >
             {busy ? <Loader2 className="animate-spin" /> : null}
@@ -218,48 +287,22 @@ function ComposeForm({
 
 /**
  * One address row: chips and a bare input. Enter, a comma, whitespace or leaving the field adds
- * what was typed; Backspace in an empty field removes the last chip.
- *
- * Validation and normalisation are the contract's own (`mailAddressListSchema`), so a chip is
- * exactly what the server will accept — trimmed, lower-cased and de-duplicated.
+ * what was typed; Backspace in an empty field removes the last chip. See {@link commitText}.
  */
 function AddressField({
   label,
-  values,
+  draft,
   onChange,
   toggles,
 }: Readonly<{
   label: string;
-  values: string[];
-  onChange: (values: string[]) => void;
+  draft: AddressDraft;
+  onChange: (draft: AddressDraft) => void;
   toggles?: ReactNode;
 }>) {
   const id = useId();
-  const [text, setText] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const commit = (raw: string) => {
-    const pieces = raw.split(/[\s,;]+/).filter((piece) => piece.length > 0);
-    if (pieces.length === 0) {
-      setText('');
-      return;
-    }
-    const valid: string[] = [];
-    const rejected: string[] = [];
-    for (const piece of pieces)
-      (mailAddressListSchema.safeParse([piece]).success ? valid : rejected).push(piece);
-
-    if (valid.length > 0) {
-      const merged = mailAddressListSchema.safeParse([...values, ...valid]);
-      if (!merged.success) {
-        setError(`At most ${ADDRESS_LIMIT} addresses`);
-        return;
-      }
-      onChange(merged.data);
-    }
-    setText(rejected.join(' '));
-    setError(rejected.length === 0 ? null : `${rejected.join(', ')} is not a valid email address`);
-  };
+  const { values, text, error } = draft;
+  const commit = (raw: string) => onChange(commitText(values, raw));
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
@@ -267,7 +310,7 @@ function AddressField({
       event.preventDefault();
       commit(text);
     } else if (event.key === 'Backspace' && text === '' && values.length > 0) {
-      onChange(values.slice(0, -1));
+      onChange({ ...draft, values: values.slice(0, -1) });
     }
   };
 
@@ -289,7 +332,9 @@ function AddressField({
                   type="button"
                   aria-label={`Remove ${address}`}
                   className="rounded text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  onClick={() => onChange(values.filter((value) => value !== address))}
+                  onClick={() =>
+                    onChange({ ...draft, values: values.filter((value) => value !== address) })
+                  }
                 >
                   <X className="size-3" aria-hidden />
                 </button>
@@ -306,7 +351,7 @@ function AddressField({
               onChange={(event) => {
                 const next = event.target.value;
                 if (/[\s,;]/.test(next)) commit(next);
-                else setText(next);
+                else onChange({ ...draft, text: next });
               }}
               onKeyDown={onKeyDown}
               onBlur={() => commit(text)}

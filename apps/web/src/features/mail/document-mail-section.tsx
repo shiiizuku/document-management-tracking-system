@@ -41,6 +41,20 @@ const STATUS_CLASS: Record<MailMessage['status'], string> = {
 
 const isSkipped = (message: MailMessage) => message.skippedAt !== null;
 
+/**
+ * The one row Resend is offered on: the newest Failed message, and only while no newer message is
+ * queued or sent — an older failure that a later send replaced is history, not a task. `rows` is
+ * newest first.
+ */
+const resendableId = (rows: readonly MailMessage[]): string | null => {
+  const index = rows.findIndex((row) => row.status === 'FAILED');
+  if (index === -1) return null;
+  const replaced = rows
+    .slice(0, index)
+    .some((row) => row.status === 'QUEUED' || row.status === 'SENT');
+  return replaced ? null : (rows[index]?.id ?? null);
+};
+
 /** To first, then a count for what is copied, so a long list stays on one line. */
 const recipientSummary = (message: MailMessage): string => {
   const parts = [message.to.join(', ') || 'No recipients'];
@@ -74,13 +88,12 @@ function MailMessages({ document }: Readonly<{ document: DocumentDetail }>) {
   const [skipping, setSkipping] = useState(false);
 
   const rows = [...(messages.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const forRelease = document.status === 'FOR_RELEASE';
   const sent = rows.some((row) => row.status === 'SENT');
   const skipped = rows.some(isSkipped);
-  const canSkip =
-    document.status === 'FOR_RELEASE' &&
-    !sent &&
-    !skipped &&
-    rows.some((row) => row.status === 'DRAFT');
+  // The server skips the newest unsent message, so a queued or failed one qualifies as a draft does.
+  const canSkip = forRelease && !sent && !skipped && rows.some((row) => row.status !== 'SENT');
+  const resendable = resendableId(rows);
 
   return (
     <section aria-label="Release email" className="space-y-1.5">
@@ -115,7 +128,10 @@ function MailMessages({ document }: Readonly<{ document: DocumentDetail }>) {
           The release email could not be loaded.
         </p>
       ) : rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No release email was drafted.</p>
+        <p className="text-xs text-muted-foreground">
+          No release email was drafted: there was no signed copy to attach when the document was
+          prepared for release. Emailed release is not blocked.
+        </p>
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border">
           {rows.map((row) => (
@@ -123,6 +139,8 @@ function MailMessages({ document }: Readonly<{ document: DocumentDetail }>) {
               key={row.id}
               documentId={document.id}
               message={row}
+              composable={forRelease}
+              resendable={row.id === resendable}
               onCompose={() => setComposing(row)}
             />
           ))}
@@ -143,11 +161,20 @@ function MailMessages({ document }: Readonly<{ document: DocumentDetail }>) {
 function MailRow({
   documentId,
   message,
+  composable,
+  resendable,
   onCompose,
-}: Readonly<{ documentId: string; message: MailMessage; onCompose: () => void }>) {
+}: Readonly<{
+  documentId: string;
+  message: MailMessage;
+  /** The server sends a draft only while the document is For release. */
+  composable: boolean;
+  resendable: boolean;
+  onCompose: () => void;
+}>) {
   const resend = useResendMail(documentId);
   const skipped = isSkipped(message);
-  const editable = message.status === 'DRAFT' && !skipped;
+  const editable = composable && message.status === 'DRAFT' && !skipped;
 
   return (
     <li className="flex items-center gap-2 px-2 py-1">
@@ -179,7 +206,7 @@ function MailRow({
           Compose
         </Button>
       ) : null}
-      {message.status === 'FAILED' ? (
+      {resendable ? (
         <Button
           type="button"
           variant="outline"

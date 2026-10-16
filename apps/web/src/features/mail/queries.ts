@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { MailMessage, SkipMailInput, UpdateMailDraftInput } from '@dts/contracts';
 import { invalidateDocument } from '@/features/documents/queries';
@@ -24,12 +25,38 @@ const settle = (client: QueryClient, documentId: string): void => {
   invalidateDocument(client, documentId);
 };
 
-/** The document's release emails, newest first as the screen sorts them. */
+/** How often the list is re-read while the worker still has a message to deliver. */
+const QUEUED_POLL_MS = 3000;
+
+/**
+ * The list's poll interval: every 3 s while any message is `QUEUED`, so the releaser sees it turn
+ * Sent or Failed without a reload (the worker's result is not pushed to the page), else none.
+ */
+export const mailRefetchInterval = (
+  messages: readonly MailMessage[] | undefined,
+): number | false =>
+  messages?.some((message) => message.status === 'QUEUED') === true ? QUEUED_POLL_MS : false;
+
+/**
+ * The document's release emails. Polls while one is queued; when a poll sees a status change —
+ * the worker delivering or failing it — the document is refreshed too, because a sent mail is
+ * what an Emailed release now accepts.
+ */
 export function useMailMessages(documentId: string) {
-  return useQuery({
+  const client = useQueryClient();
+  const query = useQuery({
     queryKey: mailKeys.list(documentId),
     queryFn: () => api<MailMessage[]>(basePath(documentId)),
+    refetchInterval: (current) => mailRefetchInterval(current.state.data),
   });
+  const statuses = query.data?.map((message) => `${message.id}:${message.status}`).join(',');
+  const seen = useRef(statuses);
+  useEffect(() => {
+    if (seen.current !== undefined && statuses !== undefined && seen.current !== statuses)
+      invalidateDocument(client, documentId);
+    seen.current = statuses;
+  }, [client, documentId, statuses]);
+  return query;
 }
 
 export function useUpdateMail(documentId: string) {

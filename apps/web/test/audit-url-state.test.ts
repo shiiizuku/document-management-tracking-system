@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AUDIT_PAGE_SIZE, auditActionLabel, auditQueryString } from '../src/features/audit/queries';
+import {
+  AUDIT_ACTION_GROUPS,
+  AUDIT_PAGE_SIZE,
+  auditActionLabel,
+  auditQueryString,
+} from '../src/features/audit/queries';
 import {
   auditFiltersToParams,
   hasActiveAuditFilters,
@@ -115,5 +120,15 @@ describe('action names', () => {
 
   it('renders an unrecognised name as itself rather than as nothing', () => {
     expect(auditActionLabel('somethingnew')).toBe('somethingnew');
+  });
+
+  it('offers the release mail actions as their own group', () => {
+    expect(AUDIT_ACTION_GROUPS.find((group) => group.label === 'Release mail')?.actions).toEqual([
+      'mail.drafted',
+      'mail.sent',
+      'mail.failed',
+      'mail.resent',
+      'mail.skipped',
+    ]);
   });
 });

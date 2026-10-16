@@ -69,6 +69,10 @@ export const invalidatedKeys = (spy: RecordedCalls): string[] =>
 export const calledWith = (mock: RecordedCalls, method: string, path: string): boolean =>
   mock.mock.calls.some((call) => call[0] === path && usedMethod(call[1]) === method.toUpperCase());
 
+/** Every recorded call as `METHOD path`, in call order: for asserting that one write came first. */
+export const calledRequests = (mock: RecordedCalls): string[] =>
+  mock.mock.calls.map((call) => `${usedMethod(call[1])} ${String(call[0])}`);
+
 /** The method a recorded `api()` call used, defaulting to GET as the transport itself does. */
 const usedMethod = (init: unknown): string => {
   const method =

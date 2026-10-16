@@ -5,7 +5,8 @@ import { DocumentDetailScreen } from '../src/features/documents/document-detail-
 import type * as ApiModule from '../src/lib/api';
 import { ApiError } from '../src/lib/api';
 import { documentDetail, mailMessage, sessionUser } from './fixtures';
-import { calledWith, requestBody } from './mock-api';
+import { mailRefetchInterval } from '../src/features/mail/queries';
+import { calledPaths, calledRequests, calledWith, requestBody } from './mock-api';
 import { renderWithQuery } from './query-harness';
 
 /** The release email on the detail screen: the section's gates, its rows, and the compose dialog. */
@@ -29,9 +30,12 @@ type Capabilities = ReturnType<typeof sessionUser>['capabilities'];
 const RELEASER: Capabilities = ['DOCUMENT_EDIT', 'DOCUMENT_RELEASE'];
 
 interface ServeOptions {
-  messages?: ReturnType<typeof mailMessage>[];
+  /** A function is read on every list request, so a test can change what the next poll sees. */
+  messages?: ReturnType<typeof mailMessage>[] | (() => ReturnType<typeof mailMessage>[]);
   capabilities?: Capabilities;
   failWith?: Error;
+  /** Fails the draft save only. */
+  failPatch?: Error;
 }
 
 const serve = (detail: ReturnType<typeof documentDetail>, options: ServeOptions = {}): void => {
@@ -39,8 +43,12 @@ const serve = (detail: ReturnType<typeof documentDetail>, options: ServeOptions 
     if (path === '/auth/me')
       return Promise.resolve(sessionUser({ capabilities: options.capabilities ?? RELEASER }));
     if (path === '/documents/doc-1' && init?.method === undefined) return Promise.resolve(detail);
-    if (path === '/documents/doc-1/mail' && init?.method === undefined)
-      return Promise.resolve(options.messages ?? []);
+    if (path === '/documents/doc-1/mail' && init?.method === undefined) {
+      const { messages = [] } = options;
+      return Promise.resolve(typeof messages === 'function' ? messages() : messages);
+    }
+    if (init?.method === 'PATCH' && options.failPatch !== undefined)
+      return Promise.reject(options.failPatch);
     if (path.startsWith('/documents/doc-1/mail/') && init?.method !== undefined)
       return options.failWith === undefined
         ? Promise.resolve(mailMessage({ status: 'QUEUED' }))
@@ -164,6 +172,56 @@ describe('Compose dialog', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  /** The writes the dialog made, in order. */
+  const writes = () => calledRequests(apiMock).filter((call) => !call.startsWith('GET '));
+
+  it('adds a typed address and sends on one click: one PATCH, then one POST', async () => {
+    const dialog = await open(mailMessage({ to: [] }));
+
+    await userEvent.type(dialog.getByLabelText('To'), 'Chief@Agency.gov.ph');
+    // Nothing committed the address yet, but Send counts what is typed.
+    await userEvent.click(dialog.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() =>
+      expect(writes()).toEqual([
+        'PATCH /documents/doc-1/mail/mail-1',
+        'POST /documents/doc-1/mail/mail-1/send',
+      ]),
+    );
+    expect(requestBody(apiMock, '/documents/doc-1/mail/mail-1', 'PATCH')).toMatchObject({
+      to: ['chief@agency.gov.ph'],
+    });
+  });
+
+  it('blocks Send and says why when the typed text is not an address', async () => {
+    const dialog = await open();
+
+    await userEvent.type(dialog.getByLabelText('To'), 'not-an-address');
+    await userEvent.click(dialog.getByRole('button', { name: 'Send' }));
+
+    expect(await dialog.findByText(/not-an-address is not a valid email/i)).toBeInTheDocument();
+    expect(writes()).toEqual([]);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('does not send when saving the draft fails', async () => {
+    await show(outgoing(), {
+      messages: [mailMessage()],
+      failPatch: new ApiError({
+        status: 409,
+        code: 'MAIL_NOT_DRAFT',
+        message: 'Only a draft can be edited',
+      }),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Compose' }));
+    const dialog = within(await screen.findByRole('dialog'));
+
+    await userEvent.click(dialog.getByRole('button', { name: 'Send' }));
+
+    expect(await dialog.findByText('Only a draft can be edited')).toBeInTheDocument();
+    expect(writes()).toEqual(['PATCH /documents/doc-1/mail/mail-1']);
+  });
+
   it('saves a draft without sending', async () => {
     const dialog = await open();
 
@@ -210,6 +268,52 @@ describe('Mail rows', () => {
     );
   });
 
+  it('offers Resend only on the newest failure, and not once a later message is out', async () => {
+    await show(outgoing(), {
+      messages: [
+        mailMessage({ id: 'first', status: 'FAILED', createdAt: '2026-09-01T00:00:00.000Z' }),
+        mailMessage({ id: 'second', status: 'FAILED', createdAt: '2026-09-02T00:00:00.000Z' }),
+      ],
+    });
+    const region = await screen.findByRole('region', { name: 'Release email' });
+    await within(region).findAllByText('Failed');
+    expect(within(region).getAllByRole('button', { name: 'Resend' })).toHaveLength(1);
+    await userEvent.click(within(region).getByRole('button', { name: 'Resend' }));
+    await waitFor(() =>
+      expect(calledWith(apiMock, 'POST', '/documents/doc-1/mail/second/resend')).toBe(true),
+    );
+  });
+
+  it('offers no Resend on a failure that a later sent message replaced', async () => {
+    await show(outgoing(), {
+      messages: [
+        mailMessage({ id: 'old', status: 'FAILED', createdAt: '2026-09-01T00:00:00.000Z' }),
+        mailMessage({
+          id: 'new',
+          status: 'SENT',
+          sentAt: '2026-09-02T01:00:00.000Z',
+          createdAt: '2026-09-02T00:00:00.000Z',
+        }),
+      ],
+    });
+    expect(await screen.findByText('Failed')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resend' })).not.toBeInTheDocument();
+  });
+
+  it('offers no Compose on a draft once the document is no longer for release', async () => {
+    await show(outgoing({ status: 'RELEASED' }), { messages: [mailMessage()] });
+    expect(await screen.findByText('Draft')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Compose' })).not.toBeInTheDocument();
+  });
+
+  it('says why there is no message and that Emailed release is not blocked', async () => {
+    await show(outgoing(), { messages: [] });
+    expect(await screen.findByText(/no release email was drafted/i)).toHaveTextContent(
+      /emailed release is not blocked/i,
+    );
+    expect(screen.queryByRole('button', { name: 'Skip mail' })).not.toBeInTheDocument();
+  });
+
   it('lists the newest message first', async () => {
     await show(outgoing(), {
       messages: [
@@ -254,6 +358,14 @@ describe('Skip mail', () => {
     });
   });
 
+  it.each(['QUEUED', 'FAILED'] as const)(
+    'is offered once Send left a %s message',
+    async (status) => {
+      await show(outgoing(), { messages: [mailMessage({ status })] });
+      expect(await screen.findByRole('button', { name: 'Skip mail' })).toBeInTheDocument();
+    },
+  );
+
   it('is withdrawn once a message is sent, and the section says so', async () => {
     await show(outgoing(), {
       messages: [mailMessage({ status: 'SENT', sentAt: '2026-09-03T08:00:00.000Z' })],
@@ -272,4 +384,26 @@ describe('Skip mail', () => {
     expect(screen.queryByRole('button', { name: 'Skip mail' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Compose' })).not.toBeInTheDocument();
   });
+});
+
+describe('Delivery status', () => {
+  it('polls every 3 s while a message is queued, and not otherwise', () => {
+    expect(mailRefetchInterval([mailMessage({ status: 'QUEUED' })])).toBe(3000);
+    expect(mailRefetchInterval([mailMessage({ status: 'SENT' }), mailMessage()])).toBe(false);
+    expect(mailRefetchInterval(undefined)).toBe(false);
+  });
+
+  it('shows a queued message turning sent without a reload, and refreshes the document', async () => {
+    let status: ReturnType<typeof mailMessage>['status'] = 'QUEUED';
+    await show(outgoing(), { messages: () => [mailMessage({ status })] });
+    expect(await screen.findByText('Queued')).toBeInTheDocument();
+    const documentReads = () =>
+      calledPaths(apiMock).filter((path) => path === '/documents/doc-1').length;
+    const before = documentReads();
+
+    status = 'SENT';
+
+    expect(await screen.findByText(/mail was sent/i, {}, { timeout: 5000 })).toBeInTheDocument();
+    await waitFor(() => expect(documentReads()).toBeGreaterThan(before));
+  }, 10_000);
 });
