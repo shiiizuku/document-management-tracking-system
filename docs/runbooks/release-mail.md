@@ -5,8 +5,24 @@ PDF. The releaser reviews it in the **Release email** section of the document, s
 then release the document by **Emailed**. The API queues the send; the **worker** delivers it over
 SMTP, and the section shows Queued turning Sent or Failed without a reload. Releasing by Emailed
 requires a message that is **Sent**, or one that was **skipped** with a remark. A document with no
-message at all (prepared with no signed copy, or already For release when release mail was
-deployed) is not held back: Emailed release is allowed and the section says so.
+message at all (prepared with no signed PDF, or already For release when release mail was
+deployed) is not held back: Emailed release is allowed and the section says so. A signed file that
+is not a PDF (a Word file or an image) drafts nothing.
+
+## Send sends what the releaser reviewed
+
+Every message carries a `revision`, a hash of its stored To, Cc, Bcc, subject and body. **Send**
+saves the dialog's edits and then sends with the revision that save returned. If someone else saved
+the same draft in between, the send is refused with 409 `MAIL_CHANGED` ("This message was changed
+since you opened it; review it again"), nothing is queued, and the dialog reloads the stored draft
+for review. Press Send again once it reads right. A script calling the API must send
+`{ "revision": "<revision>" }`, taken from its own `PATCH` answer or a fresh `GET`.
+
+A **skipped** draft is locked: editing or sending it is refused with 409 `MAIL_SKIPPED`, so a
+Compose dialog left open elsewhere cannot mail a message the releaser chose not to send.
+
+Every mail mutation (edit, send, resend, skip) also needs the session's CSRF header, which the web
+app sends itself; a hand-made request without `X-CSRF-Token` gets 403.
 
 ## Configure SMTP
 
@@ -69,6 +85,17 @@ Errors are scrubbed so recipient addresses stay out of logs. Typical causes:
 | `Mail is not configured`                           | The worker has no `SMTP_HOST`; fix and restart the worker                                    |
 | `Attachment has not been scanned clean`            | The signed file is not `CLEAN`; see [scanner down](scanner-down.md). A retry cannot fix it   |
 | `Attachment bytes are missing from storage`        | Restore from backup; not a mail fault                                                        |
+| `The mail server rejected N of M recipients`       | The relay refused some addresses and took the rest. Not retried; see below                   |
+| `The signed file is not a PDF`                     | A row drafted before the PDF check names a Word file or image. Skip mail or use another method |
+| `The mail server accepted the message, …`          | The database failed after SMTP took it, on the last attempt. It probably arrived             |
+
+**Partial rejection.** When the relay refuses some recipients but accepts others, the message is
+marked **Failed** at once with the counts only (no addresses, here or in the `mail.failed` audit
+row, which also carries `rejected`). It is not retried, because a retry would mail the accepted
+recipients again. A Failed row cannot be edited and **Resend** copies its recipients unchanged, so a
+resend mails the accepted recipients twice and is likely refused again. Find which address was
+refused from the relay's own log, reach that recipient another way, and if the document still has to
+go out by Emailed, **Skip mail** with a remark saying so.
 
 ### Retry window
 
@@ -76,8 +103,12 @@ A transport error (or a database error while delivering) is retried by the queue
 exponential backoff from 30 seconds** (30 s, 1, 2, 4, 8, 16 and 32 minutes between them), so about
 **an hour** in total. A relay outage shorter than that heals by itself; a longer one marks the
 message **Failed**, and it does not keep trying. Fix the cause, then **Resend**. Errors that
-retrying cannot fix (unscanned attachment, mail unconfigured) fail on the first attempt. Other
-outbox events keep the queue default (5 attempts from 1 second).
+retrying cannot fix (unscanned or non-PDF attachment, mail unconfigured, some recipients rejected)
+fail on the first attempt. Other outbox events keep the queue default (5 attempts from 1 second).
+
+The **Sent** or **Failed** state commits in one transaction with its `mail.sent` / `mail.failed`
+audit row. If the audit write fails, the message stays **Queued** and the next attempt finishes the
+job (for a delivered message that means sending it again; see the warning under Resend).
 
 ## Resend
 
@@ -118,6 +149,19 @@ With `SMTP_HOST` empty, Send is refused ("Outgoing mail is not configured on thi
 row stays a Draft, which Skip mail also accepts.
 
 Do not skip mail to avoid a failure you could fix with Resend.
+
+## Known limitations
+
+- **Duplicates over losses.** If SMTP takes a message and the database then fails, the retry
+  sends it again. On the last attempt the row is marked Failed with "The mail server accepted the
+  message, but recording the delivery failed"; check with the recipient before resending. If the
+  database is down for the whole last attempt, nothing can be recorded and the row stays Queued
+  until it is resent or skipped.
+- **Every recipient refused is retried.** The relay then rejects the message as a whole, which
+  looks like any other transport error, so it fails only after the hour of retries.
+- **Partial rejection is final**, and the refused addresses cannot be corrected on the row (above).
+- **The revision check compares `updated_at` at millisecond precision.** Two saves of one draft in
+  the same millisecond as a Send's read could slip past it; not expected at pilot volume.
 
 ## Mailpit in development
 

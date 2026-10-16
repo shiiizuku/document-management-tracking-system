@@ -60,13 +60,21 @@ Resend creates a new row copied from the failed or sent one, so history is never
   Subject: `<reference number>: <title>`. Body from a template in `office_settings` (editable by
   administrators; default text shipped). Attachment: the signed file version recorded by the document's
   `signature_events` row. If it is missing, no draft is created and the screen says why.
+  _Amended:_ likewise when that version is not `application/pdf` (the workflow does not require a
+  PDF at SIGN or PREPARE_RELEASE); the worker also fails a non-PDF with "The signed file is not a PDF".
 - **Compose:** `GET/PATCH /documents/:id/mail/:mailId` edits `DRAFT` only. `POST .../send` validates
   addresses (zod email, at least one **To**), moves to `QUEUED`, writes the outbox event
-  `mail.send:<mailId>`.
+  `mail.send:<mailId>`. _Amended:_ each message exposes a `revision` (hash of To, Cc, Bcc, subject
+  and body; no column); send takes `{ revision }` and answers 409 `MAIL_CHANGED` when the stored
+  draft no longer matches, and `markQueued` is conditional on the `updated_at` read in the same
+  call. A skipped draft is locked: edit and send answer 409 `MAIL_SKIPPED`. The mutations sit
+  behind `CsrfGuard`.
 - **Delivery:** the worker loads the PDF from storage, sends through the `MailSender` port, sets
   `SENT` with `smtp_message_id`, or `FAILED` after 8 attempts with exponential backoff from 30 s
   (about an hour; amended from the queue default of 5 from 1 s). Attachment must be clean-scanned;
-  otherwise `FAILED` with that reason.
+  otherwise `FAILED` with that reason. _Amended:_ `SENT`/`FAILED` commit in one transaction with
+  their audit row; a partial SMTP rejection (`info.rejected` non-empty) is `FAILED` at once with
+  counts only and is not retried.
 - **Release interplay:** `RELEASE` with an "Emailed" method requires a `SENT` message for the
   document, or an explicit skip with a remark (`mail.skipped`, audited). Other methods ignore mail.
   This guard lives in `WorkflowService` beside the other release preconditions. _Amended:_ the guard
