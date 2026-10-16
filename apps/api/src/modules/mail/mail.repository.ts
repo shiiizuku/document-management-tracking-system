@@ -204,8 +204,12 @@ export class MailRepository {
   }
 
   /** `QUEUED` to `SENT`; `null` when the message was no longer queued. */
-  async markSent(mailId: string, smtpMessageId: string): Promise<MailMessageRow | null> {
-    const [row] = await this.database
+  async markSent(
+    mailId: string,
+    smtpMessageId: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<MailMessageRow | null> {
+    const [row] = await executor
       .update(mailMessages)
       .set({ status: 'SENT', smtpMessageId, sentAt: new Date() })
       .where(and(eq(mailMessages.id, mailId), eq(mailMessages.status, 'QUEUED')))
@@ -218,8 +222,9 @@ export class MailRepository {
     mailId: string,
     attempts: number,
     lastError: string,
+    executor: DatabaseExecutor = this.database,
   ): Promise<MailMessageRow | null> {
-    const [row] = await this.database
+    const [row] = await executor
       .update(mailMessages)
       .set({ status: 'FAILED', attempts, lastError })
       .where(and(eq(mailMessages.id, mailId), eq(mailMessages.status, 'QUEUED')))

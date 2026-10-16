@@ -86,8 +86,9 @@ export class MailService {
 
   /**
    * Drafts the document's release email, or returns the draft it already has. `null` when the
-   * document has no signed file version to attach: there is nothing to send, and the screen says
-   * why. Runs on the caller's transaction so the draft and its audit row commit with the release.
+   * document has no signed file version to attach, or the signed version is not a PDF: there is
+   * nothing to send, and the screen says why. Runs on the caller's transaction so the draft and
+   * its audit row commit with the release.
    */
   async createDraft(
     documentId: string,
@@ -99,6 +100,13 @@ export class MailService {
     const signatures = await this.documents.listSignatures(documentId, tx);
     const signed = signatures.at(-1);
     if (signed === undefined) return null;
+    /*
+     * Release mail sends the signed copy as a PDF, but neither SIGN nor PREPARE_RELEASE requires
+     * one, so a signature can name a Word file or an image. No draft then; the worker refuses a
+     * non-PDF too, for a row that names one anyway.
+     */
+    const version = await this.fileVersions.findVersionById(signed.fileVersionId, tx);
+    if (version?.mediaType !== 'application/pdf') return null;
 
     /*
      * Capped at the contract's 20 so the stored draft is one the PATCH schema accepts. Addresses

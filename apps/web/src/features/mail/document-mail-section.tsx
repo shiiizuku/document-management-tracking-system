@@ -129,7 +129,7 @@ function MailMessages({ document }: Readonly<{ document: DocumentDetail }>) {
         </p>
       ) : rows.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No release email was drafted: there was no signed copy to attach when the document was
+          No release email was drafted: there was no signed PDF to attach when the document was
           prepared for release. Emailed release is not blocked.
         </p>
       ) : (

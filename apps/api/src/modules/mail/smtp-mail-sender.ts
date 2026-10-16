@@ -1,5 +1,5 @@
 import nodemailer, { type Transporter } from 'nodemailer';
-import { MailSender, type OutgoingMail } from './mail-sender.js';
+import { MailSender, type OutgoingMail, type SentMail } from './mail-sender.js';
 
 export type SmtpConfig = {
   host: string;
@@ -26,7 +26,7 @@ export class SmtpMailSender extends MailSender {
       });
   }
 
-  async send(message: OutgoingMail): Promise<{ messageId: string }> {
+  async send(message: OutgoingMail): Promise<SentMail> {
     const info = (await this.transport.sendMail({
       from: message.from,
       to: message.to,
@@ -41,7 +41,11 @@ export class SmtpMailSender extends MailSender {
           contentType: message.attachment.contentType,
         },
       ],
-    })) as { messageId: string };
-    return { messageId: info.messageId };
+    })) as { messageId: string; rejected?: (string | { address: string })[] };
+    // Nodemailer resolves once any recipient is accepted and lists the refused ones here.
+    const rejected = (info.rejected ?? []).map((entry) =>
+      typeof entry === 'string' ? entry : entry.address,
+    );
+    return { messageId: info.messageId, rejected };
   }
 }

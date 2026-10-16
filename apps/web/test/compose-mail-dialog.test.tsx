@@ -342,9 +342,10 @@ describe('Mail rows', () => {
 
   it('says why there is no message and that Emailed release is not blocked', async () => {
     await show(outgoing(), { messages: [] });
-    expect(await screen.findByText(/no release email was drafted/i)).toHaveTextContent(
-      /emailed release is not blocked/i,
-    );
+    const notice = await screen.findByText(/no release email was drafted/i);
+    expect(notice).toHaveTextContent(/emailed release is not blocked/i);
+    // A signed Word file or image drafts nothing either, so the reason names the PDF.
+    expect(notice).toHaveTextContent(/no signed PDF/i);
     expect(screen.queryByRole('button', { name: 'Skip mail' })).not.toBeInTheDocument();
   });
 

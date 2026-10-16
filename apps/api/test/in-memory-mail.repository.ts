@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { MailStatus } from '@dts/contracts';
+import type { DatabaseExecutor } from '../src/database/executor.js';
 import type {
   MailDraftPatch,
   MailMessageRow,
@@ -141,6 +142,20 @@ export class InMemoryMailRepository {
       sent: rows.some((row) => row.status === 'SENT'),
       skipped: rows.some((row) => row.skippedAt !== null),
     });
+  }
+
+  /**
+   * Stands in for `db.transaction` in the processor suite: the rows are restored when `work`
+   * throws, as a rolled-back transaction leaves them. The executor handed to `work` is a token.
+   */
+  async transaction<T>(work: (executor: DatabaseExecutor) => Promise<T>): Promise<T> {
+    const snapshot = this.rows.map((row) => this.copy(row));
+    try {
+      return await work({} as DatabaseExecutor);
+    } catch (error) {
+      this.rows.splice(0, this.rows.length, ...snapshot);
+      throw error;
+    }
   }
 
   /** Stands in for the worker, which owns the QUEUED → SENT/FAILED transition. */

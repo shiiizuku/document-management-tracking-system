@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { DatabaseExecutor } from '../src/database/executor.js';
 import { deliverMail, type MailDeliveryDeps } from '../src/modules/mail/mail.processor.js';
 import type { FileVersionRow } from '../src/modules/files/file-versions.repository.js';
 import { InMemoryMailRepository } from './in-memory-mail.repository.js';
@@ -34,9 +35,12 @@ const setup = async (
     sentById: 'u1',
   });
   const sender = new InMemoryMailSender();
-  const write = vi.fn(() => Promise.resolve());
+  const write = vi.fn<(entry: unknown, executor?: DatabaseExecutor) => Promise<void>>(() =>
+    Promise.resolve(),
+  );
   const deps: MailDeliveryDeps = {
     mail,
+    transaction: (work) => mail.transaction(work),
     versions: {
       findVersionById: vi.fn(() =>
         Promise.resolve('version' in opts ? (opts.version ?? null) : version()),
@@ -81,6 +85,7 @@ describe('deliverMail', () => {
         targetId: 'd1',
         summary: { mailId: h.id, recipients: 3 },
       }),
+      expect.anything(),
     );
   });
 
@@ -127,14 +132,17 @@ describe('deliverMail', () => {
     expect(row.status).toBe('FAILED');
     expect(row.attempts).toBe(5);
     expect(row.lastError).toHaveLength(500);
-    expect(h.write).toHaveBeenCalledWith({
-      actorId: null,
-      action: 'mail.failed',
-      targetType: 'document',
-      targetId: 'd1',
-      outcome: 'FAILURE',
-      summary: { mailId: h.id, attempts: 5, recipients: 3 },
-    });
+    expect(h.write).toHaveBeenCalledWith(
+      {
+        actorId: null,
+        action: 'mail.failed',
+        targetType: 'document',
+        targetId: 'd1',
+        outcome: 'FAILURE',
+        summary: { mailId: h.id, attempts: 5, recipients: 3 },
+      },
+      expect.anything(),
+    );
   });
 
   it.each(['message', 'file version'] as const)(
@@ -196,6 +204,7 @@ describe('deliverMail', () => {
     ['attachment is infected', { version: version({ scanStatus: 'INFECTED' }) }],
     ['bytes are missing', { bytes: null }],
     ['file version is missing', { version: null }],
+    ['signed file is not a PDF', { version: version({ mediaType: 'application/msword' }) }],
   ])('fails immediately without sending when the %s', async (_name, opts) => {
     const h = await setup(opts);
     await expect(deliverMail(h.deps, h.id, { made: 1, max: 5 })).resolves.toBeUndefined();
@@ -210,6 +219,95 @@ describe('deliverMail', () => {
         targetId: 'd1',
         summary: { mailId: h.id, attempts: 1, recipients: 3 },
       }),
+      expect.anything(),
+    );
+  });
+
+  it('says the signed file is not a PDF when its media type is anything else', async () => {
+    const h = await setup({
+      version: version({
+        mediaType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    });
+    await deliverMail(h.deps, h.id, { made: 1, max: 5 });
+    expect((await stored(h.mail, h.id)).lastError).toBe('The signed file is not a PDF');
+    expect(h.sender.sent).toHaveLength(0);
+  });
+
+  it('fails, without retrying, a message the server accepted for only some recipients', async () => {
+    const h = await setup();
+    h.sender.rejectAddresses = ['b@example.test'];
+
+    await expect(deliverMail(h.deps, h.id, { made: 1, max: 5 })).resolves.toBeUndefined();
+
+    const row = await stored(h.mail, h.id);
+    expect(row.status).toBe('FAILED');
+    expect(row.sentAt).toBeNull();
+    expect(row.lastError).toBe('The mail server rejected 1 of 3 recipients');
+    expect(h.write).toHaveBeenCalledTimes(1);
+    expect(h.write).toHaveBeenCalledWith(
+      {
+        actorId: null,
+        action: 'mail.failed',
+        targetType: 'document',
+        targetId: 'd1',
+        outcome: 'FAILURE',
+        summary: { mailId: h.id, attempts: 1, recipients: 3, rejected: 1 },
+      },
+      expect.anything(),
+    );
+    // Counts only: neither the trail nor the releaser's reason names an address.
+    expect(JSON.stringify(h.write.mock.calls)).not.toContain('@example.test');
+    expect(row.lastError).not.toContain('@');
+  });
+
+  it('commits SENT with its audit row: a failed audit leaves it QUEUED for the retry', async () => {
+    const h = await setup();
+    h.write.mockRejectedValueOnce(new Error('audit insert failed'));
+
+    await expect(deliverMail(h.deps, h.id, { made: 1, max: 5 })).rejects.toThrow(
+      `mail ${h.id} delivery attempt 1/5 failed`,
+    );
+    expect((await stored(h.mail, h.id)).status).toBe('QUEUED');
+
+    await deliverMail(h.deps, h.id, { made: 2, max: 5 });
+    expect((await stored(h.mail, h.id)).status).toBe('SENT');
+    const sentAudits = h.write.mock.calls.filter(
+      ([entry]) => (entry as { action: string }).action === 'mail.sent',
+    );
+    // The first was rolled back with its row; the second committed with it, on the transaction.
+    expect(sentAudits).toHaveLength(2);
+    expect(sentAudits[1]?.[1]).toBeDefined();
+  });
+
+  it('commits FAILED with its audit row: a failed audit leaves it QUEUED for the retry', async () => {
+    const h = await setup({ version: null });
+    h.write.mockRejectedValueOnce(new Error('audit insert failed'));
+
+    await expect(deliverMail(h.deps, h.id, { made: 1, max: 5 })).rejects.toThrow(
+      `mail ${h.id} delivery attempt 1/5 failed`,
+    );
+    expect((await stored(h.mail, h.id)).status).toBe('QUEUED');
+
+    await expect(deliverMail(h.deps, h.id, { made: 2, max: 5 })).resolves.toBeUndefined();
+    const row = await stored(h.mail, h.id);
+    expect(row.status).toBe('FAILED');
+    expect(row.lastError).toBe('Attachment version not found');
+    expect(h.write).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: 'mail.failed' }),
+      expect.anything(),
+    );
+  });
+
+  it('says the mail may have arrived when the last attempt sent it but could not record it', async () => {
+    const h = await setup();
+    h.write.mockRejectedValueOnce(new Error('audit insert failed'));
+
+    await expect(deliverMail(h.deps, h.id, { made: 5, max: 5 })).resolves.toBeUndefined();
+    const row = await stored(h.mail, h.id);
+    expect(row.status).toBe('FAILED');
+    expect(row.lastError).toBe(
+      'The mail server accepted the message, but recording the delivery failed',
     );
   });
 

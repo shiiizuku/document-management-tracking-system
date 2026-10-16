@@ -144,7 +144,11 @@ describe('REST release mail', () => {
   };
 
   /** Records a signature on a fresh PDF version, as `SIGN` would. */
-  const sign = async (documentId: string, originalName = 'signed-letter.pdf'): Promise<string> => {
+  const sign = async (
+    documentId: string,
+    originalName = 'signed-letter.pdf',
+    mediaType = 'application/pdf',
+  ): Promise<string> => {
     const files = app.get(FileVersionsRepository);
     const record = await files.createRecord({
       documentId,
@@ -158,7 +162,7 @@ describe('REST release mail', () => {
       versionNumber: 1,
       objectKey: `documents/${documentId}/${versionId}`,
       originalName,
-      mediaType: 'application/pdf',
+      mediaType,
       sizeBytes: 1024,
       checksumSha256: 'a'.repeat(64),
       uploaderId: RECORDS_ID,
@@ -269,6 +273,24 @@ describe('REST release mail', () => {
   it('drafts nothing when the document has no signed version', async () => {
     const records = await asRecords();
     const outgoing = await register(records, { direction: 'OUTGOING', title: 'Unsigned' });
+
+    expect(await mail().createDraft(outgoing.id, RECORDS_ID, tx)).toBeNull();
+    expect(await list(records, outgoing.id)).toEqual([]);
+    expect(audit().entries.some((entry) => entry.action === 'mail.drafted')).toBe(false);
+  });
+
+  it('drafts nothing when the signed file is not a PDF', async () => {
+    const records = await asRecords();
+    const outgoing = await register(records, {
+      direction: 'OUTGOING',
+      title: 'Signed as Word',
+      recipients: [{ name: 'Agency', emails: ['clerk@agency.gov'] }],
+    });
+    await sign(
+      outgoing.id,
+      'signed.docx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
 
     expect(await mail().createDraft(outgoing.id, RECORDS_ID, tx)).toBeNull();
     expect(await list(records, outgoing.id)).toEqual([]);

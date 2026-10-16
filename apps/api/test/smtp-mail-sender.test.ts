@@ -53,4 +53,31 @@ describe('SmtpMailSender', () => {
     expect(rendered.text).toBe('Attached.');
     expect(rendered.attachments.map((a) => a.filename)).toEqual(['DOC-1.pdf']);
   });
+
+  it.each([
+    ['strings', ['a@y.ph']],
+    ['addresses', [{ name: 'A', address: 'a@y.ph' }]],
+  ])('reports the recipients the server rejected, given as %s', async (_shape, rejected) => {
+    const transport = {
+      sendMail: () => Promise.resolve({ messageId: '<m@test>', accepted: ['c@y.ph'], rejected }),
+    } as unknown as Transporter;
+    const sender = new SmtpMailSender(
+      { host: 'localhost', port: 25, secure: false, from: 'dts@example.ph' },
+      transport,
+    );
+
+    expect(await sender.send(mail)).toEqual({ messageId: '<m@test>', rejected: ['a@y.ph'] });
+  });
+
+  it('reports no rejected recipients when the transport lists none', async () => {
+    const transport = {
+      sendMail: () => Promise.resolve({ messageId: '<m@test>' }),
+    } as unknown as Transporter;
+    const sender = new SmtpMailSender(
+      { host: 'localhost', port: 25, secure: false, from: 'dts@example.ph' },
+      transport,
+    );
+
+    expect((await sender.send(mail)).rejected).toEqual([]);
+  });
 });

@@ -66,6 +66,8 @@ const mailSender =
     : null;
 const mailDeps: MailDeliveryDeps = {
   mail: new MailRepository(db),
+  // A delivery state and its audit row commit together.
+  transaction: (work) => db.transaction(work),
   versions,
   storage,
   sender: mailSender,
