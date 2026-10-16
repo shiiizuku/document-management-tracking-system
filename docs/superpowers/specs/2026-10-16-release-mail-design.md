@@ -64,8 +64,8 @@ Resend creates a new row copied from the failed or sent one, so history is never
   addresses (zod email, at least one **To**), moves to `QUEUED`, writes the outbox event
   `mail.send:<mailId>`.
 - **Delivery:** the worker loads the PDF from storage, sends through the `MailSender` port, sets
-  `SENT` with `smtp_message_id`, or `FAILED` after 5 attempts with exponential backoff
-  (30 s, 2 m, 10 m, 1 h). Attachment must be clean-scanned; otherwise `FAILED` with that reason.
+  `SENT` with `smtp_message_id`, or `FAILED` after the queue's 5 attempts with exponential
+  backoff. Attachment must be clean-scanned; otherwise `FAILED` with that reason.
 - **Release interplay:** `RELEASE` with an "Emailed" method requires a `SENT` message for the
   document, or an explicit skip with a remark (`MAIL_SKIPPED`, audited). Other methods ignore mail.
   This guard lives in `WorkflowService` beside the other release preconditions.
@@ -95,7 +95,7 @@ Send is idempotent through the outbox key.
 ## Testing
 
 Unit: recipient resolution and de-duplication (outgoing recipients plus linked incoming contact),
-template rendering, retry schedule. API: draft on `PREPARE_RELEASE`, send, resend, release guard and
+template rendering, delivery retry and failure. API: draft on `PREPARE_RELEASE`, send, resend, release guard and
 skip, permission and confidential cases, using an in-memory `MailSender`. Web: Compose dialog
 validation and disabled state when mail is unconfigured. E2E: full release against Mailpit asserting
 the message and PDF attachment arrive.

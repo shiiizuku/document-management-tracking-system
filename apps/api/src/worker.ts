@@ -14,6 +14,9 @@ import { ClamAvScanner } from './modules/files/clamav-scanner.js';
 import { FileVersionsRepository } from './modules/files/file-versions.repository.js';
 import { MinioStorageAdapter } from './modules/files/minio-storage.adapter.js';
 import { scanUploadedVersion } from './modules/files/scan-consumer.js';
+import { SmtpMailSender } from './modules/mail/smtp-mail-sender.js';
+import { MailRepository } from './modules/mail/mail.repository.js';
+import { deliverMail, type MailDeliveryDeps } from './modules/mail/mail.processor.js';
 import { RealtimePublisher } from './modules/realtime/realtime.publisher.js';
 import { realtimeMessagesForEvent } from './modules/realtime/realtime.events.js';
 
@@ -44,6 +47,33 @@ const scanLogger = {
   warn: (message: string) => logger.warn(message, 'ScanConsumer'),
 };
 
+// Release mail: a `mail.send` event delivers the signed PDF over SMTP. The sender is built once,
+// and only when `SMTP_HOST` is set; otherwise queued messages fail with a clear reason.
+const mailLogger = {
+  log: (message: string) => logger.log(message, 'MailProcessor'),
+  warn: (message: string) => logger.warn(message, 'MailProcessor'),
+};
+const mailSender =
+  environment.SMTP_HOST !== undefined && environment.MAIL_FROM !== undefined
+    ? new SmtpMailSender({
+        host: environment.SMTP_HOST,
+        port: environment.SMTP_PORT,
+        secure: environment.SMTP_SECURE,
+        user: environment.SMTP_USER,
+        pass: environment.SMTP_PASS,
+        from: environment.MAIL_FROM,
+      })
+    : null;
+const mailDeps: MailDeliveryDeps = {
+  mail: new MailRepository(db),
+  versions,
+  storage,
+  sender: mailSender,
+  from: environment.MAIL_FROM ?? '',
+  audit: auditWriter,
+  logger: mailLogger,
+};
+
 // A small connection dedicated to the readiness ping, kept separate from BullMQ's own
 // connections so a probe never contends with queue traffic. `lazyConnect` defers the socket
 // until the first ping; one retry per request means a down Redis fails fast instead of hanging.
@@ -70,6 +100,16 @@ const worker = createOutboxWorker(environment.REDIS_URL, async (job) => {
       { versions, storage, scanner, audit: auditWriter, logger: scanLogger },
       versionId,
     );
+    return;
+  }
+  if (job.data.eventType === 'mail.send') {
+    const mailId = job.data.payload.mailId;
+    if (typeof mailId !== 'string')
+      throw new Error(`mail.send event ${job.data.outboxId} has no mailId`);
+    await deliverMail(mailDeps, mailId, {
+      made: job.attemptsMade + 1,
+      max: job.opts.attempts ?? 1,
+    });
     return;
   }
   logger.log(`delivered ${job.data.eventType} for ${job.data.aggregateId}`, 'OutboxConsumer');

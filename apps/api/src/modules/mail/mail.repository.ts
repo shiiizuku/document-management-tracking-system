@@ -133,6 +133,47 @@ export class MailRepository {
     return row ?? null;
   }
 
+  /** One message by id, for the worker, which has no document in hand. */
+  async findById(mailId: string): Promise<MailMessageRow | null> {
+    const [row] = await this.database
+      .select()
+      .from(mailMessages)
+      .where(eq(mailMessages.id, mailId));
+    return row ?? null;
+  }
+
+  /** A failed delivery attempt that will be retried: the message stays `QUEUED`. */
+  async recordAttempt(mailId: string, attempts: number, lastError: string): Promise<void> {
+    await this.database
+      .update(mailMessages)
+      .set({ attempts, lastError })
+      .where(and(eq(mailMessages.id, mailId), eq(mailMessages.status, 'QUEUED')));
+  }
+
+  /** `QUEUED` to `SENT`; `null` when the message was no longer queued. */
+  async markSent(mailId: string, smtpMessageId: string): Promise<MailMessageRow | null> {
+    const [row] = await this.database
+      .update(mailMessages)
+      .set({ status: 'SENT', smtpMessageId, sentAt: new Date() })
+      .where(and(eq(mailMessages.id, mailId), eq(mailMessages.status, 'QUEUED')))
+      .returning();
+    return row ?? null;
+  }
+
+  /** `QUEUED` to `FAILED`; `null` when the message was no longer queued. */
+  async markFailed(
+    mailId: string,
+    attempts: number,
+    lastError: string,
+  ): Promise<MailMessageRow | null> {
+    const [row] = await this.database
+      .update(mailMessages)
+      .set({ status: 'FAILED', attempts, lastError })
+      .where(and(eq(mailMessages.id, mailId), eq(mailMessages.status, 'QUEUED')))
+      .returning();
+    return row ?? null;
+  }
+
   async hasStatus(documentId: string, status: MailStatus): Promise<boolean> {
     const [row] = await this.database
       .select({ id: mailMessages.id })

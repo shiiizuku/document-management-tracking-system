@@ -89,6 +89,35 @@ export class InMemoryMailRepository {
     });
   }
 
+  findById(mailId: string): Promise<MailMessageRow | null> {
+    const row = this.rows.find((r) => r.id === mailId);
+    return Promise.resolve(row ? this.copy(row) : null);
+  }
+
+  recordAttempt(mailId: string, attempts: number, lastError: string): Promise<void> {
+    const row = this.rows.find((r) => r.id === mailId && r.status === 'QUEUED');
+    if (row !== undefined) Object.assign(row, { attempts, lastError, updatedAt: new Date() });
+    return Promise.resolve();
+  }
+
+  markSent(mailId: string, smtpMessageId: string): Promise<MailMessageRow | null> {
+    return this.mutateQueued(mailId, { status: 'SENT', smtpMessageId, sentAt: new Date() });
+  }
+
+  markFailed(mailId: string, attempts: number, lastError: string): Promise<MailMessageRow | null> {
+    return this.mutateQueued(mailId, { status: 'FAILED', attempts, lastError });
+  }
+
+  private mutateQueued(
+    mailId: string,
+    patch: Partial<MailMessageRow>,
+  ): Promise<MailMessageRow | null> {
+    const row = this.rows.find((r) => r.id === mailId && r.status === 'QUEUED');
+    if (row === undefined) return Promise.resolve(null);
+    Object.assign(row, patch, { updatedAt: new Date() });
+    return Promise.resolve(this.copy(row));
+  }
+
   hasStatus(documentId: string, status: MailStatus): Promise<boolean> {
     return Promise.resolve(
       this.rows.some((row) => row.documentId === documentId && row.status === status),
