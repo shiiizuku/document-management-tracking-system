@@ -46,7 +46,7 @@ New table `mail_messages` (Drizzle migration):
 | --- | --- |
 | `id`, `document_id` | FK `documents`; many messages per document (resends) |
 | `to_addresses`, `cc_addresses`, `bcc_addresses` | `text[]`, lower-cased, max 20 each |
-| `subject`, `body` | `body` is plain text; HTML is rendered from it server-side |
+| `subject`, `body` | `body` is plain text, sent as plain text (no server-rendered HTML; amended) |
 | `file_version_id` | FK `file_versions`; the signed PDF, fixed at draft time |
 | `status` | `DRAFT`, `QUEUED`, `SENT`, `FAILED` |
 | `attempts`, `last_error`, `smtp_message_id`, `sent_at` | delivery result |
@@ -64,15 +64,26 @@ Resend creates a new row copied from the failed or sent one, so history is never
   addresses (zod email, at least one **To**), moves to `QUEUED`, writes the outbox event
   `mail.send:<mailId>`.
 - **Delivery:** the worker loads the PDF from storage, sends through the `MailSender` port, sets
-  `SENT` with `smtp_message_id`, or `FAILED` after the queue's 5 attempts with exponential
-  backoff. Attachment must be clean-scanned; otherwise `FAILED` with that reason.
+  `SENT` with `smtp_message_id`, or `FAILED` after 8 attempts with exponential backoff from 30 s
+  (about an hour; amended from the queue default of 5 from 1 s). Attachment must be clean-scanned;
+  otherwise `FAILED` with that reason.
 - **Release interplay:** `RELEASE` with an "Emailed" method requires a `SENT` message for the
-  document, or an explicit skip with a remark (`MAIL_SKIPPED`, audited). Other methods ignore mail.
-  This guard lives in `WorkflowService` beside the other release preconditions.
-- **Permissions:** drafting, editing, sending and resending need `DOCUMENT_RELEASE`; reading a
-  document's mail needs read access to that document (confidential documents keep their rule).
-- **Audit:** `MAIL_DRAFTED`, `MAIL_SENT`, `MAIL_FAILED`, `MAIL_RESENT`, `MAIL_SKIPPED`, each with the
-  recipient count, never the addresses or body.
+  document, or an explicit skip with a remark (`mail.skipped`, audited). Other methods ignore mail.
+  This guard lives in `WorkflowService` beside the other release preconditions. _Amended:_ the guard
+  applies only when a message exists; a document with none (no signed version at prepare time, or
+  already For release when this shipped) releases by Emailed freely. Skip marks the newest unsent
+  message (Draft, Queued or Failed) and is refused once one is Sent. A draft is sent only while the
+  document is For release; resend is allowed in any status.
+- **Permissions:** drafting, editing, sending and resending need `DOCUMENT_RELEASE`. _Amended:_
+  reading a document's mail needs read access **and** `DOCUMENT_RELEASE` (stricter than first
+  written), which keeps requester emails to releasers. The requester email lookup is unscoped for a
+  releaser of the outgoing document; ruled acceptable for the pilot because release is restricted
+  to administrators and records staff.
+- **Validation:** _amended:_ addresses are validated on `PATCH` (the draft edit); the sources a draft
+  is built from are already validated at entry, so `send` checks only that **To** is not empty.
+- **Audit:** `mail.drafted`, `mail.sent`, `mail.failed`, `mail.resent`, `mail.skipped` (lowercase
+  dotted, the repo convention; amended from `MAIL_DRAFTED` etc.), each targeting the document, with
+  counts and the message id, never the addresses or body.
 
 ## Components
 
@@ -102,6 +113,7 @@ the message and PDF attachment arrive.
 
 ## Open items
 
-- Sender identity: a single `MAIL_FROM` mailbox for the office, with Reply-To set to the releaser's
-  division address if one is configured. Confirm with the office.
-- Default body template wording needs office sign-off before the pilot.
+- Sender identity: a single `MAIL_FROM` mailbox for the office. Reply-To (the releaser's division
+  address) is **not implemented**; confirm with the office whether it is wanted.
+- Default body wording (`DEFAULT_MAIL_BODY`) needs office sign-off before the pilot.
+- Retry schedule is now 8 attempts, exponential from 30 s (about an hour).

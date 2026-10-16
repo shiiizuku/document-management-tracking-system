@@ -3,8 +3,10 @@
 When an outgoing document reaches **For release**, the system drafts an email carrying the signed
 PDF. The releaser reviews it in the **Release email** section of the document, sends it, and may
 then release the document by **Emailed**. The API queues the send; the **worker** delivers it over
-SMTP. Releasing by Emailed requires a message that is **Sent**, or one that was **skipped** with a
-remark.
+SMTP, and the section shows Queued turning Sent or Failed without a reload. Releasing by Emailed
+requires a message that is **Sent**, or one that was **skipped** with a remark. A document with no
+message at all (prepared with no signed copy, or already For release when release mail was
+deployed) is not held back: Emailed release is allowed and the section says so.
 
 ## Configure SMTP
 
@@ -34,8 +36,9 @@ docker compose exec worker sh -c 'echo "host=$SMTP_HOST port=$SMTP_PORT secure=$
 docker compose exec api sh -c 'echo "host=$SMTP_HOST"'
 ```
 
-The API and the worker must agree. With `SMTP_HOST` empty, **Send** answers **Mail is not
-configured** and nothing is queued; the drafts still appear. To prove delivery, release a test
+The API and the worker must agree. With `SMTP_HOST` empty, **Send** is refused with
+`MAIL_NOT_CONFIGURED` ("Outgoing mail is not configured on this server"; the Compose dialog shows
+**Mail is not configured**) and nothing is queued; the drafts still appear. To prove delivery, release a test
 document to an address you control. Port or TLS mistakes surface as a **Failed** message (below),
 not at boot.
 
@@ -63,21 +66,25 @@ Errors are scrubbed so recipient addresses stay out of logs. Typical causes:
 | `Greeting never received` / `wrong version number` | TLS mismatch: 465 needs `SMTP_SECURE=true`; 587 needs `false`                                |
 | `Invalid login` / `535`                            | `SMTP_USER` / `SMTP_PASS` wrong, or the relay wants none                                     |
 | `Sender address rejected` / `553`                  | The relay does not accept `MAIL_FROM`; use a permitted sender                                |
-| `Outgoing mail is not configured`                  | The worker has no `SMTP_HOST`; fix and restart the worker                                    |
+| `Mail is not configured`                           | The worker has no `SMTP_HOST`; fix and restart the worker                                    |
 | `Attachment has not been scanned clean`            | The signed file is not `CLEAN`; see [scanner down](scanner-down.md). A retry cannot fix it   |
 | `Attachment bytes are missing from storage`        | Restore from backup; not a mail fault                                                        |
 
 ### Retry window
 
-A transport error is retried by the queue: **5 attempts, exponential backoff from 1 second**
-(1 + 2 + 4 + 8), so about **15 seconds** in total. An outage longer than that marks the message
-**Failed**; it does not keep trying. Fix the cause, then **Resend**. Errors that retrying cannot fix
-(unscanned attachment, mail unconfigured) fail on the first attempt.
+A transport error (or a database error while delivering) is retried by the queue: **8 attempts,
+exponential backoff from 30 seconds** (30 s, 1, 2, 4, 8, 16 and 32 minutes between them), so about
+**an hour** in total. A relay outage shorter than that heals by itself; a longer one marks the
+message **Failed**, and it does not keep trying. Fix the cause, then **Resend**. Errors that
+retrying cannot fix (unscanned attachment, mail unconfigured) fail on the first attempt. Other
+outbox events keep the queue default (5 attempts from 1 second).
 
 ## Resend
 
-Press **Resend** on a **Failed** row. The server also accepts a resend of a **Sent** message, but the
-screen offers the button on Failed rows only. It creates a **new** queued message with the same
+Press **Resend** on a **Failed** row. The screen offers it only on the newest Failed row, and only
+while no newer message is Queued or Sent. The server also accepts a resend of a **Sent** message,
+and in any document status (a lost mail may need resending after the release); a first **Send** of
+a Draft, by contrast, is accepted only while the document is For release. It creates a **new** queued message with the same
 recipients, subject and body; the original row stays as the record. Resend only after the cause is
 fixed, or it fails again. Each resend is audited (`mail.resent`).
 
@@ -87,22 +94,28 @@ That is the accepted trade for never losing a release email.
 
 ## Release when mail cannot be sent
 
-**Skip mail** (top right of the Release email section) is offered only while all of these hold: the
-document is For release, no message is Sent or already skipped, and a **Draft** row exists. The
-server refuses otherwise (`MAIL_NOTHING_TO_SKIP`). It asks for a **remark**, which is required: say
-why and how the document was delivered instead. The skip is audited (`mail.skipped`, with the
-remark's length); the remark itself is kept on the message. Then **Release document** with method
-**Emailed** is allowed.
+**Skip mail** (top right of the Release email section) is offered while the document is For
+release, no message is Sent, nothing is already skipped, and at least one message is not Sent — a
+**Draft**, or one left **Queued** or **Failed** by a Send. It marks the newest such message. It asks
+for a **remark**, which is required: say why and how the document was delivered instead. The skip is
+audited (`mail.skipped`, with the message id and the remark's length); the remark itself is kept on
+the message. Then **Release document** with method **Emailed** is allowed.
 
-**Known limitation:** once **Send** has been pressed, the Draft becomes Queued and then Failed, and
-Skip mail is no longer available. So with the relay down, Skip mail works only if the releaser has
-not pressed Send, or if `SMTP_HOST` is empty (Send answers "Mail is not configured" and the row
-stays a Draft). After a failed send the options are:
+The server refuses Skip only when no unsent message exists (`MAIL_NOTHING_TO_SKIP`), and with 409
+`MAIL_ALREADY_SENT` once a message is Sent. A second skip is a quiet success that keeps the first
+remark and writes no second audit row.
 
-- **Resend** once SMTP is back. Emailed release stays blocked until a message is Sent.
+So with the relay down, after a failed Send the options are:
+
+- **Resend** once SMTP is back.
+- **Skip mail** with a remark saying how the document went out, then release by Emailed. Skipping a
+  **Queued** message does not stop the worker: if the relay recovers within the retry window it is
+  still delivered.
 - **Release by a different method** (Mailed, Picked up, Personally delivered). The mail rule applies
-  only to Emailed, so this does not need a Sent or skipped message. Use it only if the document is
-  really leaving that way.
+  only to Emailed. Use it only if the document is really leaving that way.
+
+With `SMTP_HOST` empty, Send is refused ("Outgoing mail is not configured on this server") and the
+row stays a Draft, which Skip mail also accepts.
 
 Do not skip mail to avoid a failure you could fix with Resend.
 
