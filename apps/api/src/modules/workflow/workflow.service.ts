@@ -94,6 +94,13 @@ export interface WorkflowDocument {
   hasCleanCurrentAttachment: boolean;
   currentAttachmentVersionId: string | null;
   signedAttachmentVersionId: string | null;
+  /*
+   * The release mail, resolved by the caller like `ownerDivisionIsOrd`: whether a message for this
+   * document has been delivered, and whether the releaser recorded that it will not be sent. Read
+   * only by an Emailed release; see the `RELEASE` rule in `execute`.
+   */
+  mailSent: boolean;
+  mailSkipped: boolean;
   routes: readonly RouteCustody[];
 }
 
@@ -161,6 +168,9 @@ export class WorkflowRuleError extends Error {
     this.name = 'WorkflowRuleError';
   }
 }
+
+/** The seeded release method (migration 0010) whose release needs the release mail settled. */
+const EMAILED_RELEASE_METHOD: ReleaseMethodCode = 'EMAILED';
 
 type TransitionTable = Readonly<
   Record<WorkflowStatus, Partial<Record<WorkflowAction, WorkflowStatus>>>
@@ -429,6 +439,24 @@ export class WorkflowService {
         throw new WorkflowRuleError(
           'Outgoing release requires the current clean attachment to be signed',
           'RELEASE_BLOCKED',
+        );
+      }
+      /*
+       * Release mail: "Emailed" says the signed copy left by email, so the message must have been
+       * delivered — or the releaser must have recorded why it was not sent. Keyed on the seeded
+       * `EMAILED` code because no method row flag says "by email"; every other method, the custom
+       * ones included, ignores the mail. Checked here and not in `allowedActions`, so RELEASE stays
+       * offered and the releaser is told what is missing.
+       */
+      if (
+        document.direction === 'OUTGOING' &&
+        command.releaseMethod.code === EMAILED_RELEASE_METHOD &&
+        !document.mailSent &&
+        !document.mailSkipped
+      ) {
+        throw new WorkflowRuleError(
+          'Emailed release requires the message to be sent or skipped',
+          'RELEASE_MAIL_REQUIRED',
         );
       }
     }

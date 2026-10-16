@@ -56,6 +56,8 @@ const baseDocument = (
   hasCleanCurrentAttachment: false,
   currentAttachmentVersionId: null,
   signedAttachmentVersionId: null,
+  mailSent: false,
+  mailSkipped: false,
   // Custody is settled unless a case says otherwise, so a test about the lifecycle is not
   // accidentally also a test about the custody gate.
   routes: [acceptedRoute()],
@@ -165,6 +167,8 @@ const documentFor = (entry: (typeof legalTransitions)[number]): WorkflowDocument
     document.hasCleanCurrentAttachment = true;
     document.currentAttachmentVersionId = 'file-v1';
     document.signedAttachmentVersionId = 'file-v1';
+    // `commandFor` releases by Emailed, which also needs the release mail sent (or skipped).
+    document.mailSent = true;
   }
   return document;
 };
@@ -369,6 +373,76 @@ describe('WorkflowService public seam', () => {
       expect(() =>
         release({ releaseMethod: EMAILED, trackingReference: 'LBC-00042' }),
       ).toThrowError('Emailed does not take a tracking reference');
+    });
+  });
+
+  /*
+   * Release mail: "Emailed" is a claim that the signed copy went out by email, so it needs the
+   * message sent — or the releaser's recorded decision not to send it. No other method reads the
+   * mail at all.
+   */
+  describe('emailed release and the release mail', () => {
+    const releasable = (overrides: Partial<WorkflowDocument> = {}): WorkflowDocument => ({
+      ...baseDocument('FOR_RELEASE'),
+      hasCleanCurrentAttachment: true,
+      currentAttachmentVersionId: 'file-v1',
+      signedAttachmentVersionId: 'file-v1',
+      ...overrides,
+    });
+    const releaseBy = (
+      document: WorkflowDocument,
+      extra: Partial<Parameters<typeof workflow.execute>[2]>,
+    ) =>
+      workflow.execute(document, actor, {
+        action: 'RELEASE',
+        expectedVersion: VERSION,
+        actorId: 'records-1',
+        ...extra,
+      });
+
+    it('refuses an emailed release while the message is neither sent nor skipped', () => {
+      let caught: unknown;
+      try {
+        releaseBy(releasable(), { releaseMethod: EMAILED });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(WorkflowRuleError);
+      expect(caught).toMatchObject({
+        code: 'RELEASE_MAIL_REQUIRED',
+        message: 'Emailed release requires the message to be sent or skipped',
+      });
+    });
+
+    it('allows an emailed release once the message is sent, or once it is skipped', () => {
+      expect(
+        releaseBy(releasable({ mailSent: true }), { releaseMethod: EMAILED }).document.status,
+      ).toBe('RELEASED');
+      expect(
+        releaseBy(releasable({ mailSkipped: true }), { releaseMethod: EMAILED }).document.status,
+      ).toBe('RELEASED');
+    });
+
+    it('ignores the mail for every other method, Postal included', () => {
+      const unsent = releasable();
+      expect(
+        releaseBy(unsent, {
+          releaseMethod: MAILED,
+          releaseCarrier: POSTAL,
+          trackingReference: 'RR123456789PH',
+        }).document.status,
+      ).toBe('RELEASED');
+      const pickedUp: ReleaseMethodRule = {
+        id: 'release-method-picked-up',
+        code: 'PICKED_UP',
+        label: 'Picked up',
+        requiresCarrier: false,
+      };
+      expect(releaseBy(unsent, { releaseMethod: pickedUp }).document.status).toBe('RELEASED');
+    });
+
+    it('still offers RELEASE before the mail is sent, so the releaser sees why it is refused', () => {
+      expect(workflow.allowedActions(releasable(), actor)).toContain('RELEASE');
     });
   });
 

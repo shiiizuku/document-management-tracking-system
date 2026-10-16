@@ -484,6 +484,175 @@ describe('REST release mail', () => {
     expect(refused.body.error.code).toBe('MAIL_NOTHING_TO_SKIP');
   });
 
+  describe('prepare-release and the emailed release guard', () => {
+    const act = (cookie: string[], documentId: string, action: string, body: object) =>
+      request(server())
+        .post(`/api/v1/documents/${documentId}/actions/${action}`)
+        .set('Cookie', cookie)
+        .send(body);
+
+    /**
+     * An outgoing document staged at `SIGNED` with a clean, signed PDF as its current attachment,
+     * custody accepted over HTTP. `signed: false` stages the status with no signature event, which
+     * is the one case `createDraft` answers `null` for. Returns the version to act on next.
+     */
+    const signedOutgoing = async (
+      cookie: string[],
+      { signed = true }: { signed?: boolean } = {},
+    ): Promise<{ id: string; version: number }> => {
+      const outgoing = await register(cookie, {
+        direction: 'OUTGOING',
+        title: 'Reply letter',
+        recipients: [{ name: 'Agency', emails: ['clerk@agency.gov'] }],
+      });
+      const repository = documentsRepo();
+      let row = (await repository.findById(outgoing.id))!;
+      if (signed) {
+        const versionId = await sign(outgoing.id);
+        await app.get(FileVersionsRepository).recordScanStatus(versionId, 'CLEAN');
+        row = (await repository.setCurrentFileVersion(outgoing.id, versionId))!;
+        row = (await repository.updateForAction(outgoing.id, row.version, {
+          status: 'SIGNED',
+          signedFileVersionId: versionId,
+        }))!;
+      } else {
+        row = (await repository.updateForAction(outgoing.id, row.version, { status: 'SIGNED' }))!;
+      }
+      // Registration hands the document to its own unit; nothing moves until that is accepted.
+      await act(cookie, outgoing.id, 'ACCEPT', { expectedVersion: row.version }).expect(201);
+      return { id: outgoing.id, version: row.version };
+    };
+
+    const prepared = async (cookie: string[]): Promise<{ id: string; version: number }> => {
+      const document = await signedOutgoing(cookie);
+      const response = await act(cookie, document.id, 'PREPARE_RELEASE', {
+        expectedVersion: document.version,
+      }).expect(201);
+      return { id: document.id, version: (response.body.data as { version: number }).version };
+    };
+
+    it('drafts exactly one message when the document is prepared for release', async () => {
+      const records = await asRecords();
+      const document = await signedOutgoing(records);
+
+      // A stale version is refused before anything is written, the draft included.
+      await act(records, document.id, 'PREPARE_RELEASE', {
+        expectedVersion: document.version - 1,
+      }).expect(409);
+      expect(await mailRepo().listForDocument(document.id)).toEqual([]);
+
+      await act(records, document.id, 'PREPARE_RELEASE', {
+        expectedVersion: document.version,
+      }).expect(201);
+      // Repeating the action now finds the document already For release.
+      await act(records, document.id, 'PREPARE_RELEASE', {
+        expectedVersion: document.version,
+      }).expect(409);
+
+      const messages = await list(records, document.id);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        status: 'DRAFT',
+        to: ['clerk@agency.gov'],
+        attachmentName: 'signed-letter.pdf',
+      });
+      expect(audit().entries.filter((entry) => entry.action === 'mail.drafted')).toHaveLength(1);
+    });
+
+    it('prepares a document with no signed version for release and drafts nothing', async () => {
+      const records = await asRecords();
+      const document = await signedOutgoing(records, { signed: false });
+
+      const response = await act(records, document.id, 'PREPARE_RELEASE', {
+        expectedVersion: document.version,
+      }).expect(201);
+
+      expect((response.body.data as { status: string }).status).toBe('FOR_RELEASE');
+      expect(await mailRepo().listForDocument(document.id)).toEqual([]);
+    });
+
+    it('drafts nothing when an incoming document moves', async () => {
+      const records = await asRecords();
+      const incoming = await register(records, { title: 'Request', email: 'citizen@mail.com' });
+      const createDraft = vi.spyOn(mail(), 'createDraft');
+      const row = (await documentsRepo().findById(incoming.id))!;
+      await act(records, incoming.id, 'ACCEPT', { expectedVersion: row.version }).expect(201);
+      await act(records, incoming.id, 'COMPLY', {
+        expectedVersion: row.version,
+        remarks: 'Answered.',
+      }).expect(201);
+      expect(createDraft).not.toHaveBeenCalled();
+    });
+
+    it('offers RELEASE before the mail is sent, and refuses an emailed release with a code', async () => {
+      const records = await asRecords();
+      const document = await prepared(records);
+
+      const detail = await request(server())
+        .get(`/api/v1/documents/${document.id}`)
+        .set('Cookie', records)
+        .expect(200);
+      expect((detail.body.data as { allowedActions: string[] }).allowedActions).toContain(
+        'RELEASE',
+      );
+
+      const refused = await act(records, document.id, 'RELEASE', {
+        expectedVersion: document.version,
+        releaseMethod: 'EMAILED',
+      }).expect(422);
+      expect(errorOf(refused)).toMatchObject({
+        code: 'RELEASE_MAIL_REQUIRED',
+        message: 'Emailed release requires the message to be sent or skipped',
+      });
+    });
+
+    it('releases by Emailed once the message is sent', async () => {
+      const records = await asRecords();
+      const document = await prepared(records);
+      const [draft] = await list(records, document.id);
+      await send(records, document.id, draft!.id).expect(201);
+
+      // Queued is not sent: the worker has not delivered it yet.
+      await act(records, document.id, 'RELEASE', {
+        expectedVersion: document.version,
+        releaseMethod: 'EMAILED',
+      }).expect(422);
+
+      mailRepo().setStatusForTest(draft!.id, 'SENT');
+      const released = await act(records, document.id, 'RELEASE', {
+        expectedVersion: document.version,
+        releaseMethod: 'EMAILED',
+      }).expect(201);
+      expect((released.body.data as { status: string }).status).toBe('RELEASED');
+    });
+
+    it('releases by Emailed once the message is skipped', async () => {
+      const records = await asRecords();
+      const document = await prepared(records);
+      await request(server())
+        .post(`${base(document.id)}/skip`)
+        .set('Cookie', records)
+        .send({ remarks: 'Sent from the office mailbox' })
+        .expect(204);
+
+      const released = await act(records, document.id, 'RELEASE', {
+        expectedVersion: document.version,
+        releaseMethod: 'EMAILED',
+      }).expect(201);
+      expect((released.body.data as { status: string }).status).toBe('RELEASED');
+    });
+
+    it('releases by any other method without reading the mail', async () => {
+      const records = await asRecords();
+      const document = await prepared(records);
+
+      await act(records, document.id, 'RELEASE', {
+        expectedVersion: document.version,
+        releaseMethod: 'PICKED_UP',
+      }).expect(201);
+    });
+  });
+
   it('reports whether a document has a sent message', async () => {
     const records = await asRecords();
     const { documentId, draft } = await drafted(records);

@@ -23,6 +23,7 @@ import {
   AuthorizationPolicy,
   type AuthorizationResource,
 } from '../authorization/authorization.policy.js';
+import { MailService } from '../mail/mail.service.js';
 import { NotificationsRepository } from '../notifications/notifications.repository.js';
 import type { MonthlyReport } from '../reports/monthly-report.js';
 import { UsersRepository, type UserRow } from '../users/users.repository.js';
@@ -280,6 +281,9 @@ const METADATA_FIELDS = [
   'dueAt',
 ] as const;
 
+/** The release-mail facts the workflow engine's Emailed release rule reads. */
+type MailFlags = Pick<WorkflowDocument, 'mailSent' | 'mailSkipped'>;
+
 @Injectable()
 export class DocumentsService {
   private readonly authorization = new AuthorizationPolicy();
@@ -293,6 +297,7 @@ export class DocumentsService {
     private readonly notifications: NotificationsRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly mail: MailService,
   ) {}
 
   /**
@@ -616,6 +621,7 @@ export class DocumentsService {
       ord,
       referencedDocuments,
       replyDocuments,
+      mailFlags,
     ] = await Promise.all([
       this.repository.listTimeline(id),
       this.repository.listActiveAssigneeIds(id),
@@ -633,6 +639,7 @@ export class DocumentsService {
        */
       this.repository.listReferencedDocuments(actor, id),
       this.repository.listReplyDocuments(actor, id),
+      this.mailFlags(row),
     ]);
     return {
       ...this.toPublic(row, release, clean),
@@ -673,7 +680,7 @@ export class DocumentsService {
         actor,
         row,
         {
-          ...this.workflowShape(row, clean, ord),
+          ...this.workflowShape(row, clean, ord, mailFlags),
           routes: routes.map((route) => this.toRouteCustody(route)),
         },
         // Already loaded for the payload above, so the capability filter costs no extra query.
@@ -1175,6 +1182,14 @@ export class DocumentsService {
             { documentId: id, fileVersionId: current.currentFileVersionId, signerId: actor.id },
             tx,
           );
+        /*
+         * Release mail: preparing an outgoing document for release drafts its email on this same
+         * transaction, so the draft commits with the status change or not at all. A document with
+         * no signed version gets no draft (`null`) and is still prepared; the mail section says
+         * why. Idempotent per document, so a draft that somehow exists already is reused.
+         */
+        if (action === 'PREPARE_RELEASE' && current.direction === 'OUTGOING')
+          await this.mail.createDraft(id, actor.id, tx);
         await this.audit.write(
           {
             actorId: actor.id,
@@ -1813,6 +1828,7 @@ export class DocumentsService {
     row: DocumentRow,
     clean: boolean,
     ownerDivisionIsOrd: boolean,
+    mail: MailFlags,
   ): Omit<WorkflowDocument, 'routes'> {
     return {
       id: row.id,
@@ -1823,7 +1839,22 @@ export class DocumentsService {
       hasCleanCurrentAttachment: clean,
       currentAttachmentVersionId: row.currentFileVersionId,
       signedAttachmentVersionId: row.signedFileVersionId,
+      mailSent: mail.mailSent,
+      mailSkipped: mail.mailSkipped,
     };
+  }
+
+  /**
+   * Whether the release mail has been sent or skipped, for the Emailed release rule. Only an
+   * outgoing document is ever drafted a message, so an incoming one is answered without a query.
+   */
+  private async mailFlags(row: DocumentRow): Promise<MailFlags> {
+    if (row.direction !== 'OUTGOING') return { mailSent: false, mailSkipped: false };
+    const [mailSent, mailSkipped] = await Promise.all([
+      this.mail.hasSent(row.id),
+      this.mail.hasSkipped(row.id),
+    ]);
+    return { mailSent, mailSkipped };
   }
 
   private toRouteCustody(route: DocumentRouteRow): RouteCustody {
@@ -1859,13 +1890,14 @@ export class DocumentsService {
    * a pure function of its inputs and stays testable without a database.
    */
   private async toWorkflowDocument(row: DocumentRow): Promise<WorkflowDocument> {
-    const [clean, routes, ord] = await Promise.all([
+    const [clean, routes, ord, mail] = await Promise.all([
       this.releasableFlag(row),
       this.repository.listRoutes(row.id),
       this.repository.isOrdDivision(row.divisionId),
+      this.mailFlags(row),
     ]);
     return {
-      ...this.workflowShape(row, clean, ord),
+      ...this.workflowShape(row, clean, ord, mail),
       routes: routes.map((route) => this.toRouteCustody(route)),
     };
   }
