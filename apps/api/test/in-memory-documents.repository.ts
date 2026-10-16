@@ -761,7 +761,11 @@ export class InMemoryDocumentsRepository {
     );
   }
 
-  /** Unscoped, as the Drizzle version is: the release mail's requester addresses. */
+  /**
+   * Unscoped, as the Drizzle version is: the release mail's requester addresses. Like every read
+   * here it takes no executor; there is one store, so a write made "inside a transaction" is
+   * visible to every read, and `mail.test.ts` emulates the visibility rule with a spy instead.
+   */
   listLinkedRequesterEmails(outgoingDocumentId: string): Promise<(string | null)[]> {
     return Promise.resolve(
       this.references

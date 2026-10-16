@@ -73,15 +73,15 @@ export class MailService {
     actorId: string,
     tx: DatabaseExecutor,
   ): Promise<MailMessage | null> {
-    const document = await this.documents.findById(documentId);
+    const document = await this.documents.findById(documentId, tx);
     if (document === null) return null;
-    const signatures = await this.documents.listSignatures(documentId);
+    const signatures = await this.documents.listSignatures(documentId, tx);
     const signed = signatures.at(-1);
     if (signed === undefined) return null;
 
     const to = resolveMailRecipients({
       recipients: document.recipients,
-      requesterEmails: await this.documents.listLinkedRequesterEmails(documentId),
+      requesterEmails: await this.documents.listLinkedRequesterEmails(documentId, tx),
     }).slice(0, MAIL_ADDRESS_LIMIT);
 
     const inserted = await this.mail.insertDraft(

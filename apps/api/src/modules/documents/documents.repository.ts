@@ -320,8 +320,11 @@ export class DocumentsRepository {
   }
 
   /** Unscoped fetch of a live (not soft-deleted) document. */
-  async findById(id: string): Promise<DocumentRow | null> {
-    const [row] = await this.database
+  async findById(
+    id: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<DocumentRow | null> {
+    const [row] = await executor
       .select()
       .from(documents)
       .where(and(eq(documents.id, id), isNull(documents.deletedAt)));
@@ -1036,8 +1039,11 @@ export class DocumentsRepository {
     await executor.insert(signatureEvents).values(signature);
   }
 
-  async listSignatures(documentId: string): Promise<SignatureEventRow[]> {
-    return this.database
+  async listSignatures(
+    documentId: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<SignatureEventRow[]> {
+    return executor
       .select()
       .from(signatureEvents)
       .where(eq(signatureEvents.documentId, documentId))
@@ -1144,8 +1150,11 @@ export class DocumentsRepository {
    * to release the outgoing document. Soft-deleted requests are left out; `null` means the request
    * carried no email, and the caller skips it.
    */
-  async listLinkedRequesterEmails(outgoingDocumentId: string): Promise<(string | null)[]> {
-    const rows = await this.database
+  async listLinkedRequesterEmails(
+    outgoingDocumentId: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<(string | null)[]> {
+    const rows = await executor
       .select({ email: documents.email })
       .from(documentReferences)
       .innerJoin(documents, eq(documents.id, documentReferences.incomingDocumentId))

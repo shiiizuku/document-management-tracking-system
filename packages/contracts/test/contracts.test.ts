@@ -117,6 +117,18 @@ describe('release mail contracts', () => {
     expect(parsed.subject).toBe('Hi');
   });
 
+  it('de-duplicates addresses after lower-casing, keeping first-seen order', () => {
+    const parsed = updateMailDraftSchema.parse({
+      ...draft,
+      to: ['B@x.ph', 'a@x.ph', ' b@X.ph ', 'A@X.PH'],
+      cc: ['c@x.ph', 'C@x.ph'],
+      bcc: ['d@x.ph', 'D@X.PH', 'd@x.ph'],
+    });
+    expect(parsed.to).toEqual(['b@x.ph', 'a@x.ph']);
+    expect(parsed.cc).toEqual(['c@x.ph']);
+    expect(parsed.bcc).toEqual(['d@x.ph']);
+  });
+
   it('rejects more than 20 addresses and malformed addresses', () => {
     const many = Array.from({ length: 21 }, (_, index) => `u${index}@x.ph`);
     expect(updateMailDraftSchema.safeParse({ ...draft, to: many }).success).toBe(false);

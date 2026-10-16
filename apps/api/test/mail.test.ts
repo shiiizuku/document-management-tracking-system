@@ -293,6 +293,68 @@ describe('REST release mail', () => {
     expect(mailSendEvents()).toHaveLength(1);
   });
 
+  it('reads through the caller’s transaction, so a signature written inside it is seen', async () => {
+    const records = await asRecords();
+    const outgoing = await register(records, {
+      direction: 'OUTGOING',
+      title: 'Signed in the same transaction',
+      recipients: [{ name: 'Agency', emails: ['clerk@agency.gov'] }],
+    });
+    const versionId = await sign(outgoing.id);
+    /*
+     * The in-memory repository ignores executors, so visibility is emulated: the signature is
+     * answered only when the read is made on the transaction handle `createDraft` was given, and
+     * the pool (no executor) sees none — which is what Postgres does for an uncommitted row.
+     */
+    const repository = documentsRepo();
+    const signatures = await repository.listSignatures(outgoing.id);
+    const insideOnly = (executor?: DatabaseExecutor) =>
+      Promise.resolve(executor === tx ? signatures : []);
+    vi.spyOn(repository, 'listSignatures').mockImplementation(
+      (_id: string, executor?: DatabaseExecutor) => insideOnly(executor),
+    );
+    const findById = vi.spyOn(repository, 'findById');
+    const requesters = vi.spyOn(repository, 'listLinkedRequesterEmails');
+
+    const draft = await mail().createDraft(outgoing.id, RECORDS_ID, tx);
+
+    expect(draft).toMatchObject({ documentId: outgoing.id, status: 'DRAFT' });
+    expect(draft?.attachmentName).toBe('signed-letter.pdf');
+    expect(versionId).toBeDefined();
+    expect(findById).toHaveBeenCalledWith(outgoing.id, tx);
+    expect(requesters).toHaveBeenCalledWith(outgoing.id, tx);
+  });
+
+  it('stores one address per field when a PATCH repeats one in another case', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+
+    const updated = (
+      await request(server())
+        .patch(`${base(documentId)}/${draft.id}`)
+        .set('Cookie', records)
+        .send({
+          to: ['A@agency.gov', 'a@agency.gov', 'b@agency.gov'],
+          cc: ['C@agency.gov', 'c@AGENCY.gov'],
+          bcc: ['d@agency.gov', 'D@agency.gov'],
+          subject: 'Subject',
+          body: 'Body',
+        })
+        .expect(200)
+    ).body.data as MailMessage;
+
+    expect(updated).toMatchObject({
+      to: ['a@agency.gov', 'b@agency.gov'],
+      cc: ['c@agency.gov'],
+      bcc: ['d@agency.gov'],
+    });
+    expect((await list(records, documentId))[0]).toMatchObject({
+      to: ['a@agency.gov', 'b@agency.gov'],
+      cc: ['c@agency.gov'],
+      bcc: ['d@agency.gov'],
+    });
+  });
+
   it('edits a draft and refuses to edit a queued message', async () => {
     const records = await asRecords();
     const { documentId, draft } = await drafted(records);

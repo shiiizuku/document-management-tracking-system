@@ -643,7 +643,11 @@ export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;
 export const mailStatusSchema = z.enum(['DRAFT', 'QUEUED', 'SENT', 'FAILED']);
 export type MailStatus = z.infer<typeof mailStatusSchema>;
 
-export const mailAddressListSchema = z.array(z.string().trim().toLowerCase().email()).max(20);
+/** Trimmed, lower-cased and de-duplicated (first-seen order), so nobody is mailed twice. */
+export const mailAddressListSchema = z
+  .array(z.string().trim().toLowerCase().email())
+  .max(20)
+  .transform((addresses) => [...new Set(addresses)]);
 
 export const updateMailDraftSchema = z.object({
   to: mailAddressListSchema,

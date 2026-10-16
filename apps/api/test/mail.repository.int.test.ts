@@ -12,7 +12,12 @@ import {
   users,
 } from '../src/database/schema.js';
 import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
+import type { ConfigService } from '@nestjs/config';
+import { DrizzleAuditWriter } from '../src/modules/audit/audit.writer.js';
+import { DrizzleOutboxWriter } from '../src/modules/audit/outbox.writer.js';
+import { FileVersionsRepository } from '../src/modules/files/file-versions.repository.js';
 import { MailRepository, type NewMailMessage } from '../src/modules/mail/mail.repository.js';
+import { MailService } from '../src/modules/mail/mail.service.js';
 
 /**
  * The two Postgres-only properties the release-mail repositories rely on: the partial unique index
@@ -28,6 +33,15 @@ if (process.env.ALLOW_DATABASE_RESET !== 'true')
 const { pool, db } = createDatabase(databaseUrl, { poolMax: 3 });
 const mail = new MailRepository(db);
 const documentsRepository = new DocumentsRepository(db);
+const mailService = new MailService(
+  db,
+  mail,
+  documentsRepository,
+  new FileVersionsRepository(db),
+  new DrizzleAuditWriter(db),
+  new DrizzleOutboxWriter(db),
+  { get: () => undefined } as unknown as ConfigService,
+);
 
 const ids = {
   division: randomUUID(),
@@ -35,6 +49,7 @@ const ids = {
   outgoing: randomUUID(),
   request: randomUUID(),
   silentRequest: randomUUID(),
+  signedInTx: randomUUID(),
   version: randomUUID(),
 };
 
@@ -80,6 +95,7 @@ beforeAll(async () => {
       document(ids.outgoing, 'MAIL-OUT-1', 'OUTGOING'),
       { ...document(ids.request, 'MAIL-IN-1', 'INCOMING'), email: 'citizen@mail.com' },
       document(ids.silentRequest, 'MAIL-IN-2', 'INCOMING'),
+      document(ids.signedInTx, 'MAIL-OUT-2', 'OUTGOING'),
     ]);
   // Two statements, so the links get distinct `created_at` values and a defined read order.
   for (const incomingDocumentId of [ids.request, ids.silentRequest])
@@ -135,5 +151,24 @@ describe('mail repository against Postgres', () => {
       'citizen@mail.com',
       null,
     ]);
+  });
+
+  it('drafts from a signature written in the same, still-open transaction', async () => {
+    // The pool cannot see an uncommitted row, so this passes only if every read `createDraft`
+    // makes goes through the transaction handle it was given.
+    const draft = await db.transaction(async (tx) => {
+      await documentsRepository.insertSignatureEvent(
+        { documentId: ids.signedInTx, fileVersionId: ids.version, signerId: ids.user },
+        tx,
+      );
+      expect(await documentsRepository.listSignatures(ids.signedInTx)).toEqual([]);
+      return mailService.createDraft(ids.signedInTx, ids.user, tx);
+    });
+
+    expect(draft).toMatchObject({
+      documentId: ids.signedInTx,
+      status: 'DRAFT',
+      attachmentName: 'signed.pdf',
+    });
   });
 });
