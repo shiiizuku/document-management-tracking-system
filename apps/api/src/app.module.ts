@@ -39,6 +39,12 @@ import { OrganizationRepository } from './modules/organization/organization.repo
 import { OrganizationService } from './modules/organization/organization.service.js';
 import { ReportsController } from './modules/reports/reports.controller.js';
 import { ReportExportService } from './modules/reports/report-export.service.js';
+import { MailController } from './modules/mail/mail.controller.js';
+import { MailRepository } from './modules/mail/mail.repository.js';
+import { MailSender } from './modules/mail/mail-sender.js';
+import { MailService } from './modules/mail/mail.service.js';
+import { UnconfiguredMailSender } from './modules/mail/unconfigured-mail-sender.js';
+import { SmtpMailSender } from './modules/mail/smtp-mail-sender.js';
 import { validateEnvironment } from './config/environment.js';
 import { DatabaseModule } from './database/database.module.js';
 import { AuthService } from './modules/auth/auth.service.js';
@@ -85,6 +91,7 @@ import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
     NotificationsController,
     DashboardController,
     ReportsController,
+    MailController,
     AdminController,
     HealthController,
   ],
@@ -107,6 +114,26 @@ import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
     AuthService,
     SessionService,
     ReportExportService,
+    MailRepository,
+    MailService,
+    // Release mail goes out over the agency's SMTP server. With `SMTP_HOST` unset the binding is a
+    // sender that refuses, and `MailService` answers Send with 422 before anything is queued.
+    {
+      provide: MailSender,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): MailSender => {
+        const host = config.get<string>('SMTP_HOST');
+        if (host === undefined) return new UnconfiguredMailSender();
+        return new SmtpMailSender({
+          host,
+          port: config.getOrThrow<number>('SMTP_PORT'),
+          secure: config.getOrThrow<boolean>('SMTP_SECURE'),
+          user: config.get<string>('SMTP_USER'),
+          pass: config.get<string>('SMTP_PASS'),
+          from: config.getOrThrow<string>('MAIL_FROM'),
+        });
+      },
+    },
     // Realtime notification delivery: the gateway owns the authenticated sockets and per-user
     // emit, the bridge subscribes to Redis and relays events raised in the worker process.
     NotificationsGateway,

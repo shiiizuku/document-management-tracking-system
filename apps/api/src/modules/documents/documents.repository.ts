@@ -1138,6 +1138,28 @@ export class DocumentsRepository {
   }
 
   /**
+   * The contact emails of the incoming documents an outgoing one names — the requesters a release
+   * email goes to. **Unscoped on purpose**: it feeds the draft written inside the release
+   * transaction, not a reader's view, and the addresses are shown only to someone already cleared
+   * to release the outgoing document. Soft-deleted requests are left out; `null` means the request
+   * carried no email, and the caller skips it.
+   */
+  async listLinkedRequesterEmails(outgoingDocumentId: string): Promise<(string | null)[]> {
+    const rows = await this.database
+      .select({ email: documents.email })
+      .from(documentReferences)
+      .innerJoin(documents, eq(documents.id, documentReferences.incomingDocumentId))
+      .where(
+        and(
+          eq(documentReferences.outgoingDocumentId, outgoingDocumentId),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .orderBy(asc(documentReferences.createdAt));
+    return rows.map((row) => row.email);
+  }
+
+  /**
    * Both directions of the reference read, which differ only in which column is matched and which
    * is joined. Written once so the two can never be scoped differently — the pair of them being
    * filtered by the same predicate is the property `query-scope.int.test.ts` pins.

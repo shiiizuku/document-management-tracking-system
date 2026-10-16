@@ -761,6 +761,17 @@ export class InMemoryDocumentsRepository {
     );
   }
 
+  /** Unscoped, as the Drizzle version is: the release mail's requester addresses. */
+  listLinkedRequesterEmails(outgoingDocumentId: string): Promise<(string | null)[]> {
+    return Promise.resolve(
+      this.references
+        .filter((row) => row.outgoingDocumentId === outgoingDocumentId)
+        .map((row) => this.documents.get(row.incomingDocumentId))
+        .filter((row): row is DocumentRow => row !== undefined && row.deletedAt === null)
+        .map((row) => row.email),
+    );
+  }
+
   private isReadable(actor: AuthorizationActor, documentId: string): boolean {
     const row = this.documents.get(documentId);
     if (row === undefined || row.deletedAt !== null) return false;
