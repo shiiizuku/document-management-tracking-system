@@ -77,8 +77,9 @@ describe('deliverMail', () => {
     expect(h.write).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'mail.sent',
-        targetId: h.id,
-        summary: { recipients: 3 },
+        targetType: 'document',
+        targetId: 'd1',
+        summary: { mailId: h.id, recipients: 3 },
       }),
     );
   });
@@ -105,7 +106,10 @@ describe('deliverMail', () => {
       (error: unknown) => error,
     )) as Error;
     expect(thrown).toBeInstanceOf(Error);
-    for (const address of ['a@example.test', 'b@example.test', 'c@example.test']) {
+    // A cause would be logged with the error and carry the raw reason back in.
+    expect(thrown.cause).toBeUndefined();
+    for (const address of ['a@example.test', 'c@example.test']) {
+      expect(raw).toContain(address);
       expect(thrown.message).not.toContain(address);
       expect(thrown.stack ?? '').not.toContain(address);
     }
@@ -123,9 +127,68 @@ describe('deliverMail', () => {
     expect(row.status).toBe('FAILED');
     expect(row.attempts).toBe(5);
     expect(row.lastError).toHaveLength(500);
-    expect(h.write).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'mail.failed', outcome: 'FAILURE' }),
+    expect(h.write).toHaveBeenCalledWith({
+      actorId: null,
+      action: 'mail.failed',
+      targetType: 'document',
+      targetId: 'd1',
+      outcome: 'FAILURE',
+      summary: { mailId: h.id, attempts: 5, recipients: 3 },
+    });
+  });
+
+  it.each(['message', 'file version'] as const)(
+    'retries, then fails, when reading the %s throws',
+    async (read) => {
+      const h = await setup();
+      // The read fails on both attempts; markFailed still works.
+      const outage = new Error('connection reset');
+      if (read === 'message') vi.spyOn(h.mail, 'findById').mockRejectedValue(outage);
+      else vi.spyOn(h.deps.versions, 'findVersionById').mockRejectedValue(outage);
+
+      await expect(deliverMail(h.deps, h.id, { made: 1, max: 2 })).rejects.toThrow(
+        `mail ${h.id} delivery attempt 1/2 failed`,
+      );
+      expect((await stored(h.mail, h.id)).status).toBe('QUEUED');
+
+      await expect(deliverMail(h.deps, h.id, { made: 2, max: 2 })).resolves.toBeUndefined();
+      const row = await stored(h.mail, h.id);
+      expect(row.status).toBe('FAILED');
+      expect(row.lastError).toBe('connection reset');
+      expect(h.sender.sent).toHaveLength(0);
+    },
+  );
+
+  it('throws the scrubbed error when recording the attempt itself fails', async () => {
+    const h = await setup();
+    h.sender.failWith = new Error('Recipient address rejected: a@example.test');
+    // What drizzle does: the failed query's parameters, the raw last_error included, are quoted.
+    vi.spyOn(h.mail, 'recordAttempt').mockRejectedValue(
+      new Error('Failed query: update ... params: 2,Recipient address rejected: a@example.test'),
     );
+
+    const thrown = (await deliverMail(h.deps, h.id, { made: 2, max: 5 }).then(
+      () => null,
+      (error: unknown) => error,
+    )) as Error;
+    expect(thrown.message).toBe(`mail ${h.id} delivery attempt 2/5 failed`);
+    expect(thrown.cause).toBeUndefined();
+    expect(thrown.stack ?? '').not.toContain('a@example.test');
+  });
+
+  it('throws the scrubbed error when recording the final failure itself fails', async () => {
+    const h = await setup();
+    h.sender.failWith = new Error('Recipient address rejected: a@example.test');
+    vi.spyOn(h.mail, 'markFailed').mockRejectedValue(
+      new Error('Failed query: update ... params: 5,Recipient address rejected: a@example.test'),
+    );
+
+    const thrown = (await deliverMail(h.deps, h.id, { made: 5, max: 5 }).then(
+      () => null,
+      (error: unknown) => error,
+    )) as Error;
+    expect(thrown.message).toBe(`mail ${h.id} delivery attempt 5/5 failed`);
+    expect(thrown.stack ?? '').not.toContain('a@example.test');
   });
 
   it.each([
@@ -140,7 +203,14 @@ describe('deliverMail', () => {
     const row = await stored(h.mail, h.id);
     expect(row.status).toBe('FAILED');
     expect(row.lastError).toBeTruthy();
-    expect(h.write).toHaveBeenCalledWith(expect.objectContaining({ action: 'mail.failed' }));
+    expect(h.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'mail.failed',
+        targetType: 'document',
+        targetId: 'd1',
+        summary: { mailId: h.id, attempts: 1, recipients: 3 },
+      }),
+    );
   });
 
   it('fails with a clear reason when mail is not configured, without throwing', async () => {

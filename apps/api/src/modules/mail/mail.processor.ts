@@ -42,26 +42,23 @@ const LAST_ERROR_LIMIT = 500;
 const describeError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+const recipientCount = (message: MailMessageRow): number =>
+  message.toAddresses.length + message.ccAddresses.length + message.bccAddresses.length;
+
 /**
  * Delivers one queued message. Idempotent: only a `QUEUED` message is sent, so a redelivered job
  * for one already `SENT` or `FAILED` returns quietly. A problem retrying cannot fix (attachment
  * not clean, bytes or version missing, mail unconfigured) fails the message at once and does not
- * throw. A transport failure records the attempt and throws so BullMQ retries with backoff; on the
- * final attempt it records `FAILED` and does not throw. Logs and audit rows carry ids and a
- * recipient count, never addresses or the body.
+ * throw. Anything else that throws — the transport, or a database read — records the attempt and
+ * throws so BullMQ retries with backoff; on the final attempt it records `FAILED` and does not
+ * throw, so no message is left `QUEUED` for good. Logs and audit rows carry ids and a recipient
+ * count, never addresses or the body.
  */
 export const deliverMail = async (
   deps: MailDeliveryDeps,
   mailId: string,
   attempt: MailAttempt,
 ): Promise<void> => {
-  const message = await deps.mail.findById(mailId);
-  if (message === null) {
-    deps.logger?.warn(`mail ${mailId} not found; skipped`);
-    return;
-  }
-  if (message.status !== 'QUEUED') return;
-
   const fail = async (reason: string): Promise<void> => {
     const failed = await deps.mail.markFailed(
       mailId,
@@ -72,23 +69,39 @@ export const deliverMail = async (
     await deps.audit?.write({
       actorId: null,
       action: 'mail.failed',
-      targetType: 'mail_message',
-      targetId: mailId,
+      targetType: 'document',
+      targetId: failed.documentId,
       outcome: 'FAILURE',
-      summary: { attempts: attempt.made },
+      summary: { mailId, attempts: attempt.made, recipients: recipientCount(failed) },
     });
     deps.logger?.warn(`mail ${mailId} failed after ${attempt.made} attempt(s)`);
   };
 
-  if (deps.sender === null) return fail('Mail is not configured');
-
-  const version = await deps.versions.findVersionById(message.fileVersionId);
-  if (version === null) return fail('Attachment version not found');
-  if (version.scanStatus !== 'CLEAN') return fail('Attachment has not been scanned clean');
+  /*
+   * What BullMQ and the worker log. The raw reason stays in `last_error` for the releaser; this is
+   * scrubbed, because transport errors often quote the rejected recipient address — and so does a
+   * failed `recordAttempt`/`markFailed`, whose drizzle error lists the query parameters. A `cause`
+   * would be logged with it and carry the address back in, so none is attached.
+   */
+  const scrubbed = (): Error =>
+    new Error(`mail ${mailId} delivery attempt ${attempt.made}/${attempt.max} failed`);
 
   try {
+    const message = await deps.mail.findById(mailId);
+    if (message === null) {
+      deps.logger?.warn(`mail ${mailId} not found; skipped`);
+      return;
+    }
+    if (message.status !== 'QUEUED') return;
+
+    if (deps.sender === null) return await fail('Mail is not configured');
+
+    const version = await deps.versions.findVersionById(message.fileVersionId);
+    if (version === null) return await fail('Attachment version not found');
+    if (version.scanStatus !== 'CLEAN') return await fail('Attachment has not been scanned clean');
+
     const bytes = await deps.storage.get(version.objectKey);
-    if (bytes === null) return fail('Attachment bytes are missing from storage');
+    if (bytes === null) return await fail('Attachment bytes are missing from storage');
 
     const { messageId } = await deps.sender.send({
       from: deps.from,
@@ -103,28 +116,31 @@ export const deliverMail = async (
         contentType: version.mediaType,
       },
     });
+    /*
+     * At-least-once window: SMTP has accepted the message, but if `markSent` throws here the row
+     * stays `QUEUED` and the retry sends it again, so the recipients get it twice. Accepted: a
+     * duplicate email is better than a release email recorded as lost.
+     */
     const sent = await deps.mail.markSent(mailId, messageId);
     if (sent === null) return;
     await deps.audit?.write({
       actorId: message.sentById,
       action: 'mail.sent',
-      targetType: 'mail_message',
-      targetId: mailId,
+      targetType: 'document',
+      targetId: message.documentId,
       outcome: 'SUCCESS',
-      summary: {
-        recipients:
-          message.toAddresses.length + message.ccAddresses.length + message.bccAddresses.length,
-      },
+      summary: { mailId, recipients: recipientCount(message) },
     });
     deps.logger?.log(`mail ${mailId} sent`);
   } catch (error) {
     const reason = describeError(error);
-    if (attempt.made >= attempt.max) return fail(reason);
-    await deps.mail.recordAttempt(mailId, attempt.made, reason.slice(0, LAST_ERROR_LIMIT));
-    // The raw reason stays in `last_error` for the releaser; what BullMQ and the worker log is
-    // scrubbed, because transport errors often quote the rejected recipient address.
-    // A `cause` would be logged with it and carry the address back in, so none is attached.
-    // eslint-disable-next-line preserve-caught-error
-    throw new Error(`mail ${mailId} delivery attempt ${attempt.made}/${attempt.max} failed`);
+    try {
+      if (attempt.made >= attempt.max) return await fail(reason);
+      await deps.mail.recordAttempt(mailId, attempt.made, reason.slice(0, LAST_ERROR_LIMIT));
+    } catch {
+      // Recording failed too; its error quotes the raw reason, so only the scrubbed one leaves.
+      throw scrubbed();
+    }
+    throw scrubbed();
   }
 };
