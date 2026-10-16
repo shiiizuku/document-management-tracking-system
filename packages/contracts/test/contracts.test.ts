@@ -3,6 +3,9 @@ import {
   CAPABILITIES,
   createDocumentSchema,
   listDocumentsQuerySchema,
+  mailStatusSchema,
+  skipMailSchema,
+  updateMailDraftSchema,
   storedWorkflowStatusSchema,
   workflowActionSchema,
   workflowStatusSchema,
@@ -102,5 +105,44 @@ describe('shared API contracts', () => {
     expect(listDocumentsQuerySchema.parse({ overdue: 'false' }).overdue).toBe(false);
     expect(listDocumentsQuerySchema.parse({}).overdue).toBeUndefined();
     expect(listDocumentsQuerySchema.safeParse({ overdue: 'soon' }).success).toBe(false);
+  });
+});
+
+describe('release mail contracts', () => {
+  const draft = { to: ['a@x.ph'], cc: [], bcc: [], subject: 'Hello', body: 'Body' };
+
+  it('lower-cases addresses and trims text', () => {
+    const parsed = updateMailDraftSchema.parse({ ...draft, to: ['A@X.PH'], subject: ' Hi ' });
+    expect(parsed.to).toEqual(['a@x.ph']);
+    expect(parsed.subject).toBe('Hi');
+  });
+
+  it('de-duplicates addresses after lower-casing, keeping first-seen order', () => {
+    const parsed = updateMailDraftSchema.parse({
+      ...draft,
+      to: ['B@x.ph', 'a@x.ph', ' b@X.ph ', 'A@X.PH'],
+      cc: ['c@x.ph', 'C@x.ph'],
+      bcc: ['d@x.ph', 'D@X.PH', 'd@x.ph'],
+    });
+    expect(parsed.to).toEqual(['b@x.ph', 'a@x.ph']);
+    expect(parsed.cc).toEqual(['c@x.ph']);
+    expect(parsed.bcc).toEqual(['d@x.ph']);
+  });
+
+  it('rejects more than 20 addresses and malformed addresses', () => {
+    const many = Array.from({ length: 21 }, (_, index) => `u${index}@x.ph`);
+    expect(updateMailDraftSchema.safeParse({ ...draft, to: many }).success).toBe(false);
+    expect(updateMailDraftSchema.safeParse({ ...draft, cc: ['not-an-email'] }).success).toBe(false);
+  });
+
+  it('requires a subject and a body', () => {
+    expect(updateMailDraftSchema.safeParse({ ...draft, subject: ' ' }).success).toBe(false);
+    expect(updateMailDraftSchema.safeParse({ ...draft, body: '' }).success).toBe(false);
+  });
+
+  it('knows the four mail states and requires a skip remark', () => {
+    expect(mailStatusSchema.options).toEqual(['DRAFT', 'QUEUED', 'SENT', 'FAILED']);
+    expect(skipMailSchema.safeParse({ remarks: '  ' }).success).toBe(false);
+    expect(skipMailSchema.parse({ remarks: ' Sent by hand ' }).remarks).toBe('Sent by hand');
   });
 });

@@ -48,6 +48,13 @@ export interface ValidatedEnvironment {
   UPLOAD_MAX_BYTES: number;
   PORT: number;
   WORKER_HEALTH_PORT: number;
+  /** Outgoing mail; unset `SMTP_HOST` leaves release mail unconfigured. */
+  SMTP_HOST?: string | undefined;
+  SMTP_PORT: number;
+  SMTP_SECURE: boolean;
+  SMTP_USER?: string | undefined;
+  SMTP_PASS?: string | undefined;
+  MAIL_FROM?: string | undefined;
   TRUST_PROXY: TrustProxySetting;
   DIRECTOR_EMAIL?: string;
   DIRECTOR_PASSWORD?: string;
@@ -78,6 +85,11 @@ const parsePositiveInteger = (value: unknown, name: string, fallback: number): n
   if (!Number.isSafeInteger(parsed) || parsed <= 0)
     throw new Error(`${name} must be a positive integer`);
   return parsed;
+};
+
+const optionalString = (environment: Record<string, unknown>, name: string): string | undefined => {
+  const value = environment[name];
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
 };
 
 const parseUrl = (
@@ -420,6 +432,17 @@ export const validateEnvironment = (
   );
   // Off by default: the API's queries are short, and for them compiling costs more than it saves.
   const databaseJit = parseBoolean(environment.DATABASE_JIT, 'DATABASE_JIT', false);
+  const smtpHost = optionalString(environment, 'SMTP_HOST');
+  const smtpPort = parsePositiveInteger(environment.SMTP_PORT, 'SMTP_PORT', 587);
+  const smtpSecure = parseBoolean(environment.SMTP_SECURE, 'SMTP_SECURE', false);
+  const smtpUser = optionalString(environment, 'SMTP_USER');
+  const smtpPass =
+    typeof environment.SMTP_PASS === 'string' && environment.SMTP_PASS !== ''
+      ? environment.SMTP_PASS
+      : undefined;
+  const mailFrom = optionalString(environment, 'MAIL_FROM');
+  if (smtpHost !== undefined && mailFrom === undefined)
+    throw new Error('MAIL_FROM is required when SMTP_HOST is set');
   const trustProxy = parseTrustProxy(environment.TRUST_PROXY);
   // Called for its refusal, not its value: the API itself never creates the account, but it is
   // the process a deployment starts first, so it is where a missing Director must be reported.
@@ -454,6 +477,12 @@ export const validateEnvironment = (
     PORT: port,
     WORKER_HEALTH_PORT: workerHealthPort,
     TRUST_PROXY: trustProxy,
+    SMTP_HOST: smtpHost,
+    SMTP_PORT: smtpPort,
+    SMTP_SECURE: smtpSecure,
+    SMTP_USER: smtpUser,
+    SMTP_PASS: smtpPass,
+    MAIL_FROM: mailFrom,
     WEB_ORIGINS: webOrigins,
     API_DOCS: apiDocs,
   };

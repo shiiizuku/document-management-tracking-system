@@ -17,6 +17,14 @@ export const WEB_PORT = 3001;
 export const API_PORT = 4001;
 export const WORKER_HEALTH_PORT = 4002;
 
+/**
+ * Mailpit, the development mail catcher (`docker-compose.yml`). The suite's API and worker run on
+ * the host, so they reach its SMTP port on the published loopback port, and the specs read what it
+ * caught over its HTTP API.
+ */
+export const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://localhost:8025';
+const MAILPIT_SMTP_PORT = process.env.MAILPIT_SMTP_HOST_PORT ?? '1025';
+
 export const BASE_URL = `http://localhost:${WEB_PORT}`;
 export const API_BASE_URL = `http://localhost:${API_PORT}/api/v1`;
 
@@ -66,4 +74,15 @@ export const serverEnvironment = (): Record<string, string> => ({
   PORT: String(API_PORT),
   WORKER_HEALTH_PORT: String(WORKER_HEALTH_PORT),
   WEB_ORIGIN: BASE_URL,
+  /*
+   * Release mail always goes to Mailpit and never to whatever `.env` names: an inherited
+   * SMTP_HOST would send the suite's test letters through a real server. Set here rather than
+   * inherited for that reason.
+   */
+  SMTP_HOST: 'localhost',
+  SMTP_PORT: MAILPIT_SMTP_PORT,
+  SMTP_SECURE: 'false',
+  SMTP_USER: '',
+  SMTP_PASS: '',
+  MAIL_FROM: 'dts-e2e@localhost',
 });

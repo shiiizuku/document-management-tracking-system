@@ -217,20 +217,26 @@ const OUTGOING: readonly Step[] = [
   // §2.5 Release, with a consignment number for a courier, then archive.
   (journey, context) =>
     act(journey, context.pick(context.principals.records), 'PREPARE_RELEASE', context),
-  (journey, context) =>
-    act(
-      journey,
-      context.pick(context.principals.records),
-      'RELEASE',
-      context,
-      context.random() < 0.3
-        ? {
-            releaseMethod: 'MAILED',
-            releaseCarrier: 'LBC',
-            trackingReference: `LBC-${journey.document!.id.slice(0, 12)}`,
-          }
-        : { releaseMethod: 'EMAILED' },
-    ),
+  async (journey, context) => {
+    const records = context.pick(context.principals.records);
+    if (context.random() < 0.3) {
+      await act(journey, records, 'RELEASE', context, {
+        releaseMethod: 'MAILED',
+        releaseCarrier: 'LBC',
+        trackingReference: `LBC-${journey.document!.id.slice(0, 12)}`,
+      });
+      return;
+    }
+    /*
+     * An Emailed release needs its draft sent or skipped. The load run has no SMTP server, so the
+     * draft PREPARE_RELEASE wrote is skipped — one more small write, which a real releaser makes
+     * too (Send instead). It bumps no document version.
+     */
+    await records.post<void>('POST mail skip', `${documentPath(journey)}/mail/skip`, {
+      remarks: 'Load test: sent outside the system',
+    });
+    await act(journey, records, 'RELEASE', context, { releaseMethod: 'EMAILED' });
+  },
   (journey, context) => act(journey, context.pick(context.principals.records), 'ARCHIVE', context),
 ];
 

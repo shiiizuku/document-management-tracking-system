@@ -39,6 +39,9 @@ import { OrganizationRepository } from './modules/organization/organization.repo
 import { OrganizationService } from './modules/organization/organization.service.js';
 import { ReportsController } from './modules/reports/reports.controller.js';
 import { ReportExportService } from './modules/reports/report-export.service.js';
+import { MailController } from './modules/mail/mail.controller.js';
+import { MailRepository } from './modules/mail/mail.repository.js';
+import { MailService } from './modules/mail/mail.service.js';
 import { validateEnvironment } from './config/environment.js';
 import { DatabaseModule } from './database/database.module.js';
 import { AuthService } from './modules/auth/auth.service.js';
@@ -85,6 +88,7 @@ import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
     NotificationsController,
     DashboardController,
     ReportsController,
+    MailController,
     AdminController,
     HealthController,
   ],
@@ -107,6 +111,9 @@ import { RealtimeBridge } from './modules/realtime/realtime.bridge.js';
     AuthService,
     SessionService,
     ReportExportService,
+    MailRepository,
+    MailService,
+    // No `MailSender` here: the API only queues a send; the worker builds the SMTP sender.
     // Realtime notification delivery: the gateway owns the authenticated sockets and per-user
     // emit, the bridge subscribes to Redis and relays events raised in the worker process.
     NotificationsGateway,

@@ -639,3 +639,51 @@ export type CreateDocumentTypeInput = z.infer<typeof createDocumentTypeSchema>;
 export type UpdateDocumentTypeInput = z.infer<typeof updateDocumentTypeSchema>;
 export type ListAccountRequestsQuery = z.infer<typeof listAccountRequestsQuerySchema>;
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;
+
+export const mailStatusSchema = z.enum(['DRAFT', 'QUEUED', 'SENT', 'FAILED']);
+export type MailStatus = z.infer<typeof mailStatusSchema>;
+
+/** Trimmed, lower-cased and de-duplicated (first-seen order), so nobody is mailed twice. */
+export const mailAddressListSchema = z
+  .array(z.string().trim().toLowerCase().email())
+  .max(20)
+  .transform((addresses) => [...new Set(addresses)]);
+
+export const updateMailDraftSchema = z.object({
+  to: mailAddressListSchema,
+  cc: mailAddressListSchema,
+  bcc: mailAddressListSchema,
+  subject: z.string().trim().min(1).max(240),
+  body: z.string().trim().min(1).max(10000),
+});
+export type UpdateMailDraftInput = z.infer<typeof updateMailDraftSchema>;
+
+export const skipMailSchema = z.object({ remarks: z.string().trim().min(1).max(2000) });
+export type SkipMailInput = z.infer<typeof skipMailSchema>;
+
+/**
+ * Send names the draft contents the releaser reviewed: the `revision` their own save returned.
+ * The server refuses (`MAIL_CHANGED`) when the stored draft no longer has that revision.
+ */
+export const sendMailSchema = z.object({ revision: z.string().trim().min(1).max(64) });
+export type SendMailInput = z.infer<typeof sendMailSchema>;
+
+/** An outgoing document's release email, as the API returns it. */
+export interface MailMessage {
+  id: string;
+  documentId: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+  attachmentName: string;
+  /** A hash of the stored To, Cc, Bcc, subject and body; what Send must name. */
+  revision: string;
+  status: MailStatus;
+  attempts: number;
+  lastError: string | null;
+  sentAt: string | null;
+  skippedAt: string | null;
+  createdAt: string;
+}

@@ -23,6 +23,7 @@ import {
   AuthorizationPolicy,
   type AuthorizationResource,
 } from '../authorization/authorization.policy.js';
+import { MailService } from '../mail/mail.service.js';
 import { NotificationsRepository } from '../notifications/notifications.repository.js';
 import type { MonthlyReport } from '../reports/monthly-report.js';
 import { UsersRepository, type UserRow } from '../users/users.repository.js';
@@ -280,6 +281,12 @@ const METADATA_FIELDS = [
   'dueAt',
 ] as const;
 
+/** The release-mail facts the workflow engine's Emailed release rule reads. */
+type MailFlags = Pick<WorkflowDocument, 'mailDrafted' | 'mailSent' | 'mailSkipped'>;
+
+/** What every path but an Emailed release passes: the rule that reads the flags never runs. */
+const NO_MAIL: MailFlags = { mailDrafted: false, mailSent: false, mailSkipped: false };
+
 @Injectable()
 export class DocumentsService {
   private readonly authorization = new AuthorizationPolicy();
@@ -293,6 +300,7 @@ export class DocumentsService {
     private readonly notifications: NotificationsRepository,
     private readonly audit: AuditWriter,
     private readonly outbox: OutboxWriter,
+    private readonly mail: MailService,
   ) {}
 
   /**
@@ -673,7 +681,9 @@ export class DocumentsService {
         actor,
         row,
         {
-          ...this.workflowShape(row, clean, ord),
+          // No mail flags: the only rule that reads them is RELEASE's, and RELEASE is offered
+          // whatever the mail says, so the releaser is told what is missing when they try it.
+          ...this.workflowShape(row, clean, ord, NO_MAIL),
           routes: routes.map((route) => this.toRouteCustody(route)),
         },
         // Already loaded for the payload above, so the capability filter costs no extra query.
@@ -1057,9 +1067,19 @@ export class DocumentsService {
       releaseCarrier = this.toReleaseCarrier(carrierRow);
     }
 
+    /*
+     * The release mail matters only to an Emailed release of an outgoing document, so only that
+     * path reads it. It is not re-checked inside the transaction below: sent and skipped only ever
+     * go from false to true, so a value read here can be stale only in the releaser's favour.
+     */
+    const mail =
+      action === 'RELEASE' && releaseMethod?.code === 'EMAILED' && current.direction === 'OUTGOING'
+        ? await this.mailFlags(current.id)
+        : NO_MAIL;
+
     try {
       const result = this.workflow.execute(
-        await this.toWorkflowDocument(current),
+        await this.toWorkflowDocument(current, mail),
         this.toWorkflowActor(actor),
         {
           action,
@@ -1175,6 +1195,14 @@ export class DocumentsService {
             { documentId: id, fileVersionId: current.currentFileVersionId, signerId: actor.id },
             tx,
           );
+        /*
+         * Release mail: preparing an outgoing document for release drafts its email on this same
+         * transaction, so the draft commits with the status change or not at all. A document with
+         * no signed version gets no draft (`null`) and is still prepared; the mail section says
+         * why. Idempotent per document, so a draft that somehow exists already is reused.
+         */
+        if (action === 'PREPARE_RELEASE' && current.direction === 'OUTGOING')
+          await this.mail.createDraft(id, actor.id, tx);
         await this.audit.write(
           {
             actorId: actor.id,
@@ -1813,6 +1841,7 @@ export class DocumentsService {
     row: DocumentRow,
     clean: boolean,
     ownerDivisionIsOrd: boolean,
+    mail: MailFlags,
   ): Omit<WorkflowDocument, 'routes'> {
     return {
       id: row.id,
@@ -1823,7 +1852,14 @@ export class DocumentsService {
       hasCleanCurrentAttachment: clean,
       currentAttachmentVersionId: row.currentFileVersionId,
       signedAttachmentVersionId: row.signedFileVersionId,
+      ...mail,
     };
+  }
+
+  /** Whether the release mail was drafted, sent or skipped, in one read, for the Emailed rule. */
+  private async mailFlags(documentId: string): Promise<MailFlags> {
+    const state = await this.mail.releaseState(documentId);
+    return { mailDrafted: state.exists, mailSent: state.sent, mailSkipped: state.skipped };
   }
 
   private toRouteCustody(route: DocumentRouteRow): RouteCustody {
@@ -1858,14 +1894,17 @@ export class DocumentsService {
    * release and ORD rules need. Resolved here rather than inside the engine so that service stays
    * a pure function of its inputs and stays testable without a database.
    */
-  private async toWorkflowDocument(row: DocumentRow): Promise<WorkflowDocument> {
+  private async toWorkflowDocument(
+    row: DocumentRow,
+    mail: MailFlags = NO_MAIL,
+  ): Promise<WorkflowDocument> {
     const [clean, routes, ord] = await Promise.all([
       this.releasableFlag(row),
       this.repository.listRoutes(row.id),
       this.repository.isOrdDivision(row.divisionId),
     ]);
     return {
-      ...this.workflowShape(row, clean, ord),
+      ...this.workflowShape(row, clean, ord, mail),
       routes: routes.map((route) => this.toRouteCustody(route)),
     };
   }

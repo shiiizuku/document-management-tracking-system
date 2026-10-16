@@ -159,7 +159,7 @@ jobs:
           docker save dts-minio:from-source -o /tmp/dts-minio-image.tar
 
       - name: Start the infrastructure
-        run: docker compose up -d --wait --wait-timeout 420 postgres redis minio clamav
+        run: docker compose up -d --wait --wait-timeout 420 postgres redis minio clamav mailpit
       - if: failure()
         run: docker compose logs --tail 100 clamav minio
 

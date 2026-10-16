@@ -87,11 +87,11 @@ export class FileVersionsRepository {
     return row;
   }
 
-  async findVersionById(versionId: string): Promise<FileVersionRow | null> {
-    const [row] = await this.database
-      .select()
-      .from(fileVersions)
-      .where(eq(fileVersions.id, versionId));
+  async findVersionById(
+    versionId: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<FileVersionRow | null> {
+    const [row] = await executor.select().from(fileVersions).where(eq(fileVersions.id, versionId));
     return row ?? null;
   }
 

@@ -94,6 +94,10 @@ export interface RegistrationFields {
   sender?: string;
   /** Who an outgoing document is addressed to; the form needs at least one. */
   recipient?: string;
+  /** An email for the first recipient of an outgoing document, where the release mail goes. */
+  recipientEmail?: string;
+  /** The sender's contact email on an incoming document (under "More details"). */
+  email?: string;
 }
 
 /**
@@ -124,10 +128,15 @@ export const registerDocument = async (page: Page, fields: RegistrationFields): 
   // but at least one recipient is.
   if (fields.direction === 'Outgoing')
     await dialog.getByLabel('Recipient 1').fill(fields.recipient ?? 'Department of Finance');
+  if (fields.recipientEmail !== undefined) {
+    await dialog.getByRole('button', { name: 'Add email address' }).click();
+    await dialog.getByLabel('Email 1 for recipient 1', { exact: true }).fill(fields.recipientEmail);
+  }
 
-  if (fields.section !== undefined) {
+  if (fields.section !== undefined || fields.email !== undefined) {
     await dialog.getByRole('button', { name: /More details/ }).click();
-    await chooseOption(dialog, 'Section', fields.section);
+    if (fields.section !== undefined) await chooseOption(dialog, 'Section', fields.section);
+    if (fields.email !== undefined) await dialog.getByLabel('Email address').fill(fields.email);
   }
 
   await dialog.getByRole('button', { name: 'Register document' }).click();

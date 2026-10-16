@@ -14,6 +14,19 @@ interface LeasedRow {
 }
 
 /**
+ * Release mail gets a longer retry window than the queue default (5 attempts from 1 s, about
+ * 15 s): 8 attempts, exponential from 30 s (30 + 60 + … + 1920 s), about an hour, so a relay
+ * outage of that length heals without a Resend. `deliverMail` reads the count from `job.opts`.
+ */
+const MAIL_SEND_JOB_OPTIONS = {
+  attempts: 8,
+  backoff: { type: 'exponential', delay: 30_000 },
+} as const;
+
+const jobOptionsFor = (row: LeasedRow) =>
+  row.event_type === 'mail.send' ? { jobId: row.id, ...MAIL_SEND_JOB_OPTIONS } : { jobId: row.id };
+
+/**
  * The transactional-outbox publisher. Each pass leases a batch of unpublished `outbox_events`
  * with `FOR UPDATE SKIP LOCKED` — so several relay instances never fight over the same rows —
  * enqueues each as a BullMQ job keyed by its `idempotency_key`, then marks the rows published,
@@ -59,7 +72,7 @@ export class OutboxRelay {
           },
           // The outbox row's own id is the job id (a uuid — BullMQ forbids ':' in custom ids).
           // Deterministic per event, so a re-leased row that was already enqueued de-duplicates.
-          { jobId: row.id },
+          jobOptionsFor(row),
         );
       }
 

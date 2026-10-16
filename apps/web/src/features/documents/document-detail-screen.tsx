@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/dts/empty-state';
 import { DetailSkeleton } from '@/components/dts/skeletons';
 import { PriorityLabel, StatusBadge } from '@/components/dts/status-badge';
 import { AttachmentsSection } from '@/features/attachments/attachments-section';
+import { DocumentMailSection } from '@/features/mail/document-mail-section';
 import { useDivisions, useDocumentTypeLabel } from '@/features/org/queries';
 import { useSession } from '@/features/session/queries';
 import { ApiError } from '@/lib/api';
@@ -199,6 +200,12 @@ export function DocumentDetailScreen({ documentId }: Readonly<{ documentId: stri
             and an empty card would be a box around nothing. */}
         <Panel className="empty:hidden">
           <ReferencesSection document={detail} canEdit={can('DOCUMENT_EDIT') && !closed} />
+        </Panel>
+
+        {/* Outgoing documents only, and only once there is a release email to deal with; the
+            section renders nothing otherwise, so the panel hides itself. */}
+        <Panel className="empty:hidden">
+          <DocumentMailSection document={detail} />
         </Panel>
 
         <Panel>

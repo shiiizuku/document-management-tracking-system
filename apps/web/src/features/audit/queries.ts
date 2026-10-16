@@ -157,6 +157,10 @@ export const AUDIT_ACTION_GROUPS: readonly { label: string; actions: readonly st
     ],
   },
   {
+    label: 'Release mail',
+    actions: ['mail.drafted', 'mail.sent', 'mail.failed', 'mail.resent', 'mail.skipped'],
+  },
+  {
     label: 'Accounts and organization',
     actions: [
       'account-request.submitted',
