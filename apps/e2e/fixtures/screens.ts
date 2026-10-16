@@ -130,7 +130,7 @@ export const registerDocument = async (page: Page, fields: RegistrationFields): 
     await dialog.getByLabel('Recipient 1').fill(fields.recipient ?? 'Department of Finance');
   if (fields.recipientEmail !== undefined) {
     await dialog.getByRole('button', { name: 'Add email address' }).click();
-    await dialog.getByLabel('Email 1 for recipient 1').fill(fields.recipientEmail);
+    await dialog.getByLabel('Email 1 for recipient 1', { exact: true }).fill(fields.recipientEmail);
   }
 
   if (fields.section !== undefined || fields.email !== undefined) {
