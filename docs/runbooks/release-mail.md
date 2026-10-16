@@ -76,22 +76,35 @@ A transport error is retried by the queue: **5 attempts, exponential backoff fro
 
 ## Resend
 
-On a Failed row, press **Resend**. The server creates a **new** queued message with the same
-recipients, subject and body; the failed row stays as the record. Resend only after the cause is
-fixed, or it fails again. Each resend is audited (`mail.resent`). If the first try reached the
-recipient before the error (a reply lost on the wire), a Resend sends a duplicate; that is the
-accepted trade for never losing a release email.
+Press **Resend** on a **Failed** row. The server also accepts a resend of a **Sent** message, but the
+screen offers the button on Failed rows only. It creates a **new** queued message with the same
+recipients, subject and body; the original row stays as the record. Resend only after the cause is
+fixed, or it fails again. Each resend is audited (`mail.resent`).
+
+**Warning:** resending a Sent message mails the recipients again. A Failed message can also have
+reached the recipient before the error (a reply lost on the wire), so a Resend may duplicate it.
+That is the accepted trade for never losing a release email.
 
 ## Release when mail cannot be sent
 
-If SMTP is down and the document must go out, the releaser can use **Skip mail** (top right of the
-Release email section, available while the document is For release and nothing has been sent). It
-asks for a **remark**, which is required: say why and how the document was delivered instead. The
-skip is audited (`mail.skipped`, with the remark's length); the remark itself is kept on the
-message. Then **Release document** with method **Emailed** is allowed.
+**Skip mail** (top right of the Release email section) is offered only while all of these hold: the
+document is For release, no message is Sent or already skipped, and a **Draft** row exists. The
+server refuses otherwise (`MAIL_NOTHING_TO_SKIP`). It asks for a **remark**, which is required: say
+why and how the document was delivered instead. The skip is audited (`mail.skipped`, with the
+remark's length); the remark itself is kept on the message. Then **Release document** with method
+**Emailed** is allowed.
 
-Do not use Skip mail to avoid a Failed row you could fix with Resend. Prefer another method
-(Mailed, Personally delivered) if the document is not in fact being emailed.
+**Known limitation:** once **Send** has been pressed, the Draft becomes Queued and then Failed, and
+Skip mail is no longer available. So with the relay down, Skip mail works only if the releaser has
+not pressed Send, or if `SMTP_HOST` is empty (Send answers "Mail is not configured" and the row
+stays a Draft). After a failed send the options are:
+
+- **Resend** once SMTP is back. Emailed release stays blocked until a message is Sent.
+- **Release by a different method** (Mailed, Picked up, Personally delivered). The mail rule applies
+  only to Emailed, so this does not need a Sent or skipped message. Use it only if the document is
+  really leaving that way.
+
+Do not skip mail to avoid a failure you could fix with Resend.
 
 ## Mailpit in development
 
