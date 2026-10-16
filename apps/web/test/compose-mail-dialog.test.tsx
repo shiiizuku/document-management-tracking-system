@@ -36,6 +36,8 @@ interface ServeOptions {
   failWith?: Error;
   /** Fails the draft save only. */
   failPatch?: Error;
+  /** Fails the send only. */
+  failSend?: Error;
 }
 
 const serve = (detail: ReturnType<typeof documentDetail>, options: ServeOptions = {}): void => {
@@ -47,8 +49,12 @@ const serve = (detail: ReturnType<typeof documentDetail>, options: ServeOptions 
       const { messages = [] } = options;
       return Promise.resolve(typeof messages === 'function' ? messages() : messages);
     }
-    if (init?.method === 'PATCH' && options.failPatch !== undefined)
-      return Promise.reject(options.failPatch);
+    if (init?.method === 'PATCH')
+      return options.failPatch === undefined
+        ? Promise.resolve(mailMessage({ revision: 'rev-saved' }))
+        : Promise.reject(options.failPatch);
+    if (path.endsWith('/send') && options.failSend !== undefined)
+      return Promise.reject(options.failSend);
     if (path.startsWith('/documents/doc-1/mail/') && init?.method !== undefined)
       return options.failWith === undefined
         ? Promise.resolve(mailMessage({ status: 'QUEUED' }))
@@ -169,7 +175,35 @@ describe('Compose dialog', () => {
       subject: 'New subject',
       body: 'Good day.',
     });
+    // The revision its own save returned, not the one the dialog was opened with.
+    expect(requestBody(apiMock, '/documents/doc-1/mail/mail-1/send', 'POST')).toEqual({
+      revision: 'rev-saved',
+    });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('says so and reloads the stored draft when another save changed it before Send', async () => {
+    let stored = mailMessage();
+    await show(outgoing(), {
+      messages: () => [stored],
+      failSend: new ApiError({
+        status: 409,
+        code: 'MAIL_CHANGED',
+        message: 'This message was changed since you opened it; review it again',
+      }),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Compose' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    // Someone else's save lands after this dialog opened.
+    stored = mailMessage({ subject: 'Their subject', revision: 'rev-theirs' });
+
+    await userEvent.click(dialog.getByRole('button', { name: 'Send' }));
+
+    expect(
+      await dialog.findByText('This message was changed since you opened it; review it again'),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(dialog.getByLabelText('Subject')).toHaveValue('Their subject'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   /** The writes the dialog made, in order. */

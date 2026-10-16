@@ -661,6 +661,13 @@ export type UpdateMailDraftInput = z.infer<typeof updateMailDraftSchema>;
 export const skipMailSchema = z.object({ remarks: z.string().trim().min(1).max(2000) });
 export type SkipMailInput = z.infer<typeof skipMailSchema>;
 
+/**
+ * Send names the draft contents the releaser reviewed: the `revision` their own save returned.
+ * The server refuses (`MAIL_CHANGED`) when the stored draft no longer has that revision.
+ */
+export const sendMailSchema = z.object({ revision: z.string().trim().min(1).max(64) });
+export type SendMailInput = z.infer<typeof sendMailSchema>;
+
 /** An outgoing document's release email, as the API returns it. */
 export interface MailMessage {
   id: string;
@@ -671,6 +678,8 @@ export interface MailMessage {
   subject: string;
   body: string;
   attachmentName: string;
+  /** A hash of the stored To, Cc, Bcc, subject and body; what Send must name. */
+  revision: string;
   status: MailStatus;
   attempts: number;
   lastError: string | null;

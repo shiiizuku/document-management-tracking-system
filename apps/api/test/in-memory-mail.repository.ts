@@ -79,8 +79,15 @@ export class InMemoryMailRepository {
     return this.mutateDraft((row) => row.id === mailId, patch);
   }
 
-  markQueued(mailId: string, sentById: string): Promise<MailMessageRow | null> {
-    return this.mutateDraft((row) => row.id === mailId, { status: 'QUEUED', sentById });
+  markQueued(
+    mailId: string,
+    sentById: string,
+    readUpdatedAt: Date,
+  ): Promise<MailMessageRow | null> {
+    return this.mutateDraft(
+      (row) => row.id === mailId && row.updatedAt.getTime() === readUpdatedAt.getTime(),
+      { status: 'QUEUED', sentById },
+    );
   }
 
   findLatestUnsent(documentId: string): Promise<MailMessageRow | null> {
@@ -148,9 +155,11 @@ export class InMemoryMailRepository {
     match: (row: MailMessageRow) => boolean,
     patch: Partial<MailMessageRow>,
   ): Promise<MailMessageRow | null> {
-    const row = this.rows.find((r) => r.status === 'DRAFT' && match(r));
+    // A skipped draft is locked, as the SQL's `skipped_at IS NULL` keeps it.
+    const row = this.rows.find((r) => r.status === 'DRAFT' && r.skippedAt === null && match(r));
     if (row === undefined) return Promise.resolve(null);
-    Object.assign(row, patch, { updatedAt: new Date() });
+    // From the strictly increasing clock, so `markQueued`'s `updated_at` check sees every edit.
+    Object.assign(row, patch, { updatedAt: new Date(++this.clock) });
     return Promise.resolve(this.copy(row));
   }
 }

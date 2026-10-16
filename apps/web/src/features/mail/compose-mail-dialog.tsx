@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError } from '@/lib/api';
-import { useSendMail, useUpdateMail, type MailMessage } from './queries';
+import { useReloadMail, useSendMail, useUpdateMail, type MailMessage } from './queries';
 
 /** The `To`/`Cc`/`Bcc` cap in `mailAddressListSchema`. */
 const ADDRESS_LIMIT = 20;
@@ -82,8 +82,10 @@ const keepFocus = (event: MouseEvent) => event.preventDefault();
  * signed PDF as a read-only chip. Cc and Bcc stay behind small toggles, as in Gmail, unless the
  * draft already has them.
  *
- * Send saves the edits first and then queues the message; the server sends only what is stored,
- * so a Send that skipped the save would mail the previous text.
+ * Send saves the edits first and then queues the message, naming the revision that save returned:
+ * the server sends only what is stored, and refuses (`MAIL_CHANGED`) when someone else saved over
+ * it in between, so nobody mails text they did not review. The form then reloads the stored draft
+ * and says why.
  */
 export function ComposeMailDialog({
   documentId,
@@ -126,6 +128,7 @@ function ComposeForm({
   const [failure, setFailure] = useState<string | null>(null);
   const update = useUpdateMail(documentId);
   const send = useSendMail(documentId);
+  const reload = useReloadMail(documentId);
   const subjectId = useId();
   const bodyId = useId();
 
@@ -139,18 +142,30 @@ function ComposeForm({
       ? null
       : 'A subject and a message are required';
 
+  /** Replaces the form with the stored draft, after a Send refused as `MAIL_CHANGED`. */
+  const resetTo = (stored: MailMessage) => {
+    setTo(addressDraft(stored.to));
+    setCc(addressDraft(stored.cc));
+    setBcc(addressDraft(stored.bcc));
+    setShowCc((shown) => shown || stored.cc.length > 0);
+    setShowBcc((shown) => shown || stored.bcc.length > 0);
+    setSubject(stored.subject);
+    setBody(stored.body);
+  };
+
   /*
-   * Commits what is still typed in each address field, then saves. `false` when any typed text is
+   * Commits what is still typed in each address field, then saves. `null` when any typed text is
    * not an address: the field shows why and nothing is saved, rather than the text being dropped.
+   * Otherwise the saved message, whose `revision` is what Send must name.
    */
-  const save = async (): Promise<boolean> => {
+  const save = async (): Promise<MailMessage | null> => {
     const [nextTo, nextCc, nextBcc] = [to, cc, bcc].map((draft) =>
       commitText(draft.values, draft.text),
     ) as [AddressDraft, AddressDraft, AddressDraft];
     setTo(nextTo);
     setCc(nextCc);
     setBcc(nextBcc);
-    if (nextTo.error !== null || nextCc.error !== null || nextBcc.error !== null) return false;
+    if (nextTo.error !== null || nextCc.error !== null || nextBcc.error !== null) return null;
     const parsed = updateMailDraftSchema.safeParse({
       to: nextTo.values,
       cc: nextCc.values,
@@ -160,21 +175,25 @@ function ComposeForm({
     });
     if (!parsed.success) {
       setFailure('Check the addresses, subject and message');
-      return false;
+      return null;
     }
-    await update.mutateAsync({ mailId: message.id, input: parsed.data });
-    return true;
+    return update.mutateAsync({ mailId: message.id, input: parsed.data });
   };
 
   const run = async (andSend: boolean) => {
     setFailure(null);
     try {
-      if (!(await save())) return;
-      if (andSend) await send.mutateAsync(message.id);
+      const saved = await save();
+      if (saved === null) return;
+      if (andSend) await send.mutateAsync({ mailId: message.id, revision: saved.revision });
       toast.success(andSend ? 'Email queued' : 'Draft saved');
       onClose();
     } catch (error) {
       setFailure(failureMessage(error));
+      if (error instanceof ApiError && error.code === 'MAIL_CHANGED') {
+        const stored = await reload(message.id).catch(() => undefined);
+        if (stored !== undefined) resetTo(stored);
+      }
     }
   };
 

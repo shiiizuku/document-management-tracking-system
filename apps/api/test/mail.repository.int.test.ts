@@ -138,7 +138,10 @@ describe('mail repository against Postgres', () => {
 
   it('allows a new draft once the old one has left DRAFT, and any number of queued rows', async () => {
     const draft = await mail.findDraft(ids.outgoing);
-    await mail.markQueued(draft!.id, ids.user);
+    // Never edited, so `updated_at` is still the insert's microsecond `now()`.
+    expect(await mail.markQueued(draft!.id, ids.user, draft!.updatedAt)).toMatchObject({
+      status: 'QUEUED',
+    });
     await mail.insertQueued({ ...draftFor(ids.outgoing, 'Resend'), sentById: ids.user });
 
     const next = await mail.insertDraft(draftFor(ids.outgoing, 'Next draft'));
@@ -178,6 +181,29 @@ describe('mail repository against Postgres', () => {
       sent: true,
       skipped: true,
     });
+  });
+
+  it('queues a draft only while it is unskipped and unchanged since it was read', async () => {
+    const draft = (await mail.insertDraft(draftFor(ids.silentRequest, 'Concurrent')))!;
+    const patch = {
+      toAddresses: ['clerk@agency.gov'],
+      ccAddresses: [],
+      bccAddresses: [],
+      subject: 'Edited',
+      body: 'Body',
+    };
+    // Past the insert's millisecond, which is the precision the check compares at.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const edited = (await mail.updateDraft(draft.id, patch))!;
+    // The read before the edit is stale: the edit wins and nothing is queued.
+    expect(await mail.markQueued(draft.id, ids.user, draft.updatedAt)).toBeNull();
+
+    expect(await mail.markSkipped(draft.id, 'Hand-delivered')).not.toBeNull();
+    const skipped = (await mail.findDraft(ids.silentRequest))!;
+    // A skipped draft is locked: neither an edit nor a send, even with a fresh read.
+    expect(await mail.updateDraft(draft.id, { ...patch, subject: 'Stale dialog' })).toBeNull();
+    expect(await mail.markQueued(draft.id, ids.user, skipped.updatedAt)).toBeNull();
+    expect(skipped).toMatchObject({ status: 'DRAFT', subject: edited.subject });
   });
 
   it('reads the linked requesters’ emails, nulls included', async () => {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   ConflictException,
   ForbiddenException,
@@ -7,7 +8,12 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { MailMessage, SkipMailInput, UpdateMailDraftInput } from '@dts/contracts';
+import type {
+  MailMessage,
+  SendMailInput,
+  SkipMailInput,
+  UpdateMailDraftInput,
+} from '@dts/contracts';
 import type { RequestUser } from '../../common/request-user.js';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
@@ -38,6 +44,21 @@ export const DEFAULT_MAIL_BODY = [
 const MAIL_ADDRESS_LIMIT = 20;
 
 const MAIL_SEND_EVENT = 'mail.send';
+
+/**
+ * The revision Send must name: a hash of the stored To, Cc, Bcc, subject and body, exactly as
+ * stored (already normalised by the PATCH schema). Derived rather than kept in a column, so it
+ * needs no migration; equal contents give an equal revision, which is all Send needs to know.
+ */
+export const mailRevision = (
+  row: Pick<MailMessageRow, 'toAddresses' | 'ccAddresses' | 'bccAddresses' | 'subject' | 'body'>,
+): string =>
+  createHash('sha256')
+    .update(
+      JSON.stringify([row.toAddresses, row.ccAddresses, row.bccAddresses, row.subject, row.body]),
+    )
+    .digest('hex')
+    .slice(0, 32);
 
 /**
  * Release mail: the draft written when an outgoing document is prepared for release, and the
@@ -141,6 +162,7 @@ export class MailService {
   ): Promise<MailMessage> {
     await this.requireReleasable(actor, documentId);
     const current = await this.requireMessage(documentId, mailId);
+    if (current.skippedAt !== null) throw this.skipped();
     if (current.status !== 'DRAFT') throw this.notDraft();
     const updated = await this.mail.updateDraft(mailId, {
       toAddresses: input.to,
@@ -149,22 +171,35 @@ export class MailService {
       subject: input.subject,
       body: input.body,
     });
-    // Sent by someone else between the read and the write.
-    if (updated === null) throw this.notDraft();
+    // Sent or skipped by someone else between the read and the write.
+    if (updated === null) {
+      const now = await this.requireMessage(documentId, mailId);
+      throw now.skippedAt === null ? this.notDraft() : this.skipped();
+    }
     return this.toPublic(updated);
   }
 
   /**
-   * Queues the draft for the worker. A message already queued or sent is returned as it is, so a
-   * double-clicked Send is a quiet success; the outbox key `mail.send:<mailId>` makes the event
-   * itself idempotent too. A draft is sent only while the document is For release; a resend is
-   * not tied to the status (see {@link resend}).
+   * Queues the draft for the worker, provided it still has the `revision` the releaser reviewed
+   * (their own save's): a draft changed since answers `MAIL_CHANGED`, and the conditional
+   * `markQueued` makes an edit that lands after the check win too. A skipped draft is locked
+   * (`MAIL_SKIPPED`). A message already queued or sent is returned as it is, so a double-clicked
+   * Send is a quiet success; the outbox key `mail.send:<mailId>` makes the event itself
+   * idempotent too. A draft is sent only while the document is For release; a resend is not
+   * tied to the status (see {@link resend}).
    */
-  async send(actor: RequestUser, documentId: string, mailId: string): Promise<MailMessage> {
+  async send(
+    actor: RequestUser,
+    documentId: string,
+    mailId: string,
+    input: SendMailInput,
+  ): Promise<MailMessage> {
     const document = await this.requireReleasable(actor, documentId);
     this.requireConfigured();
     const current = await this.requireMessage(documentId, mailId);
-    if (current.status === 'QUEUED' || current.status === 'SENT') return this.toPublic(current);
+    if (current.status === 'SENT') return this.toPublic(current);
+    if (current.skippedAt !== null) throw this.skipped();
+    if (current.status === 'QUEUED') return this.toPublic(current);
     if (current.status !== 'DRAFT')
       throw new ConflictException({
         code: 'MAIL_NOT_DRAFT',
@@ -175,6 +210,7 @@ export class MailService {
         code: 'MAIL_DOCUMENT_NOT_FOR_RELEASE',
         message: 'A release email can be sent only while the document is for release',
       });
+    if (input.revision !== mailRevision(current)) throw this.changed();
     if (current.toAddresses.length === 0)
       throw new UnprocessableEntityException({
         code: 'MAIL_NO_RECIPIENTS',
@@ -182,14 +218,16 @@ export class MailService {
       });
 
     const queued = await this.database.transaction(async (tx) => {
-      const row = await this.mail.markQueued(mailId, actor.id, tx);
+      const row = await this.mail.markQueued(mailId, actor.id, current.updatedAt, tx);
       if (row === null) return null;
       await this.enqueueSend(row, tx);
       return row;
     });
     if (queued !== null) return this.toPublic(queued);
-    // Lost a race with another Send: report whatever the row is now.
-    return this.toPublic(await this.requireMessage(documentId, mailId));
+    // Lost a race: an edit or a skip landed after the read, or another Send queued it first.
+    const now = await this.requireMessage(documentId, mailId);
+    if (now.status === 'DRAFT') throw now.skippedAt === null ? this.changed() : this.skipped();
+    return this.toPublic(now);
   }
 
   /**
@@ -348,6 +386,20 @@ export class MailService {
     });
   }
 
+  private skipped(): ConflictException {
+    return new ConflictException({
+      code: 'MAIL_SKIPPED',
+      message: 'This message was skipped and can no longer be edited or sent',
+    });
+  }
+
+  private changed(): ConflictException {
+    return new ConflictException({
+      code: 'MAIL_CHANGED',
+      message: 'This message was changed since you opened it; review it again',
+    });
+  }
+
   private notDraft(): ConflictException {
     return new ConflictException({
       code: 'MAIL_NOT_DRAFT',
@@ -380,6 +432,7 @@ export class MailService {
       subject: row.subject,
       body: row.body,
       attachmentName,
+      revision: mailRevision(row),
       status: row.status,
       attempts: row.attempts,
       lastError: row.lastError,

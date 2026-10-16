@@ -258,6 +258,7 @@ export const mailMessage = (overrides: Partial<MailMessage> = {}): MailMessage =
   subject: 'REF-9: Outgoing permit',
   body: 'Good day.',
   attachmentName: 'signed-permit.pdf',
+  revision: 'rev-opened',
   status: 'DRAFT',
   attempts: 0,
   lastError: null,

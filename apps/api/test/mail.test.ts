@@ -202,10 +202,21 @@ describe('REST release mail', () => {
   const list = async (cookie: string[], documentId: string): Promise<MailMessage[]> =>
     (await request(server()).get(base(documentId)).set('Cookie', cookie).expect(200)).body
       .data as MailMessage[];
-  const send = (cookie: string[], documentId: string, mailId: string) =>
+  /** Send names the revision the releaser reviewed: the one the message was last read with. */
+  const send = (
+    cookie: string[],
+    documentId: string,
+    message: Pick<MailMessage, 'id' | 'revision'>,
+  ) =>
     request(server())
-      .post(`${base(documentId)}/${mailId}/send`)
-      .set('Cookie', cookie);
+      .post(`${base(documentId)}/${message.id}/send`)
+      .set('Cookie', cookie)
+      .send({ revision: message.revision });
+  const patch = (cookie: string[], documentId: string, mailId: string, body: object) =>
+    request(server())
+      .patch(`${base(documentId)}/${mailId}`)
+      .set('Cookie', cookie)
+      .send(body);
   const mailSendEvents = () => outbox().events.filter((event) => event.eventType === 'mail.send');
 
   it('drafts one message to the recipients and the linked requester, de-duplicated', async () => {
@@ -269,7 +280,7 @@ describe('REST release mail', () => {
     const { documentId, draft } = await drafted(records, { recipients: [] });
     expect(draft.to).toEqual([]);
 
-    const refused = await send(records, documentId, draft.id).expect(422);
+    const refused = await send(records, documentId, draft).expect(422);
     expect(refused.body.error.code).toBe('MAIL_NO_RECIPIENTS');
     expect(mailSendEvents()).toHaveLength(0);
   });
@@ -279,7 +290,7 @@ describe('REST release mail', () => {
     const { documentId, draft } = await drafted(records);
     smtpHost = undefined;
 
-    const refused = await send(records, documentId, draft.id).expect(422);
+    const refused = await send(records, documentId, draft).expect(422);
     expect(refused.body.error.code).toBe('MAIL_NOT_CONFIGURED');
     expect((await list(records, documentId))[0]?.status).toBe('DRAFT');
   });
@@ -294,7 +305,7 @@ describe('REST release mail', () => {
     process.env.SMTP_HOST = '';
     try {
       expect(app.get(ConfigService).get('SMTP_HOST')).toBe('');
-      const refused = await send(records, documentId, draft.id).expect(422);
+      const refused = await send(records, documentId, draft).expect(422);
       expect(refused.body.error.code).toBe('MAIL_NOT_CONFIGURED');
       expect(mailSendEvents()).toHaveLength(0);
     } finally {
@@ -308,7 +319,7 @@ describe('REST release mail', () => {
     const { documentId, draft } = await drafted(records);
     await setStatus(documentId, 'RELEASED');
 
-    const refused = await send(records, documentId, draft.id).expect(409);
+    const refused = await send(records, documentId, draft).expect(409);
     expect(refused.body.error.code).toBe('MAIL_DOCUMENT_NOT_FOR_RELEASE');
     expect(mailSendEvents()).toHaveLength(0);
     expect((await list(records, documentId))[0]?.status).toBe('DRAFT');
@@ -318,7 +329,7 @@ describe('REST release mail', () => {
     const records = await asRecords();
     const { documentId, draft } = await drafted(records);
 
-    const queued = (await send(records, documentId, draft.id).expect(201)).body.data as MailMessage;
+    const queued = (await send(records, documentId, draft).expect(201)).body.data as MailMessage;
     expect(queued).toMatchObject({ id: draft.id, status: 'QUEUED' });
     expect(mailSendEvents()).toEqual([
       expect.objectContaining({
@@ -327,8 +338,7 @@ describe('REST release mail', () => {
       }),
     ]);
 
-    const repeated = (await send(records, documentId, draft.id).expect(201)).body
-      .data as MailMessage;
+    const repeated = (await send(records, documentId, draft).expect(201)).body.data as MailMessage;
     expect(repeated.status).toBe('QUEUED');
     expect(mailSendEvents()).toHaveLength(1);
   });
@@ -421,13 +431,142 @@ describe('REST release mail', () => {
       status: 'DRAFT',
     });
 
-    await send(records, documentId, draft.id).expect(201);
+    await send(records, documentId, updated).expect(201);
     const refused = await request(server())
       .patch(`${base(documentId)}/${draft.id}`)
       .set('Cookie', records)
       .send(edit)
       .expect(409);
     expect(refused.body.error.code).toBe('MAIL_NOT_DRAFT');
+  });
+
+  it('answers each message with a revision of its contents, changed only by an edit', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+    expect(draft.revision).toMatch(/^[0-9a-f]{32}$/);
+    expect((await list(records, documentId))[0]?.revision).toBe(draft.revision);
+
+    const same = {
+      to: draft.to,
+      cc: draft.cc,
+      bcc: draft.bcc,
+      subject: draft.subject,
+      body: draft.body,
+    };
+    const unchanged = (await patch(records, documentId, draft.id, same).expect(200)).body
+      .data as MailMessage;
+    expect(unchanged.revision).toBe(draft.revision);
+
+    const edited = (
+      await patch(records, documentId, draft.id, { ...same, subject: 'Edited' }).expect(200)
+    ).body.data as MailMessage;
+    expect(edited.revision).not.toBe(draft.revision);
+    expect((await list(records, documentId))[0]?.revision).toBe(edited.revision);
+  });
+
+  it('requires the revision to send', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+
+    await request(server())
+      .post(`${base(documentId)}/${draft.id}/send`)
+      .set('Cookie', records)
+      .expect(400);
+    expect(mailSendEvents()).toHaveLength(0);
+  });
+
+  it('refuses a send whose revision another save replaced: A saves, B saves, A sends', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+    const content = { to: draft.to, cc: [], bcc: [], body: draft.body };
+
+    const saveA = (
+      await patch(records, documentId, draft.id, { ...content, subject: 'A' }).expect(200)
+    ).body.data as MailMessage;
+    await patch(records, documentId, draft.id, { ...content, subject: 'B' }).expect(200);
+
+    const refused = await send(records, documentId, saveA).expect(409);
+    expect(errorOf(refused)).toMatchObject({
+      code: 'MAIL_CHANGED',
+      message: 'This message was changed since you opened it; review it again',
+    });
+    expect(mailSendEvents()).toHaveLength(0);
+    expect((await list(records, documentId))[0]).toMatchObject({ status: 'DRAFT', subject: 'B' });
+  });
+
+  it('refuses a send when the draft is edited between the check and the queue', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+    const repository = mailRepo();
+    const markQueued = repository.markQueued.bind(repository);
+    vi.spyOn(repository, 'markQueued').mockImplementation(async (...args) => {
+      // Another releaser's save lands after the revision check, before the conditional update.
+      await repository.updateDraft(draft.id, {
+        toAddresses: draft.to,
+        ccAddresses: [],
+        bccAddresses: [],
+        subject: 'Changed underneath',
+        body: draft.body,
+      });
+      return markQueued(...args);
+    });
+
+    const refused = await send(records, documentId, draft).expect(409);
+    expect(refused.body.error.code).toBe('MAIL_CHANGED');
+    expect(mailSendEvents()).toHaveLength(0);
+    expect((await list(records, documentId))[0]?.status).toBe('DRAFT');
+  });
+
+  it('locks a skipped draft: it can be neither edited nor sent', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+    await request(server())
+      .post(`${base(documentId)}/skip`)
+      .set('Cookie', records)
+      .send({ remarks: 'Hand-delivered' })
+      .expect(204);
+
+    const edit = { to: draft.to, cc: [], bcc: [], subject: 'Stale dialog', body: draft.body };
+    const refusedEdit = await patch(records, documentId, draft.id, edit).expect(409);
+    expect(errorOf(refusedEdit)).toMatchObject({ code: 'MAIL_SKIPPED' });
+    const refusedSend = await send(records, documentId, draft).expect(409);
+    expect(errorOf(refusedSend)).toMatchObject({ code: 'MAIL_SKIPPED' });
+
+    expect(mailSendEvents()).toHaveLength(0);
+    expect((await list(records, documentId))[0]).toMatchObject({
+      status: 'DRAFT',
+      subject: draft.subject,
+    });
+    // The repository refuses too, so a skip that lands between the service's read and its
+    // write cannot be overtaken.
+    expect(
+      await mailRepo().updateDraft(draft.id, {
+        toAddresses: draft.to,
+        ccAddresses: [],
+        bccAddresses: [],
+        subject: 'Race',
+        body: draft.body,
+      }),
+    ).toBeNull();
+    const row = (await mailRepo().findForDocument(documentId, draft.id))!;
+    expect(await mailRepo().markQueued(draft.id, RECORDS_ID, row.updatedAt)).toBeNull();
+  });
+
+  it('still resends a skipped message that was later delivered', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+    await send(records, documentId, draft).expect(201);
+    await request(server())
+      .post(`${base(documentId)}/skip`)
+      .set('Cookie', records)
+      .send({ remarks: 'Relay slow; hand-delivered' })
+      .expect(204);
+    mailRepo().setStatusForTest(draft.id, 'SENT');
+
+    await request(server())
+      .post(`${base(documentId)}/${draft.id}/resend`)
+      .set('Cookie', records)
+      .expect(201);
   });
 
   /** Every mail route, with a body its validation pipe accepts so the service is reached. */
@@ -445,7 +584,10 @@ describe('REST release mail', () => {
     },
     {
       name: 'POST send',
-      call: (id, mailId) => request(server()).post(`${base(id)}/${mailId}/send`),
+      call: (id, mailId) =>
+        request(server())
+          .post(`${base(id)}/${mailId}/send`)
+          .send({ revision: 'any' }),
     },
     {
       name: 'POST resend',
@@ -494,7 +636,7 @@ describe('REST release mail', () => {
   it('resends a sent message as a new queued row and leaves the original untouched', async () => {
     const records = await asRecords();
     const { documentId, draft } = await drafted(records);
-    await send(records, documentId, draft.id).expect(201);
+    await send(records, documentId, draft).expect(201);
     mailRepo().setStatusForTest(draft.id, 'SENT');
     const [original] = await list(records, documentId);
 
@@ -564,7 +706,7 @@ describe('REST release mail', () => {
     async (status) => {
       const records = await asRecords();
       const { documentId, draft } = await drafted(records);
-      await send(records, documentId, draft.id).expect(201);
+      await send(records, documentId, draft).expect(201);
       if (status === 'FAILED') mailRepo().setStatusForTest(draft.id, 'FAILED');
 
       await skip(records, documentId, 'Relay down; hand-delivered').expect(204);
@@ -579,7 +721,7 @@ describe('REST release mail', () => {
   it('skips the newest of several unsent messages', async () => {
     const records = await asRecords();
     const { documentId, draft } = await drafted(records);
-    await send(records, documentId, draft.id).expect(201);
+    await send(records, documentId, draft).expect(201);
     mailRepo().setStatusForTest(draft.id, 'FAILED');
     const resent = (
       await request(server())
@@ -599,7 +741,7 @@ describe('REST release mail', () => {
   it('refuses to skip once a message is sent', async () => {
     const records = await asRecords();
     const { documentId, draft } = await drafted(records);
-    await send(records, documentId, draft.id).expect(201);
+    await send(records, documentId, draft).expect(201);
     mailRepo().setStatusForTest(draft.id, 'SENT');
 
     const refused = await skip(records, documentId, 'Too late').expect(409);
@@ -759,7 +901,7 @@ describe('REST release mail', () => {
       const records = await asRecords();
       const document = await prepared(records);
       const [draft] = await list(records, document.id);
-      await send(records, document.id, draft!.id).expect(201);
+      await send(records, document.id, draft!).expect(201);
 
       // Queued is not sent: the worker has not delivered it yet.
       await act(records, document.id, 'RELEASE', {

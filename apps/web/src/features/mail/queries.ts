@@ -71,13 +71,36 @@ export function useUpdateMail(documentId: string) {
   });
 }
 
+/**
+ * Sends a draft as the releaser last saw it: `revision` is the one their own save returned, and
+ * the server answers `MAIL_CHANGED` when the stored draft has moved on since.
+ */
 export function useSendMail(documentId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (mailId: string) =>
-      api<MailMessage>(`${basePath(documentId)}/${mailId}/send`, { method: 'POST' }),
+    mutationFn: ({ mailId, revision }: { mailId: string; revision: string }) =>
+      api<MailMessage>(`${basePath(documentId)}/${mailId}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ revision }),
+      }),
     onSuccess: () => settle(client, documentId),
   });
+}
+
+/**
+ * Re-reads the document's messages and returns the stored copy of one, for a Compose dialog
+ * whose Send was refused because the draft changed underneath it.
+ */
+export function useReloadMail(documentId: string) {
+  const client = useQueryClient();
+  return async (mailId: string): Promise<MailMessage | undefined> => {
+    const messages = await client.fetchQuery({
+      queryKey: mailKeys.list(documentId),
+      queryFn: () => api<MailMessage[]>(basePath(documentId)),
+      staleTime: 0,
+    });
+    return messages.find((message) => message.id === mailId);
+  };
 }
 
 export function useResendMail(documentId: string) {

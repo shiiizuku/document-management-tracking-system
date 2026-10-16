@@ -1,8 +1,10 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  sendMailSchema,
   skipMailSchema,
   updateMailDraftSchema,
+  type SendMailInput,
   type SkipMailInput,
   type UpdateMailDraftInput,
 } from '@dts/contracts';
@@ -58,8 +60,9 @@ export class MailController {
     @CurrentUser() actor: RequestUser,
     @Param('id', idPipe()) id: string,
     @Param('mailId', idPipe()) mailId: string,
+    @Body(new ZodValidationPipe(sendMailSchema)) input: SendMailInput,
   ) {
-    return this.mail.send(actor, id, mailId).then((data) => ({ data }));
+    return this.mail.send(actor, id, mailId, input).then((data) => ({ data }));
   }
 
   @Post(':mailId/resend')

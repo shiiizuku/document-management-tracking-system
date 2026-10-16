@@ -103,24 +103,45 @@ export class MailRepository {
       .orderBy(asc(mailMessages.createdAt), asc(mailMessages.id));
   }
 
+  /** Edits a draft; `null` once it was sent or skipped, because a skipped draft is locked. */
   async updateDraft(mailId: string, patch: MailDraftPatch): Promise<MailMessageRow | null> {
     const [row] = await this.database
       .update(mailMessages)
       .set(patch)
-      .where(and(eq(mailMessages.id, mailId), eq(mailMessages.status, 'DRAFT')))
+      .where(
+        and(
+          eq(mailMessages.id, mailId),
+          eq(mailMessages.status, 'DRAFT'),
+          isNull(mailMessages.skippedAt),
+        ),
+      )
       .returning();
     return row ?? null;
   }
 
+  /**
+   * `DRAFT` to `QUEUED`, only if the draft is unskipped and unchanged since it was read: its
+   * `updated_at` must still be `readUpdatedAt`, so an edit that lands between the service's
+   * revision check and this write wins and the send answers `null`. Compared at millisecond
+   * precision: `defaultNow()` stores microseconds, but the value read back is a JS `Date`.
+   */
   async markQueued(
     mailId: string,
     sentById: string,
+    readUpdatedAt: Date,
     executor: DatabaseExecutor = this.database,
   ): Promise<MailMessageRow | null> {
     const [row] = await executor
       .update(mailMessages)
       .set({ status: 'QUEUED', sentById })
-      .where(and(eq(mailMessages.id, mailId), eq(mailMessages.status, 'DRAFT')))
+      .where(
+        and(
+          eq(mailMessages.id, mailId),
+          eq(mailMessages.status, 'DRAFT'),
+          isNull(mailMessages.skippedAt),
+          sql`date_trunc('milliseconds', ${mailMessages.updatedAt}) = ${readUpdatedAt.toISOString()}::timestamptz`,
+        ),
+      )
       .returning();
     return row ?? null;
   }
