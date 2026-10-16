@@ -1,3 +1,4 @@
+import type { MailMessage } from '@dts/contracts';
 import type { AccountRequest, AdminUser } from '../src/features/admin/queries';
 import type { AttachmentGroup, AttachmentVersion } from '../src/features/attachments/queries';
 import type { AuditEvent, AuditPage } from '../src/features/audit/queries';
@@ -247,3 +248,21 @@ export const documentTypes = (): DocumentType[] =>
     ['LETTER', 'Letter'],
     ['DENR_8888_ACTION_CENTER', 'DENR 8888 Action Center'],
   ].map(([code, label]) => ({ id: `type-${code}`, code: code!, label: label!, active: true }));
+
+export const mailMessage = (overrides: Partial<MailMessage> = {}): MailMessage => ({
+  id: 'mail-1',
+  documentId: 'doc-1',
+  to: ['records@agency.gov.ph'],
+  cc: [],
+  bcc: [],
+  subject: 'REF-9: Outgoing permit',
+  body: 'Good day.',
+  attachmentName: 'signed-permit.pdf',
+  status: 'DRAFT',
+  attempts: 0,
+  lastError: null,
+  sentAt: null,
+  skippedAt: null,
+  createdAt: '2026-09-02T08:00:00.000Z',
+  ...overrides,
+});

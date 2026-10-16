@@ -227,6 +227,40 @@ describe('DocumentActions', () => {
     );
   });
 
+  // An Emailed release is refused until the release mail is sent or skipped; the server's wording
+  // is what tells the releaser what to do next, and the dialog stays open for a retry.
+  it('shows the server message when an emailed release needs its mail sent or skipped', async () => {
+    apiMock.mockImplementation((path: string, init?: { method?: string }) =>
+      path === '/release-methods'
+        ? Promise.resolve(RELEASE_METHODS)
+        : init?.method === 'POST'
+          ? Promise.reject(
+              new ApiError({
+                status: 422,
+                code: 'RELEASE_MAIL_REQUIRED',
+                message: 'Emailed release requires the message to be sent or skipped',
+              }),
+            )
+          : Promise.resolve(documentDetail()),
+    );
+    renderWithQuery(<DocumentActions document={documentDetail({ allowedActions: ['RELEASE'] })} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Release document' }));
+    await waitFor(() => expect(screen.getByLabelText('Delivery method')).toBeEnabled());
+    await userEvent.click(screen.getByLabelText('Delivery method'));
+    await userEvent.click(screen.getByRole('option', { name: 'Emailed' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Release document' }),
+    );
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith('Release document failed', {
+        description: 'Emailed release requires the message to be sent or skipped',
+      }),
+    );
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
   /*
    * The stated behaviour for an optimistic-concurrency conflict: tell the user the document moved,
    * and let the refetch the mutation already triggered put the current version on screen. A blind
