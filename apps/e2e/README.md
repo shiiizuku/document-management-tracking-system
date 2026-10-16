@@ -10,7 +10,7 @@ The suite starts the **application** (API, worker, web) and expects the **infras
 there already — the same split the `integration` CI job uses.
 
 ```bash
-docker compose up -d --wait --wait-timeout 420 postgres redis minio clamav
+docker compose up -d --wait --wait-timeout 420 postgres redis minio clamav mailpit
 npm run build
 npm run test:e2e -w @dts/e2e
 ```
@@ -25,6 +25,14 @@ servers that never became ready — and building silently would hide which commi
 
 Afterwards: `npm run report -w @dts/e2e` opens the HTML report, including the axe findings attached
 to each sweep.
+
+### Mailpit
+
+`release-mail.spec.ts` asserts on real email. The suite points its API and worker at Mailpit's SMTP
+port (`localhost:1025`, `MAILPIT_SMTP_HOST_PORT`), never at whatever `.env` names, and reads the
+result from Mailpit's HTTP API at `http://localhost:8025` (override with `MAILPIT_URL`). The spec
+empties the inbox first. Without Mailpit the other specs still pass; only the mail spec fails, with
+a message naming the URL.
 
 ### `npm run dev` must not be running
 
@@ -49,10 +57,12 @@ nothing installed but npm packages.
 | `tests/smoke.spec.ts`            | The harness itself: stack up, session accepted, reset ran                |
 | `tests/incoming-archive.spec.ts` | Acceptance scenario 1, step by step                                      |
 | `tests/outgoing-release.spec.ts` | Acceptance scenario 2, and the ORD variant (ADR-0007)                    |
+| `tests/release-mail.spec.ts`     | Release email: compose, send over SMTP to Mailpit, release by Emailed    |
 | `tests/accessibility.spec.ts`    | The axe sweep: ten screens and the registration dialog                   |
 | `fixtures/accounts.ts`           | The organization and the accounts, at fixed ids                          |
 | `fixtures/database.ts`           | Create / reset / seed / truncate, and the guards on the destructive ones |
 | `fixtures/screens.ts`            | The screens in the words printed on their controls                       |
+| `fixtures/mailpit.ts`            | Clear and read Mailpit's inbox over its HTTP API                         |
 
 ## Two constraints worth knowing before changing anything
 

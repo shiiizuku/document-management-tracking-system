@@ -95,6 +95,24 @@ services:
       retries: 20
       start_period: 90s
 
+  # Development mail catcher: accepts SMTP on 1025 (inside the compose network) and shows what was
+  # "sent" at http://localhost:8025, with an HTTP API the e2e suite polls. Nothing leaves the
+  # machine. Both published ports are bound to loopback so a laptop on the office network does not
+  # expose the inbox. The production overlay disables this service; production uses the agency's
+  # own SMTP server (docs/runbooks/release-mail.md).
+  mailpit:
+    image: axllent/mailpit:v1.29.5
+    ports:
+      - '127.0.0.1:${MAILPIT_HTTP_PORT:-8025}:8025'
+      # Published for the e2e suite, whose API and worker run on the host and cannot reach the
+      # compose network. Containers use mailpit:1025 and do not touch this.
+      - '127.0.0.1:${MAILPIT_SMTP_HOST_PORT:-1025}:1025'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   # Applies migrations once against a live database, then exits; the api waits for it
   # to succeed. Runs the COMPILED migrator (`dist/`) because the runtime image carries
   # no `src/`, and from `working_dir` apps/api so the migrator's relative
@@ -153,13 +171,15 @@ services:
       # to start without a configured Regional Director (ADR-0006).
       DIRECTOR_EMAIL: ${DIRECTOR_EMAIL:-}
       DIRECTOR_PASSWORD: ${DIRECTOR_PASSWORD:-}
-      # Release mail. Leave SMTP_HOST empty to run without it; MAIL_FROM is then not needed.
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
+      # Release mail. Development defaults to the `mailpit` service below, which catches every
+      # message and sends none; set SMTP_HOST to the agency's server to send for real, or to an
+      # empty string to run without mail. The production overlay does not inherit these defaults.
+      SMTP_HOST: ${SMTP_HOST-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_FROM: ${MAIL_FROM:-dts@localhost}
     ports: ['${API_HOST_PORT:-4001}:4000']
     depends_on:
       postgres: { condition: service_healthy }
@@ -200,13 +220,15 @@ services:
       # to start without a configured Regional Director (ADR-0006).
       DIRECTOR_EMAIL: ${DIRECTOR_EMAIL:-}
       DIRECTOR_PASSWORD: ${DIRECTOR_PASSWORD:-}
-      # Release mail. Leave SMTP_HOST empty to run without it; MAIL_FROM is then not needed.
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
+      # Release mail. Development defaults to the `mailpit` service below, which catches every
+      # message and sends none; set SMTP_HOST to the agency's server to send for real, or to an
+      # empty string to run without mail. The production overlay does not inherit these defaults.
+      SMTP_HOST: ${SMTP_HOST-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_FROM: ${MAIL_FROM:-dts@localhost}
     depends_on:
       api: { condition: service_healthy }
     healthcheck:

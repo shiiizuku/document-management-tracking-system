@@ -26,6 +26,12 @@ services:
   clamav:
     ports: !reset []
     restart: unless-stopped
+  # The development mail catcher must never run beside real correspondence. Naming a profile that
+  # nothing activates keeps it out of `up -d`; the api and worker take their SMTP settings from the
+  # operator's environment below, with no default host.
+  mailpit:
+    profiles: !override ['development-only']
+    ports: !reset []
   api:
     ports: !override
       - '127.0.0.1:${API_HOST_PORT:-4001}:4000'
