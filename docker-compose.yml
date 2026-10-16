@@ -153,6 +153,13 @@ services:
       # to start without a configured Regional Director (ADR-0006).
       DIRECTOR_EMAIL: ${DIRECTOR_EMAIL:-}
       DIRECTOR_PASSWORD: ${DIRECTOR_PASSWORD:-}
+      # Release mail. Leave SMTP_HOST empty to run without it; MAIL_FROM is then not needed.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
     ports: ['${API_HOST_PORT:-4001}:4000']
     depends_on:
       postgres: { condition: service_healthy }
@@ -193,6 +200,13 @@ services:
       # to start without a configured Regional Director (ADR-0006).
       DIRECTOR_EMAIL: ${DIRECTOR_EMAIL:-}
       DIRECTOR_PASSWORD: ${DIRECTOR_PASSWORD:-}
+      # Release mail. Leave SMTP_HOST empty to run without it; MAIL_FROM is then not needed.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
     depends_on:
       api: { condition: service_healthy }
     healthcheck:

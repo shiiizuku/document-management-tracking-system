@@ -572,6 +572,58 @@ export const signatureEvents = pgTable('signature_events', {
   signedAt: timestamp('signed_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const mailStatusEnum = pgEnum('mail_status', ['DRAFT', 'QUEUED', 'SENT', 'FAILED']);
+
+/**
+ * The email of a signed outgoing document. Many rows per document: a resend copies a failed or
+ * sent row into a new one, so history is never overwritten. At most one `DRAFT` per document
+ * keeps drafting idempotent.
+ */
+export const mailMessages = pgTable(
+  'mail_messages',
+  {
+    ...identityColumns(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id),
+    fileVersionId: uuid('file_version_id')
+      .notNull()
+      .references(() => fileVersions.id),
+    toAddresses: text('to_addresses')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    ccAddresses: text('cc_addresses')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    bccAddresses: text('bcc_addresses')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    subject: text('subject').notNull(),
+    body: text('body').notNull(),
+    status: mailStatusEnum('status').notNull().default('DRAFT'),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    smtpMessageId: text('smtp_message_id'),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    skippedAt: timestamp('skipped_at', { withTimezone: true }),
+    skipRemarks: text('skip_remarks'),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    sentById: uuid('sent_by_id').references(() => users.id),
+    ...timestampColumns(),
+  },
+  (table) => [
+    index('mail_messages_document_idx').on(table.documentId),
+    uniqueIndex('mail_messages_one_draft_uq')
+      .on(table.documentId)
+      .where(sql`${table.status} = 'DRAFT'`),
+  ],
+);
+
 export const releaseEvents = pgTable('release_events', {
   ...identityColumns(),
   documentId: uuid('document_id')

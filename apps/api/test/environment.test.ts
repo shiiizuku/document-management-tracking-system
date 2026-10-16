@@ -366,3 +366,44 @@ describe('seedsDemoAccounts', () => {
     expect(seedsDemoAccounts({})).toBe(true);
   });
 });
+
+describe('SMTP configuration', () => {
+  it('leaves mail unconfigured when SMTP_HOST is unset or empty', () => {
+    expect(validateEnvironment(validEnvironment).SMTP_HOST).toBeUndefined();
+    expect(validateEnvironment({ ...validEnvironment, SMTP_HOST: '' }).SMTP_HOST).toBeUndefined();
+    expect(validateEnvironment(validEnvironment)).toMatchObject({
+      SMTP_PORT: 587,
+      SMTP_SECURE: false,
+    });
+  });
+
+  it('parses a full configuration', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        SMTP_HOST: 'smtp.example.gov.ph',
+        SMTP_PORT: '465',
+        SMTP_SECURE: 'true',
+        SMTP_USER: 'dts',
+        SMTP_PASS: 'secret',
+        MAIL_FROM: 'dts@example.gov.ph',
+      }),
+    ).toMatchObject({
+      SMTP_HOST: 'smtp.example.gov.ph',
+      SMTP_PORT: 465,
+      SMTP_SECURE: true,
+      SMTP_USER: 'dts',
+      SMTP_PASS: 'secret',
+      MAIL_FROM: 'dts@example.gov.ph',
+    });
+  });
+
+  it('rejects a bad port and a host without a sender', () => {
+    expect(() => validateEnvironment({ ...validEnvironment, SMTP_PORT: 'abc' })).toThrow(
+      'SMTP_PORT must be a positive integer',
+    );
+    expect(() => validateEnvironment({ ...validEnvironment, SMTP_HOST: 'smtp.example' })).toThrow(
+      'MAIL_FROM is required when SMTP_HOST is set',
+    );
+  });
+});

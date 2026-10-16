@@ -30,8 +30,22 @@ services:
     ports: !override
       - '127.0.0.1:${API_HOST_PORT:-4001}:4000'
     restart: unless-stopped
+    environment:
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
   worker:
     restart: unless-stopped
+    environment:
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
     # `restart:` is applied by the Docker daemon, which ignores `depends_on`: after a reboot the
     # worker would start beside Redis at once and spend its five job retries (about 15 seconds)
     # before ClamAV, which takes minutes to load its definitions, answers. The attachment would sit
