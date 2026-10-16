@@ -13,6 +13,7 @@ import { DATABASE } from '../src/database/database.constants.js';
 import type { DatabaseExecutor } from '../src/database/executor.js';
 import { AuditWriter } from '../src/modules/audit/audit.writer.js';
 import { OutboxWriter } from '../src/modules/audit/outbox.writer.js';
+import { CSRF_COOKIE, CSRF_HEADER } from '../src/modules/auth/session.service.js';
 import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
 import { FileVersionsRepository } from '../src/modules/files/file-versions.repository.js';
 import { MailRepository } from '../src/modules/mail/mail.repository.js';
@@ -47,6 +48,13 @@ const errorOf = (response: { body: unknown }): unknown => {
   const error = { ...(response.body as { error: Record<string, unknown> }).error };
   delete error.correlationId;
   return error;
+};
+
+/** The session cookie and the CSRF header the web `api` helper echoes from `dts_csrf`. */
+const withCsrf = (cookie: string[]): Record<string, string | string[]> => {
+  const pair = cookie.find((entry) => entry.startsWith(`${CSRF_COOKIE}=`));
+  if (pair === undefined) throw new Error('Login did not set a CSRF cookie');
+  return { Cookie: cookie, [CSRF_HEADER]: pair.split(';')[0]!.slice(CSRF_COOKIE.length + 1) };
 };
 
 /** `smtpHost` set to this hands `SMTP_HOST` to the real `ConfigService` lookup. */
@@ -214,12 +222,12 @@ describe('REST release mail', () => {
   ) =>
     request(server())
       .post(`${base(documentId)}/${message.id}/send`)
-      .set('Cookie', cookie)
+      .set(withCsrf(cookie))
       .send({ revision: message.revision });
   const patch = (cookie: string[], documentId: string, mailId: string, body: object) =>
     request(server())
       .patch(`${base(documentId)}/${mailId}`)
-      .set('Cookie', cookie)
+      .set(withCsrf(cookie))
       .send(body);
   const mailSendEvents = () => outbox().events.filter((event) => event.eventType === 'mail.send');
 
@@ -404,7 +412,7 @@ describe('REST release mail', () => {
     const updated = (
       await request(server())
         .patch(`${base(documentId)}/${draft.id}`)
-        .set('Cookie', records)
+        .set(withCsrf(records))
         .send({
           to: ['A@agency.gov', 'a@agency.gov', 'b@agency.gov'],
           cc: ['C@agency.gov', 'c@AGENCY.gov'],
@@ -441,7 +449,7 @@ describe('REST release mail', () => {
     const updated = (
       await request(server())
         .patch(`${base(documentId)}/${draft.id}`)
-        .set('Cookie', records)
+        .set(withCsrf(records))
         .send(edit)
         .expect(200)
     ).body.data as MailMessage;
@@ -456,7 +464,7 @@ describe('REST release mail', () => {
     await send(records, documentId, updated).expect(201);
     const refused = await request(server())
       .patch(`${base(documentId)}/${draft.id}`)
-      .set('Cookie', records)
+      .set(withCsrf(records))
       .send(edit)
       .expect(409);
     expect(refused.body.error.code).toBe('MAIL_NOT_DRAFT');
@@ -492,7 +500,7 @@ describe('REST release mail', () => {
 
     await request(server())
       .post(`${base(documentId)}/${draft.id}/send`)
-      .set('Cookie', records)
+      .set(withCsrf(records))
       .expect(400);
     expect(mailSendEvents()).toHaveLength(0);
   });
@@ -544,7 +552,7 @@ describe('REST release mail', () => {
     const { documentId, draft } = await drafted(records);
     await request(server())
       .post(`${base(documentId)}/skip`)
-      .set('Cookie', records)
+      .set(withCsrf(records))
       .send({ remarks: 'Hand-delivered' })
       .expect(204);
 
@@ -580,14 +588,14 @@ describe('REST release mail', () => {
     await send(records, documentId, draft).expect(201);
     await request(server())
       .post(`${base(documentId)}/skip`)
-      .set('Cookie', records)
+      .set(withCsrf(records))
       .send({ remarks: 'Relay slow; hand-delivered' })
       .expect(204);
     mailRepo().setStatusForTest(draft.id, 'SENT');
 
     await request(server())
       .post(`${base(documentId)}/${draft.id}/resend`)
-      .set('Cookie', records)
+      .set(withCsrf(records))
       .expect(201);
   });
 
@@ -624,13 +632,41 @@ describe('REST release mail', () => {
     },
   ];
 
+  it.each(ROUTES.filter((route) => !route.name.startsWith('GET')))(
+    '$name refuses a request without the CSRF header with 403 and changes nothing',
+    async ({ call }) => {
+      const records = await asRecords();
+      const { documentId, draft } = await drafted(records);
+
+      const refused = await call(documentId, draft.id).set('Cookie', records).expect(403);
+      expect(errorOf(refused)).toMatchObject({ message: 'CSRF token missing or invalid' });
+      const forged = { ...withCsrf(records), [CSRF_HEADER]: 'forged' };
+      await call(documentId, draft.id).set(forged).expect(403);
+
+      expect(mailSendEvents()).toHaveLength(0);
+      expect((await list(records, documentId))[0]).toMatchObject({
+        status: 'DRAFT',
+        subject: draft.subject,
+        skippedAt: null,
+      });
+    },
+  );
+
+  it('reads the list without the CSRF header, and accepts a mutation that echoes it', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+
+    await request(server()).get(base(documentId)).set('Cookie', records).expect(200);
+    await send(records, documentId, draft).expect(201);
+  });
+
   it.each(ROUTES)('$name refuses a reader without DOCUMENT_RELEASE with 403', async ({ call }) => {
     const records = await asRecords();
     const staff = await asStaff();
     // Readable by the staff member (their own section), but they cannot release.
     const { documentId, draft } = await drafted(records);
 
-    await call(documentId, draft.id).set('Cookie', staff).expect(403);
+    await call(documentId, draft.id).set(withCsrf(staff)).expect(403);
     expect(mailSendEvents()).toHaveLength(0);
     expect(await mail().releaseState(documentId)).toEqual({
       exists: true,
@@ -646,8 +682,8 @@ describe('REST release mail', () => {
       const staff = await asStaff();
       const { documentId, draft } = await drafted(records, { confidential: true });
 
-      const unreadable = await call(documentId, draft.id).set('Cookie', staff);
-      const absent = await call(randomUUID(), randomUUID()).set('Cookie', staff);
+      const unreadable = await call(documentId, draft.id).set(withCsrf(staff));
+      const absent = await call(randomUUID(), randomUUID()).set(withCsrf(staff));
       expect(unreadable.status).toBe(404);
       expect(absent.status).toBe(404);
       expect(errorOf(unreadable)).toEqual(errorOf(absent));
@@ -668,7 +704,7 @@ describe('REST release mail', () => {
     const resent = (
       await request(server())
         .post(`${base(documentId)}/${draft.id}/resend`)
-        .set('Cookie', records)
+        .set(withCsrf(records))
         .expect(201)
     ).body.data as MailMessage;
 
@@ -697,7 +733,7 @@ describe('REST release mail', () => {
     const { documentId, draft } = await drafted(records);
     const refused = await request(server())
       .post(`${base(documentId)}/${draft.id}/resend`)
-      .set('Cookie', records)
+      .set(withCsrf(records))
       .expect(409);
     expect(refused.body.error.code).toBe('MAIL_NOT_RESENDABLE');
   });
@@ -705,7 +741,7 @@ describe('REST release mail', () => {
   const skip = (cookie: string[], documentId: string, remarks: string) =>
     request(server())
       .post(`${base(documentId)}/skip`)
-      .set('Cookie', cookie)
+      .set(withCsrf(cookie))
       .send({ remarks });
   const skippedAudit = () => audit().entries.filter((entry) => entry.action === 'mail.skipped');
 
@@ -748,7 +784,7 @@ describe('REST release mail', () => {
     const resent = (
       await request(server())
         .post(`${base(documentId)}/${draft.id}/resend`)
-        .set('Cookie', records)
+        .set(withCsrf(records))
         .expect(201)
     ).body.data as MailMessage;
     mailRepo().setStatusForTest(resent.id, 'FAILED');
@@ -791,7 +827,7 @@ describe('REST release mail', () => {
     const outgoing = await register(records, { direction: 'OUTGOING', title: 'No mail' });
     const refused = await request(server())
       .post(`${base(outgoing.id)}/skip`)
-      .set('Cookie', records)
+      .set(withCsrf(records))
       .send({ remarks: 'Nothing here' })
       .expect(422);
     expect(refused.body.error.code).toBe('MAIL_NOTHING_TO_SKIP');
@@ -944,7 +980,7 @@ describe('REST release mail', () => {
       const document = await prepared(records);
       await request(server())
         .post(`${base(document.id)}/skip`)
-        .set('Cookie', records)
+        .set(withCsrf(records))
         .send({ remarks: 'Sent from the office mailbox' })
         .expect(204);
 

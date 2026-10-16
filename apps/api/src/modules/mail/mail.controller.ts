@@ -9,6 +9,7 @@ import {
   type UpdateMailDraftInput,
 } from '@dts/contracts';
 import { AuthGuard } from '../../common/auth.guard.js';
+import { CsrfGuard } from '../../common/csrf.guard.js';
 import { CurrentUser } from '../../common/current-user.decorator.js';
 import type { RequestUser } from '../../common/request-user.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
@@ -22,10 +23,11 @@ const idPipe = () => new ZodValidationPipe(z.uuid());
 
 /**
  * A document's release email. Every route needs `DOCUMENT_RELEASE` and read access to the
- * document; both are checked in {@link MailService}, read access first.
+ * document; both are checked in {@link MailService}, read access first. The mutations (edit,
+ * send, resend, skip) also need the session's CSRF header, which `CsrfGuard` skips for the GET.
  */
 @Controller('documents/:id/mail')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, CsrfGuard)
 export class MailController {
   constructor(private readonly mail: MailService) {}
 
