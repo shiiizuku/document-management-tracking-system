@@ -86,12 +86,33 @@ describe('deliverMail', () => {
   it('records the attempt and rethrows so the queue retries before the last attempt', async () => {
     const h = await setup();
     h.sender.failWith = new Error('smtp down');
-    await expect(deliverMail(h.deps, h.id, { made: 2, max: 5 })).rejects.toThrow('smtp down');
+    await expect(deliverMail(h.deps, h.id, { made: 2, max: 5 })).rejects.toThrow(
+      `mail ${h.id} delivery attempt 2/5 failed`,
+    );
     const row = await stored(h.mail, h.id);
     expect(row.status).toBe('QUEUED');
     expect(row.attempts).toBe(2);
     expect(row.lastError).toBe('smtp down');
     expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it('throws a scrubbed error and keeps the raw reason only in last_error', async () => {
+    const h = await setup();
+    const raw = 'Recipient address rejected: a@example.test, c@example.test';
+    h.sender.failWith = new Error(raw);
+    const thrown = (await deliverMail(h.deps, h.id, { made: 2, max: 5 }).then(
+      () => null,
+      (error: unknown) => error,
+    )) as Error;
+    expect(thrown).toBeInstanceOf(Error);
+    for (const address of ['a@example.test', 'b@example.test', 'c@example.test']) {
+      expect(thrown.message).not.toContain(address);
+      expect(thrown.stack ?? '').not.toContain(address);
+    }
+    expect((await stored(h.mail, h.id)).lastError).toBe(raw);
+
+    await expect(deliverMail(h.deps, h.id, { made: 5, max: 5 })).resolves.toBeUndefined();
+    expect((await stored(h.mail, h.id)).status).toBe('FAILED');
   });
 
   it('marks FAILED, audits and does not rethrow on the final attempt', async () => {

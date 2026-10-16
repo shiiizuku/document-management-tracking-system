@@ -121,6 +121,10 @@ export const deliverMail = async (
     const reason = describeError(error);
     if (attempt.made >= attempt.max) return fail(reason);
     await deps.mail.recordAttempt(mailId, attempt.made, reason.slice(0, LAST_ERROR_LIMIT));
-    throw error;
+    // The raw reason stays in `last_error` for the releaser; what BullMQ and the worker log is
+    // scrubbed, because transport errors often quote the rejected recipient address.
+    // A `cause` would be logged with it and carry the address back in, so none is attached.
+    // eslint-disable-next-line preserve-caught-error
+    throw new Error(`mail ${mailId} delivery attempt ${attempt.made}/${attempt.max} failed`);
   }
 };
