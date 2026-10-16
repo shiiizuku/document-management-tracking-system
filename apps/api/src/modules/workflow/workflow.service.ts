@@ -95,10 +95,11 @@ export interface WorkflowDocument {
   currentAttachmentVersionId: string | null;
   signedAttachmentVersionId: string | null;
   /*
-   * The release mail, resolved by the caller like `ownerDivisionIsOrd`: whether a message for this
-   * document has been delivered, and whether the releaser recorded that it will not be sent. Read
-   * only by an Emailed release; see the `RELEASE` rule in `execute`.
+   * The release mail, resolved by the caller like `ownerDivisionIsOrd`: whether any message was
+   * drafted for this document, whether one has been delivered, and whether the releaser recorded
+   * that it will not be sent. Read only by an Emailed release; see the `RELEASE` rule in `execute`.
    */
+  mailDrafted: boolean;
   mailSent: boolean;
   mailSkipped: boolean;
   routes: readonly RouteCustody[];
@@ -442,8 +443,10 @@ export class WorkflowService {
         );
       }
       /*
-       * Release mail: "Emailed" says the signed copy left by email, so the message must have been
-       * delivered — or the releaser must have recorded why it was not sent. Keyed on the seeded
+       * Release mail: "Emailed" says the signed copy left by email, so a drafted message must have
+       * been delivered — or the releaser must have recorded why it was not sent. A document with no
+       * message at all (prepared before release mail existed, or with no signed version to attach)
+       * has nothing to send or skip, and is not held back. Keyed on the seeded
        * `EMAILED` code because no method row flag says "by email"; every other method, the custom
        * ones included, ignores the mail. Checked here and not in `allowedActions`, so RELEASE stays
        * offered and the releaser is told what is missing.
@@ -451,6 +454,7 @@ export class WorkflowService {
       if (
         document.direction === 'OUTGOING' &&
         command.releaseMethod.code === EMAILED_RELEASE_METHOD &&
+        document.mailDrafted &&
         !document.mailSent &&
         !document.mailSkipped
       ) {

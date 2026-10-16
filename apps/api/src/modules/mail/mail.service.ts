@@ -18,7 +18,7 @@ import { AuthorizationPolicy } from '../authorization/authorization.policy.js';
 import { DocumentsRepository, type DocumentRow } from '../documents/documents.repository.js';
 import { FileVersionsRepository } from '../files/file-versions.repository.js';
 import { resolveMailRecipients } from './mail-recipients.js';
-import { MailRepository, type MailMessageRow } from './mail.repository.js';
+import { MailRepository, type MailMessageRow, type MailReleaseState } from './mail.repository.js';
 
 /**
  * The body every draft starts with. Plain text; the releaser edits it in the Compose dialog. An
@@ -79,6 +79,11 @@ export class MailService {
     const signed = signatures.at(-1);
     if (signed === undefined) return null;
 
+    /*
+     * Capped at the contract's 20 so the stored draft is one the PATCH schema accepts. Addresses
+     * past the cap are dropped without a notice: the releaser reviews To in Compose before
+     * anything is sent, and no outgoing document is expected to name more than 20 addresses.
+     */
     const to = resolveMailRecipients({
       recipients: document.recipients,
       requesterEmails: await this.documents.listLinkedRequesterEmails(documentId, tx),
@@ -152,10 +157,11 @@ export class MailService {
   /**
    * Queues the draft for the worker. A message already queued or sent is returned as it is, so a
    * double-clicked Send is a quiet success; the outbox key `mail.send:<mailId>` makes the event
-   * itself idempotent too.
+   * itself idempotent too. A draft is sent only while the document is For release; a resend is
+   * not tied to the status (see {@link resend}).
    */
   async send(actor: RequestUser, documentId: string, mailId: string): Promise<MailMessage> {
-    await this.requireReleasable(actor, documentId);
+    const document = await this.requireReleasable(actor, documentId);
     this.requireConfigured();
     const current = await this.requireMessage(documentId, mailId);
     if (current.status === 'QUEUED' || current.status === 'SENT') return this.toPublic(current);
@@ -163,6 +169,11 @@ export class MailService {
       throw new ConflictException({
         code: 'MAIL_NOT_DRAFT',
         message: 'This message has already been sent; resend it instead',
+      });
+    if (document.status !== 'FOR_RELEASE')
+      throw new ConflictException({
+        code: 'MAIL_DOCUMENT_NOT_FOR_RELEASE',
+        message: 'A release email can be sent only while the document is for release',
       });
     if (current.toAddresses.length === 0)
       throw new UnprocessableEntityException({
@@ -181,7 +192,10 @@ export class MailService {
     return this.toPublic(await this.requireMessage(documentId, mailId));
   }
 
-  /** Copies a sent or failed message into a new queued row; the original is never rewritten. */
+  /**
+   * Copies a sent or failed message into a new queued row; the original is never rewritten.
+   * Allowed in any document status: a lost mail may need sending again after the release.
+   */
   async resend(actor: RequestUser, documentId: string, mailId: string): Promise<MailMessage> {
     await this.requireReleasable(actor, documentId);
     this.requireConfigured();
@@ -225,18 +239,29 @@ export class MailService {
   }
 
   /**
-   * Records that the document's draft will not be sent, with the releaser's reason. The release
-   * guard reads it through {@link hasSkipped}. The audit row carries the remark's length only.
+   * Records that the document's release email will not be sent, with the releaser's reason, on
+   * its newest unsent message — a draft, or one queued or failed after Send. The release guard
+   * reads it through {@link releaseState}. Refused once a message is sent; a repeat skip keeps the
+   * first remark and writes no second audit row. The audit row carries the remark's length only.
    */
   async skip(actor: RequestUser, documentId: string, input: SkipMailInput): Promise<void> {
     await this.requireReleasable(actor, documentId);
     await this.database.transaction(async (tx) => {
-      const row = await this.mail.markSkipped(documentId, input.remarks, tx);
-      if (row === null)
+      const state = await this.mail.releaseState(documentId, tx);
+      if (state.sent) throw this.alreadySent();
+      if (state.skipped) return;
+      const target = await this.mail.findLatestUnsent(documentId, tx);
+      if (target === null)
         throw new UnprocessableEntityException({
           code: 'MAIL_NOTHING_TO_SKIP',
-          message: 'This document has no draft email to skip',
+          message: 'This document has no unsent email to skip',
         });
+      const row = await this.mail.markSkipped(target.id, input.remarks, tx);
+      if (row === null) {
+        // Sent by the worker, or skipped by another request, between the read and the write.
+        if ((await this.mail.releaseState(documentId, tx)).sent) throw this.alreadySent();
+        return;
+      }
       await this.audit.write(
         {
           actorId: actor.id,
@@ -244,19 +269,19 @@ export class MailService {
           targetType: 'document',
           targetId: documentId,
           outcome: 'SUCCESS',
-          summary: { remarksLength: input.remarks.length },
+          summary: { mailId: row.id, remarksLength: input.remarks.length },
         },
         tx,
       );
     });
   }
 
-  hasSent(documentId: string): Promise<boolean> {
-    return this.mail.hasStatus(documentId, 'SENT');
-  }
-
-  hasSkipped(documentId: string): Promise<boolean> {
-    return this.mail.hasSkipped(documentId);
+  /**
+   * Whether the document has any message, a sent one and a skipped one, in one read: the facts
+   * the Emailed release rule needs (`mailDrafted`, `mailSent`, `mailSkipped`).
+   */
+  releaseState(documentId: string): Promise<MailReleaseState> {
+    return this.mail.releaseState(documentId);
   }
 
   // ------------------------------------------------------------------- internals
@@ -294,7 +319,9 @@ export class MailService {
   }
 
   private requireConfigured(): void {
-    if (this.config.get<string>('SMTP_HOST') === undefined)
+    // Falsy, not `undefined`: `validateEnvironment` maps `SMTP_HOST=` to undefined, but
+    // `ConfigService.get` then falls through to `process.env` and returns the empty string.
+    if (!this.config.get<string>('SMTP_HOST'))
       throw new UnprocessableEntityException({
         code: 'MAIL_NOT_CONFIGURED',
         message: 'Outgoing mail is not configured on this server',
@@ -312,6 +339,13 @@ export class MailService {
       },
       tx,
     );
+  }
+
+  private alreadySent(): ConflictException {
+    return new ConflictException({
+      code: 'MAIL_ALREADY_SENT',
+      message: 'The release email has already been sent',
+    });
   }
 
   private notDraft(): ConflictException {

@@ -56,6 +56,7 @@ const baseDocument = (
   hasCleanCurrentAttachment: false,
   currentAttachmentVersionId: null,
   signedAttachmentVersionId: null,
+  mailDrafted: false,
   mailSent: false,
   mailSkipped: false,
   // Custody is settled unless a case says otherwise, so a test about the lifecycle is not
@@ -387,6 +388,8 @@ describe('WorkflowService public seam', () => {
       hasCleanCurrentAttachment: true,
       currentAttachmentVersionId: 'file-v1',
       signedAttachmentVersionId: 'file-v1',
+      // A message was drafted at prepare-release unless a case says otherwise.
+      mailDrafted: true,
       ...overrides,
     });
     const releaseBy = (
@@ -412,6 +415,20 @@ describe('WorkflowService public seam', () => {
         code: 'RELEASE_MAIL_REQUIRED',
         message: 'Emailed release requires the message to be sent or skipped',
       });
+    });
+
+    it('allows an emailed release when no message was ever drafted', () => {
+      // Prepared before release mail existed, or with no signed version to attach: there is
+      // nothing to send or skip, so the rule must not strand the document.
+      expect(
+        releaseBy(releasable({ mailDrafted: false }), { releaseMethod: EMAILED }).document.status,
+      ).toBe('RELEASED');
+    });
+
+    it('reports an unsigned attachment before the unsent mail', () => {
+      expect(() =>
+        releaseBy(releasable({ signedAttachmentVersionId: null }), { releaseMethod: EMAILED }),
+      ).toThrow(expect.objectContaining({ code: 'RELEASE_BLOCKED' }));
     });
 
     it('allows an emailed release once the message is sent, or once it is skipped', () => {

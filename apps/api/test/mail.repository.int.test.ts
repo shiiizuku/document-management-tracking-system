@@ -146,6 +146,40 @@ describe('mail repository against Postgres', () => {
     expect(await mail.listForDocument(ids.outgoing)).toHaveLength(3);
   });
 
+  it('reads the release state in one query and skips only the newest unsent message, once', async () => {
+    expect(await mail.releaseState(ids.request)).toEqual({
+      exists: false,
+      sent: false,
+      skipped: false,
+    });
+    expect(await mail.releaseState(ids.outgoing)).toEqual({
+      exists: true,
+      sent: false,
+      skipped: false,
+    });
+
+    const resend = (await mail.listForDocument(ids.outgoing)).find(
+      (row) => row.subject === 'Resend',
+    );
+    await mail.markSent(resend!.id, '<sent@test>');
+    expect((await mail.releaseState(ids.outgoing)).sent).toBe(true);
+
+    const latest = await mail.findLatestUnsent(ids.outgoing);
+    expect(latest?.subject).toBe('Next draft');
+    expect(await mail.markSkipped(resend!.id, 'Sent already')).toBeNull();
+
+    const skipped = await mail.markSkipped(latest!.id, 'Hand-delivered');
+    expect(skipped?.skipRemarks).toBe('Hand-delivered');
+    // A second skip of the same row never overwrites the first remark.
+    expect(await mail.markSkipped(latest!.id, 'Another reason')).toBeNull();
+    expect((await mail.findDraft(ids.outgoing))?.skipRemarks).toBe('Hand-delivered');
+    expect(await mail.releaseState(ids.outgoing)).toEqual({
+      exists: true,
+      sent: true,
+      skipped: true,
+    });
+  });
+
   it('reads the linked requesters’ emails, nulls included', async () => {
     expect(await documentsRepository.listLinkedRequesterEmails(ids.outgoing)).toEqual([
       'citizen@mail.com',

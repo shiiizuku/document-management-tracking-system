@@ -3,6 +3,7 @@ import type { MailStatus } from '@dts/contracts';
 import type {
   MailDraftPatch,
   MailMessageRow,
+  MailReleaseState,
   NewMailMessage,
 } from '../src/modules/mail/mail.repository.js';
 
@@ -82,11 +83,19 @@ export class InMemoryMailRepository {
     return this.mutateDraft((row) => row.id === mailId, { status: 'QUEUED', sentById });
   }
 
-  markSkipped(documentId: string, remarks: string): Promise<MailMessageRow | null> {
-    return this.mutateDraft((row) => row.documentId === documentId, {
-      skippedAt: new Date(),
-      skipRemarks: remarks,
-    });
+  findLatestUnsent(documentId: string): Promise<MailMessageRow | null> {
+    // Rows are kept in creation order, so the last match is the newest.
+    const row = this.rows.findLast((r) => r.documentId === documentId && r.status !== 'SENT');
+    return Promise.resolve(row ? this.copy(row) : null);
+  }
+
+  markSkipped(mailId: string, remarks: string): Promise<MailMessageRow | null> {
+    const row = this.rows.find(
+      (r) => r.id === mailId && r.status !== 'SENT' && r.skippedAt === null,
+    );
+    if (row === undefined) return Promise.resolve(null);
+    Object.assign(row, { skippedAt: new Date(), skipRemarks: remarks, updatedAt: new Date() });
+    return Promise.resolve(this.copy(row));
   }
 
   findById(mailId: string): Promise<MailMessageRow | null> {
@@ -118,16 +127,13 @@ export class InMemoryMailRepository {
     return Promise.resolve(this.copy(row));
   }
 
-  hasStatus(documentId: string, status: MailStatus): Promise<boolean> {
-    return Promise.resolve(
-      this.rows.some((row) => row.documentId === documentId && row.status === status),
-    );
-  }
-
-  hasSkipped(documentId: string): Promise<boolean> {
-    return Promise.resolve(
-      this.rows.some((row) => row.documentId === documentId && row.skippedAt !== null),
-    );
+  releaseState(documentId: string): Promise<MailReleaseState> {
+    const rows = this.rows.filter((row) => row.documentId === documentId);
+    return Promise.resolve({
+      exists: rows.length > 0,
+      sent: rows.some((row) => row.status === 'SENT'),
+      skipped: rows.some((row) => row.skippedAt !== null),
+    });
   }
 
   /** Stands in for the worker, which owns the QUEUED → SENT/FAILED transition. */

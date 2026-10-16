@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
-import type { MailStatus } from '@dts/contracts';
+import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from '../../database/client.js';
 import { DATABASE } from '../../database/database.constants.js';
 import type { DatabaseExecutor } from '../../database/executor.js';
@@ -17,6 +16,13 @@ export interface NewMailMessage {
   subject: string;
   body: string;
   createdById: string;
+}
+
+/** What the Emailed release rule and Skip mail read: does any message exist, sent, or skipped. */
+export interface MailReleaseState {
+  exists: boolean;
+  sent: boolean;
+  skipped: boolean;
 }
 
 export interface MailDraftPatch {
@@ -119,16 +125,42 @@ export class MailRepository {
     return row ?? null;
   }
 
-  /** Marks the document's draft as deliberately not sent. `null` when there is no draft. */
-  async markSkipped(
+  /**
+   * The document's newest message that has not been sent — a draft, a queued one or a failed one:
+   * what Skip mail marks. `null` when every message is sent, or there is none.
+   */
+  async findLatestUnsent(
     documentId: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<MailMessageRow | null> {
+    const [row] = await executor
+      .select()
+      .from(mailMessages)
+      .where(and(eq(mailMessages.documentId, documentId), ne(mailMessages.status, 'SENT')))
+      .orderBy(desc(mailMessages.createdAt), desc(mailMessages.id))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * Marks one unsent message as deliberately not sent. `null` when it was sent or skipped in the
+   * meantime, so a first remark is never overwritten.
+   */
+  async markSkipped(
+    mailId: string,
     remarks: string,
     executor: DatabaseExecutor = this.database,
   ): Promise<MailMessageRow | null> {
     const [row] = await executor
       .update(mailMessages)
       .set({ skippedAt: new Date(), skipRemarks: remarks })
-      .where(and(eq(mailMessages.documentId, documentId), eq(mailMessages.status, 'DRAFT')))
+      .where(
+        and(
+          eq(mailMessages.id, mailId),
+          ne(mailMessages.status, 'SENT'),
+          isNull(mailMessages.skippedAt),
+        ),
+      )
       .returning();
     return row ?? null;
   }
@@ -174,21 +206,23 @@ export class MailRepository {
     return row ?? null;
   }
 
-  async hasStatus(documentId: string, status: MailStatus): Promise<boolean> {
-    const [row] = await this.database
-      .select({ id: mailMessages.id })
+  /** One aggregate read: whether the document has any message, a sent one, and a skipped one. */
+  async releaseState(
+    documentId: string,
+    executor: DatabaseExecutor = this.database,
+  ): Promise<MailReleaseState> {
+    const [row] = await executor
+      .select({
+        exists: sql<boolean>`count(*) > 0`,
+        sent: sql<boolean>`coalesce(bool_or(${mailMessages.status} = 'SENT'), false)`,
+        skipped: sql<boolean>`coalesce(bool_or(${mailMessages.skippedAt} is not null), false)`,
+      })
       .from(mailMessages)
-      .where(and(eq(mailMessages.documentId, documentId), eq(mailMessages.status, status)))
-      .limit(1);
-    return row !== undefined;
-  }
-
-  async hasSkipped(documentId: string): Promise<boolean> {
-    const [row] = await this.database
-      .select({ id: mailMessages.id })
-      .from(mailMessages)
-      .where(and(eq(mailMessages.documentId, documentId), isNotNull(mailMessages.skippedAt)))
-      .limit(1);
-    return row !== undefined;
+      .where(eq(mailMessages.documentId, documentId));
+    return {
+      exists: row?.exists === true,
+      sent: row?.sent === true,
+      skipped: row?.skipped === true,
+    };
   }
 }

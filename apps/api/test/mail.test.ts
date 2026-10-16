@@ -16,13 +16,11 @@ import { OutboxWriter } from '../src/modules/audit/outbox.writer.js';
 import { DocumentsRepository } from '../src/modules/documents/documents.repository.js';
 import { FileVersionsRepository } from '../src/modules/files/file-versions.repository.js';
 import { MailRepository } from '../src/modules/mail/mail.repository.js';
-import { MailSender } from '../src/modules/mail/mail-sender.js';
 import { DEFAULT_MAIL_BODY, MailService } from '../src/modules/mail/mail.service.js';
 import { UsersRepository } from '../src/modules/users/users.repository.js';
 import { InMemoryAuditWriter } from './in-memory-audit.writer.js';
 import { InMemoryDocumentsRepository } from './in-memory-documents.repository.js';
 import { InMemoryFileVersionsRepository } from './in-memory-file-versions.repository.js';
-import { InMemoryMailSender } from './in-memory-mail-sender.js';
 import { InMemoryMailRepository } from './in-memory-mail.repository.js';
 import { InMemoryOutboxWriter } from './in-memory-outbox.writer.js';
 import { InMemoryUsersRepository } from './in-memory-users.repository.js';
@@ -51,9 +49,12 @@ const errorOf = (response: { body: unknown }): unknown => {
   return error;
 };
 
+/** `smtpHost` set to this hands `SMTP_HOST` to the real `ConfigService` lookup. */
+const FROM_CONFIG = Symbol('from config');
+
 describe('REST release mail', () => {
   let app: INestApplication;
-  let smtpHost: string | undefined;
+  let smtpHost: string | undefined | typeof FROM_CONFIG;
 
   const server = (): Server => app.getHttpServer() as Server;
   const tx = {} as DatabaseExecutor;
@@ -72,8 +73,6 @@ describe('REST release mail', () => {
       .useClass(InMemoryOutboxWriter)
       .overrideProvider(MailRepository)
       .useClass(InMemoryMailRepository)
-      .overrideProvider(MailSender)
-      .useClass(InMemoryMailSender)
       .overrideProvider(DATABASE)
       .useValue(fakeTransactionalDatabase)
       .compile();
@@ -90,7 +89,9 @@ describe('REST release mail', () => {
     // Captured before the spy replaces `get`, so the passthrough cannot recurse into it.
     const original = config.get.bind(config);
     vi.spyOn(config, 'get').mockImplementation(((key: string): unknown =>
-      key === 'SMTP_HOST' ? smtpHost : original(key)) as ConfigService['get']);
+      key === 'SMTP_HOST' && smtpHost !== FROM_CONFIG
+        ? smtpHost
+        : original(key)) as ConfigService['get']);
   });
 
   afterEach(async () => {
@@ -170,7 +171,15 @@ describe('REST release mail', () => {
     return versionId;
   };
 
-  /** An outgoing document in the pilot section, signed and drafted. */
+  /** Moves a document straight to `status`, as the workflow would have. */
+  const setStatus = async (documentId: string, status: string): Promise<void> => {
+    const row = (await documentsRepo().findById(documentId))!;
+    await documentsRepo().updateForAction(documentId, row.version, {
+      status: status as typeof row.status,
+    });
+  };
+
+  /** An outgoing document in the pilot section, signed, drafted and For release. */
   const drafted = async (
     cookie: string[],
     overrides: Record<string, unknown> = {},
@@ -185,6 +194,7 @@ describe('REST release mail', () => {
     await sign(outgoing.id);
     const draft = await mail().createDraft(outgoing.id, RECORDS_ID, tx);
     if (draft === null) throw new Error('expected a draft');
+    await setStatus(outgoing.id, 'FOR_RELEASE');
     return { documentId: outgoing.id, draft };
   };
 
@@ -271,6 +281,36 @@ describe('REST release mail', () => {
 
     const refused = await send(records, documentId, draft.id).expect(422);
     expect(refused.body.error.code).toBe('MAIL_NOT_CONFIGURED');
+    expect((await list(records, documentId))[0]?.status).toBe('DRAFT');
+  });
+
+  it('treats an empty SMTP_HOST read through the ConfigModule as not configured', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+    // `SMTP_HOST=` in the environment: validation maps it to undefined, but ConfigService.get
+    // falls through to process.env and returns ''.
+    smtpHost = FROM_CONFIG;
+    const previous = process.env.SMTP_HOST;
+    process.env.SMTP_HOST = '';
+    try {
+      expect(app.get(ConfigService).get('SMTP_HOST')).toBe('');
+      const refused = await send(records, documentId, draft.id).expect(422);
+      expect(refused.body.error.code).toBe('MAIL_NOT_CONFIGURED');
+      expect(mailSendEvents()).toHaveLength(0);
+    } finally {
+      if (previous === undefined) delete process.env.SMTP_HOST;
+      else process.env.SMTP_HOST = previous;
+    }
+  });
+
+  it('sends a draft only while the document is For release', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+    await setStatus(documentId, 'RELEASED');
+
+    const refused = await send(records, documentId, draft.id).expect(409);
+    expect(refused.body.error.code).toBe('MAIL_DOCUMENT_NOT_FOR_RELEASE');
+    expect(mailSendEvents()).toHaveLength(0);
     expect((await list(records, documentId))[0]?.status).toBe('DRAFT');
   });
 
@@ -390,27 +430,66 @@ describe('REST release mail', () => {
     expect(refused.body.error.code).toBe('MAIL_NOT_DRAFT');
   });
 
-  it('refuses a reader without DOCUMENT_RELEASE with 403', async () => {
+  /** Every mail route, with a body its validation pipe accepts so the service is reached. */
+  const ROUTES: {
+    name: string;
+    call: (documentId: string, mailId: string) => request.Test;
+  }[] = [
+    { name: 'GET list', call: (id) => request(server()).get(base(id)) },
+    {
+      name: 'PATCH draft',
+      call: (id, mailId) =>
+        request(server())
+          .patch(`${base(id)}/${mailId}`)
+          .send({ to: ['clerk@agency.gov'], cc: [], bcc: [], subject: 'S', body: 'B' }),
+    },
+    {
+      name: 'POST send',
+      call: (id, mailId) => request(server()).post(`${base(id)}/${mailId}/send`),
+    },
+    {
+      name: 'POST resend',
+      call: (id, mailId) => request(server()).post(`${base(id)}/${mailId}/resend`),
+    },
+    {
+      name: 'POST skip',
+      call: (id) =>
+        request(server())
+          .post(`${base(id)}/skip`)
+          .send({ remarks: 'Hand-delivered' }),
+    },
+  ];
+
+  it.each(ROUTES)('$name refuses a reader without DOCUMENT_RELEASE with 403', async ({ call }) => {
     const records = await asRecords();
     const staff = await asStaff();
     // Readable by the staff member (their own section), but they cannot release.
-    const { documentId } = await drafted(records);
+    const { documentId, draft } = await drafted(records);
 
-    await request(server()).get(base(documentId)).set('Cookie', staff).expect(403);
+    await call(documentId, draft.id).set('Cookie', staff).expect(403);
+    expect(mailSendEvents()).toHaveLength(0);
+    expect(await mail().releaseState(documentId)).toEqual({
+      exists: true,
+      sent: false,
+      skipped: false,
+    });
   });
 
-  it('answers an unreadable confidential document exactly as a missing one', async () => {
-    const records = await asRecords();
-    const staff = await asStaff();
-    const { documentId } = await drafted(records, { confidential: true });
+  it.each(ROUTES)(
+    '$name answers an unreadable confidential document exactly as a missing one',
+    async ({ call }) => {
+      const records = await asRecords();
+      const staff = await asStaff();
+      const { documentId, draft } = await drafted(records, { confidential: true });
 
-    const unreadable = await request(server()).get(base(documentId)).set('Cookie', staff);
-    const absent = await request(server()).get(base(randomUUID())).set('Cookie', staff);
-    expect(unreadable.status).toBe(404);
-    expect(absent.status).toBe(404);
-    expect(errorOf(unreadable)).toEqual(errorOf(absent));
-    expect(errorOf(unreadable)).toMatchObject({ message: 'Document not found' });
-  });
+      const unreadable = await call(documentId, draft.id).set('Cookie', staff);
+      const absent = await call(randomUUID(), randomUUID()).set('Cookie', staff);
+      expect(unreadable.status).toBe(404);
+      expect(absent.status).toBe(404);
+      expect(errorOf(unreadable)).toEqual(errorOf(absent));
+      expect(errorOf(unreadable)).toMatchObject({ message: 'Document not found' });
+    },
+  );
 
   it('resends a sent message as a new queued row and leaves the original untouched', async () => {
     const records = await asRecords();
@@ -418,6 +497,9 @@ describe('REST release mail', () => {
     await send(records, documentId, draft.id).expect(201);
     mailRepo().setStatusForTest(draft.id, 'SENT');
     const [original] = await list(records, documentId);
+
+    // Resend is not tied to For release: a lost mail may need sending again after the release.
+    await setStatus(documentId, 'RELEASED');
 
     const resent = (
       await request(server())
@@ -456,21 +538,88 @@ describe('REST release mail', () => {
     expect(refused.body.error.code).toBe('MAIL_NOT_RESENDABLE');
   });
 
+  const skip = (cookie: string[], documentId: string, remarks: string) =>
+    request(server())
+      .post(`${base(documentId)}/skip`)
+      .set('Cookie', cookie)
+      .send({ remarks });
+  const skippedAudit = () => audit().entries.filter((entry) => entry.action === 'mail.skipped');
+
   it('skips the draft with a remark, audited by length only', async () => {
     const records = await asRecords();
-    const { documentId } = await drafted(records);
-    expect(await mail().hasSkipped(documentId)).toBe(false);
+    const { documentId, draft } = await drafted(records);
+    expect((await mail().releaseState(documentId)).skipped).toBe(false);
 
-    await request(server())
-      .post(`${base(documentId)}/skip`)
-      .set('Cookie', records)
-      .send({ remarks: 'Hand-delivered' })
-      .expect(204);
+    await skip(records, documentId, 'Hand-delivered').expect(204);
 
-    expect(await mail().hasSkipped(documentId)).toBe(true);
+    expect((await mail().releaseState(documentId)).skipped).toBe(true);
     expect((await list(records, documentId))[0]?.skippedAt).not.toBeNull();
-    const skipped = audit().entries.filter((entry) => entry.action === 'mail.skipped');
-    expect(skipped.map((entry) => entry.summary)).toEqual([{ remarksLength: 14 }]);
+    expect(skippedAudit().map((entry) => entry.summary)).toEqual([
+      { mailId: draft.id, remarksLength: 14 },
+    ]);
+  });
+
+  it.each(['QUEUED', 'FAILED'] as const)(
+    'skips the latest unsent message once it is %s',
+    async (status) => {
+      const records = await asRecords();
+      const { documentId, draft } = await drafted(records);
+      await send(records, documentId, draft.id).expect(201);
+      if (status === 'FAILED') mailRepo().setStatusForTest(draft.id, 'FAILED');
+
+      await skip(records, documentId, 'Relay down; hand-delivered').expect(204);
+
+      const [row] = await list(records, documentId);
+      expect(row).toMatchObject({ id: draft.id, status });
+      expect(row?.skippedAt).not.toBeNull();
+      expect((await mail().releaseState(documentId)).skipped).toBe(true);
+    },
+  );
+
+  it('skips the newest of several unsent messages', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+    await send(records, documentId, draft.id).expect(201);
+    mailRepo().setStatusForTest(draft.id, 'FAILED');
+    const resent = (
+      await request(server())
+        .post(`${base(documentId)}/${draft.id}/resend`)
+        .set('Cookie', records)
+        .expect(201)
+    ).body.data as MailMessage;
+    mailRepo().setStatusForTest(resent.id, 'FAILED');
+
+    await skip(records, documentId, 'Relay down').expect(204);
+
+    const rows = await list(records, documentId);
+    expect(rows.find((row) => row.id === resent.id)?.skippedAt).not.toBeNull();
+    expect(rows.find((row) => row.id === draft.id)?.skippedAt).toBeNull();
+  });
+
+  it('refuses to skip once a message is sent', async () => {
+    const records = await asRecords();
+    const { documentId, draft } = await drafted(records);
+    await send(records, documentId, draft.id).expect(201);
+    mailRepo().setStatusForTest(draft.id, 'SENT');
+
+    const refused = await skip(records, documentId, 'Too late').expect(409);
+    expect(refused.body.error.code).toBe('MAIL_ALREADY_SENT');
+    expect((await mail().releaseState(documentId)).skipped).toBe(false);
+    expect(skippedAudit()).toHaveLength(0);
+  });
+
+  it('keeps the first remark and writes one audit row when skipped twice', async () => {
+    const records = await asRecords();
+    const { documentId } = await drafted(records);
+
+    await skip(records, documentId, 'Hand-delivered').expect(204);
+    const [first] = await mailRepo().listForDocument(documentId);
+    await skip(records, documentId, 'A different reason').expect(204);
+
+    const [after] = await mailRepo().listForDocument(documentId);
+    expect(after?.skipRemarks).toBe('Hand-delivered');
+    expect(after?.skippedAt).toEqual(first?.skippedAt);
+    expect(skippedAudit()).toHaveLength(1);
   });
 
   it('refuses to skip when there is no draft', async () => {
@@ -645,19 +794,62 @@ describe('REST release mail', () => {
     it('releases by any other method without reading the mail', async () => {
       const records = await asRecords();
       const document = await prepared(records);
+      const releaseState = vi.spyOn(mail(), 'releaseState');
 
       await act(records, document.id, 'RELEASE', {
         expectedVersion: document.version,
         releaseMethod: 'PICKED_UP',
       }).expect(201);
+      expect(releaseState).not.toHaveBeenCalled();
+    });
+
+    it('reads no mail state for the detail payload or its allowed actions', async () => {
+      const records = await asRecords();
+      const document = await prepared(records);
+      const releaseState = vi.spyOn(mail(), 'releaseState');
+
+      await request(server())
+        .get(`/api/v1/documents/${document.id}`)
+        .set('Cookie', records)
+        .expect(200);
+      expect(releaseState).not.toHaveBeenCalled();
+    });
+
+    it('releases by Emailed a document that has no message at all', async () => {
+      // A document already For release before release mail shipped: nothing was drafted.
+      const records = await asRecords();
+      const document = await signedOutgoing(records);
+      await setStatus(document.id, 'FOR_RELEASE');
+      const row = (await documentsRepo().findById(document.id))!;
+      expect(await mailRepo().listForDocument(document.id)).toEqual([]);
+
+      const released = await act(records, document.id, 'RELEASE', {
+        expectedVersion: row.version,
+        releaseMethod: 'EMAILED',
+      }).expect(201);
+      expect((released.body.data as { status: string }).status).toBe('RELEASED');
     });
   });
 
-  it('reports whether a document has a sent message', async () => {
+  it('reports whether a document has any, a sent and a skipped message in one read', async () => {
     const records = await asRecords();
+    const outgoing = await register(records, { direction: 'OUTGOING', title: 'No mail yet' });
+    expect(await mail().releaseState(outgoing.id)).toEqual({
+      exists: false,
+      sent: false,
+      skipped: false,
+    });
     const { documentId, draft } = await drafted(records);
-    expect(await mail().hasSent(documentId)).toBe(false);
+    expect(await mail().releaseState(documentId)).toEqual({
+      exists: true,
+      sent: false,
+      skipped: false,
+    });
     mailRepo().setStatusForTest(draft.id, 'SENT');
-    expect(await mail().hasSent(documentId)).toBe(true);
+    expect(await mail().releaseState(documentId)).toEqual({
+      exists: true,
+      sent: true,
+      skipped: false,
+    });
   });
 });
