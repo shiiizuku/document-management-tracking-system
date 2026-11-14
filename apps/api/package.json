@@ -43,7 +43,7 @@
     "ioredis": "^6.0.0",
     "minio": "^8.0.7",
     "multer": "^2.4.0",
-    "nodemailer": "^10.1.1",
+    "nodemailer": "^10.1.4",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
